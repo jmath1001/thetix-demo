@@ -21,7 +21,7 @@ export default function Home() {
       
       {/* Full-width Master Grid */}
       <div className="w-full">
-        <MasterGrid tutors={tutors} sessions={sessions} weekStart={weekStart} />
+        <MasterGrid />
       </div>
     </div>
   );
