@@ -1,8 +1,9 @@
 "use client"
 import React, { useState, useMemo } from 'react';
-import { Search, X, Repeat, Check, Calendar, BookOpen, Clock, User } from "lucide-react";
+import { Search, X, Repeat, Check, Clock, User } from "lucide-react";
 
 import { DAYS, formatTime } from '@/components/constants';
+import { getOccupiedBlocks } from '@/lib/useScheduleData';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ export interface PrefilledSlot {
   tutor: any;
   dayName: string;
   dayNum: number;
-  date: string;   // ISO date string e.g. '2026-02-25'
+  date: string;
   time: string;
 }
 
@@ -20,6 +21,7 @@ export interface BookingConfirmData {
   recurring: boolean;
   recurringWeeks: number;
   subject: string;
+  durationMinutes: number;  // NEW
 }
 
 export interface BookingFormProps {
@@ -30,8 +32,15 @@ export interface BookingFormProps {
   setEnrollCat: (c: string) => void;
   allAvailableSeats: any[];
   studentDatabase: any[];
-  sessions?: any[]; // to detect who's already scheduled this week
+  sessions?: any[];
 }
+
+const DURATION_OPTIONS = [
+  { label: '30 min', value: 30 },
+  { label: '1 hr',   value: 60 },
+  { label: '1.5 hr', value: 90 },
+  { label: '2 hr',   value: 120 },
+];
 
 // ─── StudentRow Component ─────────────────────────────────────────────────────
 
@@ -47,7 +56,7 @@ function StudentRow({ student, selected, onSelect, isUnassigned }: {
       className="w-full p-3 text-left transition-all flex items-center gap-3 border-b border-[#f0ece8]"
       style={{ background: selected ? '#ede9fe' : 'transparent' }}
     >
-      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold" 
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
            style={{ background: selected ? '#6d28d9' : '#f0ece8', color: selected ? 'white' : '#78716c' }}>
         {student.name.charAt(0)}
       </div>
@@ -83,8 +92,9 @@ export function BookingForm({
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [selectedSlot, setSelectedSlot] = useState<any>(prefilledSlot || null);
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(null); // NEW — null until chosen
 
-  // 1. Logic: Who is already on the schedule this week?
+  // Who is already on the schedule this week?
   const assignedStudentIds = useMemo(() => {
     const ids = new Set<string>();
     sessions.forEach((session: any) => {
@@ -93,9 +103,9 @@ export function BookingForm({
     return ids;
   }, [sessions]);
 
-  // 2. Logic: Filter and Sort Students (Unscheduled at top)
+  // Filter and sort students
   const filteredStudents = useMemo(() => {
-    const filtered = studentDatabase.filter(s => 
+    const filtered = studentDatabase.filter(s =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
     return filtered.sort((a, b) => {
@@ -107,35 +117,59 @@ export function BookingForm({
     });
   }, [searchQuery, studentDatabase, assignedStudentIds]);
 
-  // 3. Logic: Group Availability by Day Name
+  // Filter slots to only those with enough consecutive free blocks for the chosen duration
+  const filteredSeats = useMemo(() => {
+    if (!durationMinutes) return [];
+    const numBlocks = Math.ceil(durationMinutes / 30);
+    if (numBlocks <= 1) return allAvailableSeats;
+
+    return allAvailableSeats.filter(slot => {
+      // Check that all subsequent blocks are also free for this tutor on this date
+      const needed = getOccupiedBlocks(slot.time, durationMinutes);
+      // allAvailableSeats already contains free slots — check each needed block exists
+      return needed.every(blockTime =>
+        blockTime === slot.time || // the first block is already confirmed free
+        allAvailableSeats.some(s =>
+          s.tutor.id === slot.tutor.id &&
+          s.date === slot.date &&
+          s.time === blockTime
+        )
+      );
+    });
+  }, [durationMinutes, allAvailableSeats]);
+
+  // Group by day
   const slotsByDay = useMemo(() => {
     const groups: Record<string, any[]> = {};
-    allAvailableSeats.forEach(slot => {
+    filteredSeats.forEach(slot => {
       if (!groups[slot.dayName]) groups[slot.dayName] = [];
       groups[slot.dayName].push(slot);
     });
     return groups;
-  }, [allAvailableSeats]);
+  }, [filteredSeats]);
 
   const selectStudent = (student: any) => {
     setSelectedStudent(student);
     setSubject(student.subject || '');
   };
 
-  const canConfirm = selectedStudent && (selectedSlot || prefilledSlot);
+  const canConfirm = selectedStudent && durationMinutes && (selectedSlot || prefilledSlot);
+
+  // Duration step — shown when no duration chosen yet and no prefilled slot
+  const showDurationStep = !prefilledSlot && durationMinutes === null;
 
   return (
     <div className="w-full max-w-5xl bg-white rounded-2xl flex flex-col md:flex-row overflow-hidden border border-[#e7e3dd] shadow-2xl" style={{ maxHeight: '85vh' }}>
-      
+
       {/* ── LEFT PANEL: STUDENT SELECTION ── */}
       <div className="w-full md:w-72 bg-[#faf9f7] border-r border-[#e7e3dd] flex flex-col">
         <div className="p-5 bg-white border-b border-[#e7e3dd]">
           <h3 className="text-lg font-bold text-[#1c1917] mb-1">Book Session</h3>
           <p className="text-xs text-[#a8a29e] mb-4">Select a student to schedule</p>
-          
+
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a8a29e]" />
-            <input 
+            <input
               className="w-full pl-9 pr-3 py-2.5 bg-[#f0ece8]/50 border-none rounded-xl text-sm focus:ring-2 focus:ring-[#6d28d9] outline-none"
               placeholder="Search by name..."
               value={searchQuery}
@@ -147,10 +181,10 @@ export function BookingForm({
         <div className="flex-1 overflow-y-auto">
           {filteredStudents.length > 0 ? (
             filteredStudents.map(student => (
-              <StudentRow 
-                key={student.id} 
-                student={student} 
-                selected={selectedStudent?.id === student.id} 
+              <StudentRow
+                key={student.id}
+                student={student}
+                selected={selectedStudent?.id === student.id}
                 onSelect={selectStudent}
                 isUnassigned={!assignedStudentIds.has(student.id)}
               />
@@ -160,12 +194,11 @@ export function BookingForm({
           )}
         </div>
 
-        {/* Selected Student Context */}
         {selectedStudent && (
           <div className="p-4 bg-white border-t border-[#e7e3dd] space-y-3">
             <div>
               <label className="text-[10px] font-bold text-[#a8a29e] uppercase tracking-widest mb-1.5 block">Session Topic</label>
-              <input 
+              <input
                 className="w-full px-3 py-2 rounded-lg text-sm border border-[#e7e3dd] focus:border-[#6d28d9] outline-none"
                 placeholder="e.g. Geometry, SAT Prep"
                 value={subject}
@@ -176,17 +209,17 @@ export function BookingForm({
         )}
       </div>
 
-      {/* ── RIGHT PANEL: DAY-PARTITIONED SLOTS ── */}
+      {/* ── RIGHT PANEL ── */}
       <div className="flex-1 flex flex-col bg-white overflow-hidden">
         <div className="px-6 py-4 border-b border-[#f0ece8] flex justify-between items-center sticky top-0 bg-white z-10">
           <div className="flex items-center gap-4">
             <h4 className="font-bold text-[#1c1917]">
-              {prefilledSlot ? 'Confirm Details' : 'Available Openings'}
+              {prefilledSlot ? 'Confirm Details' : showDurationStep ? 'Session Duration' : 'Available Openings'}
             </h4>
-            {!prefilledSlot && (
+            {!prefilledSlot && !showDurationStep && (
               <div className="flex gap-1 bg-[#f0ece8] p-1 rounded-lg">
-                {['math', 'english'].map(cat => (
-                  <button 
+                {(['math', 'english'] as const).map(cat => (
+                  <button
                     key={cat}
                     onClick={() => setEnrollCat(cat)}
                     className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all ${enrollCat === cat ? 'bg-white text-[#6d28d9] shadow-sm' : 'text-[#78716c]'}`}
@@ -196,27 +229,77 @@ export function BookingForm({
                 ))}
               </div>
             )}
+            {/* Back button when duration already chosen */}
+            {!prefilledSlot && !showDurationStep && (
+              <button
+                onClick={() => { setDurationMinutes(null); setSelectedSlot(null); }}
+                className="text-[10px] font-bold text-[#a8a29e] hover:text-[#6d28d9] underline underline-offset-2 transition-colors"
+              >
+                ← Change duration
+              </button>
+            )}
           </div>
-          <button onClick={onCancel} className="p-1.5 hover:bg-[#f9f7f4] rounded-full text-[#a8a29e] transition-colors"><X size={20}/></button>
+          <button onClick={onCancel} className="p-1.5 hover:bg-[#f9f7f4] rounded-full text-[#a8a29e] transition-colors"><X size={20} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {prefilledSlot ? (
-            /* Prefilled Mode */
-            <div className="max-w-md mx-auto py-10">
+
+          {/* ── STEP 1: DURATION PICKER ── */}
+          {!prefilledSlot && showDurationStep ? (
+            <div className="max-w-md mx-auto py-16 flex flex-col items-center gap-6">
+              <div className="text-center">
+                <div className="w-14 h-14 rounded-2xl bg-[#ede9fe] flex items-center justify-center mx-auto mb-4">
+                  <Clock size={24} className="text-[#6d28d9]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#1c1917] mb-1">How long is the session?</h3>
+                <p className="text-xs text-[#a8a29e]">We'll only show slots with enough consecutive availability</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 w-full">
+                {DURATION_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setDurationMinutes(opt.value)}
+                    className="py-5 rounded-2xl border-2 border-[#e7e3dd] hover:border-[#6d28d9] hover:bg-[#faf9ff] transition-all font-black text-lg text-[#1c1917] hover:text-[#6d28d9]"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          ) : prefilledSlot ? (
+            /* ── PREFILLED MODE ── */
+            <div className="max-w-md mx-auto space-y-6 py-10">
+              {/* Duration picker for prefilled */}
+              <div>
+                <p className="text-[10px] font-bold text-[#a8a29e] uppercase tracking-widest mb-3">Session Duration</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {DURATION_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setDurationMinutes(opt.value)}
+                      className={`py-3 rounded-xl border-2 font-bold text-sm transition-all ${durationMinutes === opt.value ? 'border-[#6d28d9] bg-[#faf9ff] text-[#6d28d9]' : 'border-[#e7e3dd] text-[#78716c] hover:border-[#c4b5fd]'}`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="p-6 rounded-2xl border-2 border-[#6d28d9] bg-[#faf9ff] flex items-center gap-5">
                 <div className="w-16 h-16 rounded-2xl bg-[#6d28d9] flex flex-col items-center justify-center text-white">
-                  <span className="text-[10px] font-bold uppercase opacity-80">{prefilledSlot.dayName.slice(0,3)}</span>
+                  <span className="text-[10px] font-bold uppercase opacity-80">{prefilledSlot.dayName.slice(0, 3)}</span>
                   <span className="text-lg font-black">{formatTime(prefilledSlot.time).split(' ')[0]}</span>
                 </div>
                 <div>
                   <p className="text-lg font-bold text-[#1c1917]">{prefilledSlot.tutor.name}</p>
                   <p className="text-sm text-[#6d28d9] font-medium">{prefilledSlot.dayName} · {formatTime(prefilledSlot.time)}</p>
+                  {durationMinutes && <p className="text-xs text-[#a8a29e] mt-0.5">{DURATION_OPTIONS.find(d => d.value === durationMinutes)?.label}</p>}
                 </div>
               </div>
             </div>
+
           ) : (
-            /* Day-Partitioned Grid */
+            /* ── STEP 2: SLOT PICKER ── */
             <div className="space-y-8">
               {Object.entries(slotsByDay).length > 0 ? Object.entries(slotsByDay).map(([day, slots]) => (
                 <div key={day} className="space-y-4">
@@ -233,14 +316,17 @@ export function BookingForm({
                         <button
                           key={idx}
                           onClick={() => setSelectedSlot(slot)}
-                          className={`p-4 rounded-xl border-2 text-left transition-all relative ${
-                            isSelected ? 'border-[#6d28d9] bg-[#faf9ff] shadow-lg shadow-violet-100' : 'border-[#f0ece8] hover:border-[#c4b5fd]'
-                          }`}
+                          className={`p-4 rounded-xl border-2 text-left transition-all relative ${isSelected ? 'border-[#6d28d9] bg-[#faf9ff] shadow-lg shadow-violet-100' : 'border-[#f0ece8] hover:border-[#c4b5fd]'}`}
                         >
                           <div className="flex items-center gap-2 mb-2">
                             <Clock size={12} className={isSelected ? 'text-[#6d28d9]' : 'text-[#a8a29e]'} />
                             <span className={`text-sm font-bold ${isSelected ? 'text-[#6d28d9]' : 'text-[#1c1917]'}`}>
                               {formatTime(slot.time)}
+                              {durationMinutes && durationMinutes > 30 && (
+                                <span className="text-[10px] font-medium ml-1 opacity-60">
+                                  – {formatTime(getOccupiedBlocks(slot.time, durationMinutes).at(-1)!)}
+                                </span>
+                              )}
                             </span>
                           </div>
                           <p className="text-xs font-bold text-[#1c1917] truncate">{slot.tutor.name}</p>
@@ -253,7 +339,7 @@ export function BookingForm({
                 </div>
               )) : (
                 <div className="text-center py-20">
-                  <p className="text-sm text-[#a8a29e] italic">No available seats for {enrollCat} this week.</p>
+                  <p className="text-sm text-[#a8a29e] italic">No available slots with {DURATION_OPTIONS.find(d => d.value === durationMinutes)?.label} of consecutive availability.</p>
                 </div>
               )}
             </div>
@@ -271,7 +357,7 @@ export function BookingForm({
               </div>
               <div className="flex gap-1">
                 {[2, 4, 8].map(w => (
-                  <button 
+                  <button
                     key={w}
                     onClick={() => { setRecurring(true); setRecurringWeeks(w); }}
                     className={`px-2 py-1 rounded text-[10px] font-bold border ${recurring && recurringWeeks === w ? 'bg-[#6d28d9] border-[#6d28d9] text-white' : 'bg-white border-[#e7e3dd] text-[#78716c]'}`}
@@ -280,7 +366,7 @@ export function BookingForm({
                   </button>
                 ))}
                 {recurring && (
-                  <button onClick={() => setRecurring(false)} className="ml-1 p-1 text-[#ef4444] hover:bg-red-50 rounded"><X size={12}/></button>
+                  <button onClick={() => setRecurring(false)} className="ml-1 p-1 text-[#ef4444] hover:bg-red-50 rounded"><X size={12} /></button>
                 )}
               </div>
             </div>
@@ -293,16 +379,17 @@ export function BookingForm({
                 slot: prefilledSlot || selectedSlot,
                 recurring,
                 recurringWeeks,
-                subject: subject || selectedStudent.subject
+                subject: subject || selectedStudent?.subject,
+                durationMinutes: durationMinutes!,
               })}
               className={`flex-1 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl ${
-                canConfirm 
-                  ? 'bg-[#6d28d9] text-white shadow-[#6d28d9]/20 hover:bg-[#5b21b6]' 
+                canConfirm
+                  ? 'bg-[#6d28d9] text-white shadow-[#6d28d9]/20 hover:bg-[#5b21b6]'
                   : 'bg-[#e7e3dd] text-[#a8a29e] cursor-not-allowed shadow-none'
               }`}
             >
-              {canConfirm 
-                ? `Confirm Booking: ${selectedStudent.name}` 
+              {canConfirm
+                ? `Confirm Booking: ${selectedStudent.name}`
                 : 'Select Student & Slot to Continue'}
             </button>
           </div>
@@ -315,6 +402,7 @@ export function BookingForm({
 // ─── BookingToast Component ───────────────────────────────────────────────────
 
 export function BookingToast({ data, onClose }: { data: BookingConfirmData; onClose: () => void }) {
+  const durationLabel = DURATION_OPTIONS.find(d => d.value === data.durationMinutes)?.label ?? '30 min';
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white border border-[#e7e3dd] px-5 py-4 rounded-2xl flex items-center gap-4 shadow-2xl min-w-[320px]">
       <div className="w-10 h-10 rounded-full bg-[#d1fae5] flex items-center justify-center text-[#059669]">
@@ -323,7 +411,7 @@ export function BookingToast({ data, onClose }: { data: BookingConfirmData; onCl
       <div className="flex-1">
         <p className="text-sm font-bold text-[#1c1917]">{data.student.name} Booked!</p>
         <p className="text-[11px] text-[#a8a29e]">
-          {data.slot.dayName} · {formatTime(data.slot.time)} · {data.slot.tutor.name}
+          {data.slot.dayName} · {formatTime(data.slot.time)} · {data.slot.tutor.name} · {durationLabel}
           {data.recurring && ` · Repeated ${data.recurringWeeks} weeks`}
         </p>
       </div>

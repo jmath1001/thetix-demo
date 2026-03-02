@@ -13,6 +13,7 @@ import {
   toISODate,
   formatDate,
   dayOfWeek,
+  getOccupiedBlocks,
   type Tutor,
 } from '@/lib/useScheduleData';
 import { BookingForm, BookingToast } from '@/components/BookingForm';
@@ -21,16 +22,14 @@ import type { PrefilledSlot, BookingConfirmData } from '@/components/BookingForm
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** A tutor is available at `time` if that exact time string is in their availabilityBlocks */
 const isTutorAvailable = (tutor: Tutor, dow: number, time: string) =>
   tutor.availabilityBlocks.includes(`${dow}-${time}`);
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-/** Format week range e.g. "Feb 24 – Feb 28, 2026" */
 function formatWeekRange(weekStart: Date): string {
   const end = new Date(weekStart);
-  end.setDate(end.getDate() + 6); // Changed from 4 to 6
+  end.setDate(end.getDate() + 6);
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
   const s = weekStart.toLocaleDateString('en-US', opts);
   const e = end.toLocaleDateString('en-US', { ...opts, year: 'numeric' });
@@ -50,7 +49,6 @@ const TUTOR_PALETTES = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MasterDeployment() {
-  // Week navigation — start from current week's Monday
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(new Date()));
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
 
@@ -63,7 +61,6 @@ export default function MasterDeployment() {
   const [bookingToast, setBookingToast] = useState<BookingConfirmData | null>(null);
   const [isTutorModalOpen, setIsTutorModalOpen] = useState(false);
 
-  // Stable color index per tutor
   const tutorPaletteMap = useMemo(() => {
     const map: Record<string, number> = {};
     tutors.forEach((t, i) => { map[t.id] = i % TUTOR_PALETTES.length; });
@@ -80,16 +77,40 @@ export default function MasterDeployment() {
 
   const isCurrentWeek = toISODate(weekStart) === toISODate(getWeekStart(new Date()));
 
-  // Available seats computed from real dates
+  // Build a set of "continuation" cells: tutor+date+time blocks that are covered by a longer session starting earlier
+  // Returns a map of `tutorId|date|time` -> { session, student } for continuation cells
+  const continuationMap = useMemo(() => {
+    const map: Record<string, { session: any; student: any }> = (() => {
+      const m: Record<string, { session: any; student: any }> = {};
+      sessions.forEach(session => {
+        session.students.forEach(student => {
+          const dur = student.durationMinutes ?? 30;
+          if (dur <= 30) return;
+          const blocks = getOccupiedBlocks(session.time, dur);
+          // Skip the first block (that's the actual session cell), mark the rest as continuations
+          blocks.slice(1).forEach(blockTime => {
+            const key = `${session.tutorId}|${session.date}|${blockTime}`;
+            m[key] = { session, student };
+          });
+        });
+      });
+      return m;
+    })();
+    return map;
+  }, [sessions]);
+
   const allAvailableSeats = useMemo(() => {
     let seats: any[] = [];
     tutors.filter(t => t.cat === enrollCat).forEach(tutor => {
       weekDates.forEach(date => {
         const isoDate = toISODate(date);
-        const dow = dayOfWeek(isoDate); // 1=Mon…5=Fri
+        const dow = dayOfWeek(isoDate);
         if (!tutor.availability.includes(dow)) return;
         TIME_SLOTS.forEach(time => {
           if (!isTutorAvailable(tutor, dow, time)) return;
+          // Skip continuation blocks
+          const contKey = `${tutor.id}|${isoDate}|${time}`;
+          if (continuationMap[contKey]) return;
           const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === time);
           const count = session ? session.students.length : 0;
           if (count < MAX_CAPACITY) {
@@ -110,7 +131,7 @@ export default function MasterDeployment() {
       const dd = a.date.localeCompare(b.date);
       return dd !== 0 ? dd : a.time.localeCompare(b.time);
     });
-  }, [enrollCat, tutors, sessions, weekDates]);
+  }, [enrollCat, tutors, sessions, weekDates, continuationMap]);
 
   const handleGridSlotClick = (tutor: Tutor, date: string, dayName: string, time: string) => {
     setGridSlotToBook({ tutor, dayNum: dayOfWeek(date), dayName, time, date });
@@ -124,6 +145,7 @@ export default function MasterDeployment() {
         time: data.slot.time,
         student: data.student,
         topic: data.subject || data.student.subject,
+        durationMinutes: data.durationMinutes,
         recurring: data.recurring,
         recurringWeeks: data.recurringWeeks,
       });
@@ -161,8 +183,6 @@ export default function MasterDeployment() {
 
   const closeAllModals = () => { setIsEnrollModalOpen(false); setGridSlotToBook(null); };
 
-  // ─── Loading / Error ────────────────────────────────────────────────────────
-
   if (loading) return (
     <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#f7f4ef' }}>
       <div className="flex flex-col items-center gap-3">
@@ -181,8 +201,6 @@ export default function MasterDeployment() {
       </div>
     </div>
   );
-
-  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="w-full min-h-screen pb-12 overflow-x-hidden" style={{ background: '#f7f4ef', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
@@ -266,11 +284,9 @@ export default function MasterDeployment() {
       <div className="max-w-[1600px] mx-auto p-3 md:p-6 space-y-10 md:space-y-14">
         {weekDates.map((date, idx) => {
           const isoDate = toISODate(date);
-          const dow = idx + 1; // 1=Mon…5=Fri
+          const dow = idx + 1;
           const activeTutors = tutors.filter(t => t.availability.includes(dow));
           const isToday = isoDate === toISODate(new Date());
-
-          // Day label — e.g. "Monday" + "Feb 25"
           const dayLabel = DAY_NAMES[idx];
           const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
@@ -302,11 +318,7 @@ export default function MasterDeployment() {
                   {/* ── DESKTOP TABLE ── */}
                   <div
                     className="hidden md:block rounded-xl overflow-hidden"
-                    style={{
-                      background: 'white',
-                      border: '1px solid #ddd4c8',
-                      boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
-                    }}
+                    style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}
                   >
                     <div className="overflow-x-auto">
                       <table className="border-collapse" style={{ minWidth: '100%', width: 'max-content' }}>
@@ -314,21 +326,13 @@ export default function MasterDeployment() {
                           <tr style={{ background: '#f7f2eb', borderBottom: '1px solid #ddd4c8' }}>
                             <th
                               className="p-4 text-left text-xs font-bold uppercase tracking-wider"
-                              style={{
-                                color: '#9e8e7e',
-                                borderRight: '1px solid #ddd4c8',
-                                minWidth: 160,
-                                position: 'sticky',
-                                left: 0,
-                                zIndex: 2,
-                                background: '#f7f2eb',
-                              }}
+                              style={{ color: '#9e8e7e', borderRight: '1px solid #ddd4c8', minWidth: 160, position: 'sticky', left: 0, zIndex: 2, background: '#f7f2eb' }}
                             >
                               Instructor
                             </th>
                             {TIME_SLOTS.map(t => (
                               <th key={t} className="p-2 text-center text-xs font-bold uppercase tracking-wider" style={{ color: '#9e8e7e', borderRight: '1px solid #ddd4c8', minWidth: 90 }}>
-                                {formatTime(t).replace(' AM','a').replace(' PM','p')}
+                                {formatTime(t).replace(' AM', 'a').replace(' PM', 'p')}
                               </th>
                             ))}
                           </tr>
@@ -342,13 +346,7 @@ export default function MasterDeployment() {
                                 {/* Tutor cell — sticky */}
                                 <td
                                   className="p-4 align-top"
-                                  style={{
-                                    background: 'white',
-                                    borderRight: '1px solid #ddd4c8',
-                                    position: 'sticky',
-                                    left: 0,
-                                    zIndex: 1,
-                                  }}
+                                  style={{ background: 'white', borderRight: '1px solid #ddd4c8', position: 'sticky', left: 0, zIndex: 1 }}
                                 >
                                   <div className="flex items-center gap-2.5">
                                     <div
@@ -369,11 +367,37 @@ export default function MasterDeployment() {
                                 </td>
 
                                 {TIME_SLOTS.map(time => {
+                                  const contKey = `${tutor.id}|${isoDate}|${time}`;
+                                  const continuation = continuationMap[contKey];
+
+                                  // ── CONTINUATION CELL ──
+                                  if (continuation) {
+                                    const contPalette = TUTOR_PALETTES[tutorPaletteMap[tutor.id] ?? 0];
+                                    return (
+                                      <td
+                                        key={time}
+                                        className="p-0 align-top h-[160px]"
+                                        style={{ borderRight: '1px solid #ede6db' }}
+                                      >
+                                        <div
+                                          className="w-full h-full flex items-center justify-center"
+                                          style={{
+                                            background: `repeating-linear-gradient(45deg, ${contPalette.bg}, ${contPalette.bg} 6px, white 6px, white 12px)`,
+                                            borderLeft: `3px solid ${contPalette.border}`,
+                                            opacity: 0.7,
+                                          }}
+                                        >
+                                          <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: contPalette.text, writingMode: 'horizontal-tb' }}>cont.</span>
+                                        </div>
+                                      </td>
+                                    );
+                                  }
+
                                   const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === time);
                                   const hasStudents = session && session.students.length > 0;
                                   const isAvailable = isTutorAvailable(tutor, dow, time) && !hasStudents;
-                                  const isOutside = !isTutorAvailable(tutor, dow, time);
                                   const isFull = hasStudents && session!.students.length >= MAX_CAPACITY;
+                                  const isOutside = !isTutorAvailable(tutor, dow, time);
 
                                   return (
                                     <td
@@ -389,32 +413,41 @@ export default function MasterDeployment() {
                                       <div className="flex flex-col gap-1.5 h-full">
                                         {hasStudents ? (
                                           <>
-                                            {session!.students.map(student => (
-                                              <div
-                                                key={student.rowId || student.id}
-                                                onClick={() => setSelectedSession({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name })}
-                                                className="group relative p-2.5 rounded-lg transition-all hover:shadow-md cursor-pointer"
-                                                style={student.status === 'no-show' ? {
-                                                  background: 'transparent', border: '1.5px solid #ddd4c8', opacity: 0.45,
-                                                } : student.status === 'present' ? {
-                                                  background: '#edfaf3', border: '1.5px solid #6ee7b7',
-                                                } : {
-                                                  background: palette.bg, border: `1.5px solid ${palette.border}`,
-                                                }}
-                                              >
-                                                <div className="flex justify-between items-start mb-0.5">
-                                                  <p className="text-xs font-bold leading-tight" style={{ color: '#1c1008' }}>{student.name}</p>
-                                                  <RefreshCw size={9} className="opacity-0 group-hover:opacity-60 transition-opacity shrink-0 mt-0.5" style={{ color: palette.tag }} />
-                                                </div>
-                                                <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
-                                                {student.status === 'present' && (
-                                                  <div className="flex items-center gap-1 mt-1">
-                                                    <Check size={9} style={{ color: '#059669' }} strokeWidth={3} />
-                                                    <span className="text-[9px] font-semibold" style={{ color: '#059669' }}>Present</span>
+                                            {session!.students.map(student => {
+                                              const dur = student.durationMinutes ?? 30;
+                                              const durLabel = dur > 30 ? `${dur >= 60 ? `${dur / 60}hr` : `${dur}min`}` : null;
+                                              return (
+                                                <div
+                                                  key={student.rowId || student.id}
+                                                  onClick={() => setSelectedSession({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name })}
+                                                  className="group relative p-2.5 rounded-lg transition-all hover:shadow-md cursor-pointer"
+                                                  style={student.status === 'no-show' ? {
+                                                    background: 'transparent', border: '1.5px solid #ddd4c8', opacity: 0.45,
+                                                  } : student.status === 'present' ? {
+                                                    background: '#edfaf3', border: '1.5px solid #6ee7b7',
+                                                  } : {
+                                                    background: palette.bg, border: `1.5px solid ${palette.border}`,
+                                                  }}
+                                                >
+                                                  <div className="flex justify-between items-start mb-0.5">
+                                                    <p className="text-xs font-bold leading-tight" style={{ color: '#1c1008' }}>{student.name}</p>
+                                                    <RefreshCw size={9} className="opacity-0 group-hover:opacity-60 transition-opacity shrink-0 mt-0.5" style={{ color: palette.tag }} />
                                                   </div>
-                                                )}
-                                              </div>
-                                            ))}
+                                                  <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
+                                                  {durLabel && (
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded mt-1 inline-block" style={{ background: palette.border + '33', color: palette.text }}>
+                                                      {durLabel}
+                                                    </span>
+                                                  )}
+                                                  {student.status === 'present' && (
+                                                    <div className="flex items-center gap-1 mt-1">
+                                                      <Check size={9} style={{ color: '#059669' }} strokeWidth={3} />
+                                                      <span className="text-[9px] font-semibold" style={{ color: '#059669' }}>Present</span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            })}
                                             {!isFull && (
                                               <button
                                                 onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, time)}
@@ -472,6 +505,28 @@ export default function MasterDeployment() {
                           <div className="overflow-x-auto">
                             <div className="flex">
                               {TIME_SLOTS.map(time => {
+                                const contKey = `${tutor.id}|${isoDate}|${time}`;
+                                const continuation = continuationMap[contKey];
+
+                                if (continuation) {
+                                  return (
+                                    <div key={time} className="flex-shrink-0 w-40 p-0" style={{ borderRight: '1px solid #ede6db' }}>
+                                      <div className="text-[9px] font-bold uppercase tracking-widest text-center py-2" style={{ color: '#9e8e7e' }}>{time}</div>
+                                      <div
+                                        className="mx-2 rounded-lg flex items-center justify-center"
+                                        style={{
+                                          minHeight: 100,
+                                          background: `repeating-linear-gradient(45deg, ${palette.bg}, ${palette.bg} 6px, white 6px, white 12px)`,
+                                          borderLeft: `3px solid ${palette.border}`,
+                                          opacity: 0.7,
+                                        }}
+                                      >
+                                        <span className="text-[9px] font-bold" style={{ color: palette.text }}>cont.</span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
                                 const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === time);
                                 const hasStudents = session && session.students.length > 0;
                                 const isAvailable = isTutorAvailable(tutor, dow, time) && !hasStudents;
@@ -552,7 +607,6 @@ export default function MasterDeployment() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,14,8,0.75)', backdropFilter: 'blur(8px)' }}>
           <div className="w-full max-w-md md:max-w-lg rounded-2xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 24px 64px rgba(0,0,0,0.2)' }}>
 
-            {/* Warm accent bar */}
             <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg, #c27d38, #f5c842, #c27d38)' }} />
 
             <div className="p-6 md:p-8 pb-4 md:pb-5">
@@ -565,6 +619,11 @@ export default function MasterDeployment() {
                   <h3 className="text-2xl md:text-3xl font-bold leading-none mb-2" style={{ color: '#1c1008', fontFamily: 'ui-serif, Georgia, serif' }}>{selectedSession.activeStudent.name}</h3>
                   <p className="text-xs font-medium" style={{ color: '#9e8e7e' }}>
                     {selectedSession.dayName} &nbsp;·&nbsp; {formatDate(selectedSession.date)} &nbsp;·&nbsp; {selectedSession.time} &nbsp;·&nbsp; {selectedSession.tutorName}
+                    {selectedSession.activeStudent.durationMinutes > 30 && (
+                      <span className="ml-2 font-bold" style={{ color: '#c27d38' }}>
+                        · {selectedSession.activeStudent.durationMinutes / 60 >= 1 ? `${selectedSession.activeStudent.durationMinutes / 60}hr` : `${selectedSession.activeStudent.durationMinutes}min`}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <button
