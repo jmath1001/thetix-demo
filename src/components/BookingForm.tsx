@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useMemo } from 'react';
-import { Search, X, Repeat, Check, Clock } from "lucide-react";
+import { Search, X, Repeat, Check, Clock, BookOpen } from "lucide-react";
 
 import { formatTime } from '@/components/constants';
 import { SUBJECT_GROUPS } from '@/components/TutorManagementModal';
@@ -13,6 +13,11 @@ export interface PrefilledSlot {
   dayNum: number;
   date: string;
   time: string;
+  seatsLeft: number; 
+  block?: {
+    label: string;
+    display: string;
+  };
 }
 
 export interface BookingConfirmData {
@@ -21,6 +26,7 @@ export interface BookingConfirmData {
   recurring: boolean;
   recurringWeeks: number;
   subject: string;
+  topic: string; // The specific topic for this session
 }
 
 export interface BookingFormProps {
@@ -80,7 +86,7 @@ export function BookingForm({
 }: BookingFormProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [subject, setSubject] = useState('');
+  const [topic, setTopic] = useState(''); // New state for the 'topic' column
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [selectedSlot, setSelectedSlot] = useState<any>(prefilledSlot || null);
@@ -122,16 +128,15 @@ export function BookingForm({
   }, [filteredSeats]);
 
   const selectStudent = (student: any) => {
-    setSelectedStudent(student);
-    setSubject(student.subject || '');
-  };
+  setSelectedStudent(student);
+  setTopic(''); // Always start fresh so topic column is explicitly filled
+};
 
-  const canConfirm = selectedStudent && (selectedSlot || prefilledSlot);
+  const canConfirm = selectedStudent && (selectedSlot || prefilledSlot) && topic.trim() !== '';
 
   return (
     <div className="w-full max-w-5xl bg-white rounded-2xl flex flex-col md:flex-row overflow-hidden border border-[#e7e3dd] shadow-2xl" style={{ maxHeight: '85vh' }}>
 
-      {/* ── LEFT PANEL ── */}
       <div className="w-full md:w-72 bg-[#faf9f7] border-r border-[#e7e3dd] flex flex-col">
         <div className="p-5 bg-white border-b border-[#e7e3dd]">
           <h3 className="text-lg font-bold text-[#1c1917] mb-1">Book Session</h3>
@@ -163,14 +168,17 @@ export function BookingForm({
           )}
         </div>
 
+        {/* TOPIC INPUT FIELD */}
         {selectedStudent && (
           <div className="p-4 bg-white border-t border-[#e7e3dd]">
-            <label className="text-[10px] font-bold text-[#a8a29e] uppercase tracking-widest mb-1.5 block">Session Topic</label>
+            <label className="text-[10px] font-black text-[#6d28d9] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+              <BookOpen size={10} /> Session Topic
+            </label>
             <input
-              className="w-full px-3 py-2 rounded-lg text-sm border border-[#e7e3dd] focus:border-[#6d28d9] outline-none"
+              className="w-full px-3 py-2.5 rounded-xl text-sm border-2 border-[#100903] focus:border-[#6d28d9] outline-none transition-all text-black"
               placeholder="e.g. Geometry, SAT Prep"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
             />
           </div>
         )}
@@ -222,7 +230,6 @@ export function BookingForm({
 
         <div className="flex-1 overflow-y-auto p-6">
           {prefilledSlot ? (
-            /* ── PREFILLED MODE ── */
             <div className="max-w-md mx-auto py-10">
               <div className="p-6 rounded-2xl border-2 border-[#6d28d9] bg-[#faf9ff] flex items-center gap-5">
                 <div className="w-16 h-16 rounded-2xl bg-[#6d28d9] flex flex-col items-center justify-center text-white">
@@ -236,7 +243,6 @@ export function BookingForm({
               </div>
             </div>
           ) : (
-            /* ── SLOT PICKER ── */
             <div className="space-y-8">
               {Object.entries(slotsByDay).length > 0 ? Object.entries(slotsByDay).map(([day, slots]) => (
                 <div key={day} className="space-y-4">
@@ -247,19 +253,34 @@ export function BookingForm({
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {slots.map((slot, idx) => {
                       const isSelected = selectedSlot?.tutor.id === slot.tutor.id && selectedSlot?.time === slot.time && selectedSlot?.dayName === slot.dayName;
+                      const maxSpots = 3;
+                      const assignedCount = maxSpots - slot.seatsLeft;
+                      
                       return (
                         <button key={idx} onClick={() => setSelectedSlot(slot)}
                           className={`p-4 rounded-xl border-2 text-left transition-all relative ${isSelected ? 'border-[#6d28d9] bg-[#faf9ff] shadow-lg shadow-violet-100' : 'border-[#f0ece8] hover:border-[#c4b5fd]'}`}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <Clock size={12} className={isSelected ? 'text-[#6d28d9]' : 'text-[#a8a29e]'} />
-                            <span className={`text-sm font-bold ${isSelected ? 'text-[#6d28d9]' : 'text-[#1c1917]'}`}>
-                              {slot.block?.label ?? formatTime(slot.time)}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Clock size={12} className={isSelected ? 'text-[#6d28d9]' : 'text-[#a8a29e]'} />
+                              <span className={`text-sm font-bold ${isSelected ? 'text-[#6d28d9]' : 'text-[#1c1917]'}`}>
+                                {slot.block?.label ?? formatTime(slot.time)}
+                              </span>
+                            </div>
+                            {/* CAPACITY DISPLAY: X / 3 */}
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${isSelected ? 'bg-[#6d28d9] text-white' : 'bg-[#f0ece8] text-[#78716c]'}`}>
+                              {assignedCount} / {maxSpots}
                             </span>
                           </div>
-                          <p className="text-[10px] text-[#a8a29e] mb-1">{slot.block?.display ?? slot.time}</p>
                           <p className="text-xs font-bold text-[#1c1917] truncate">{slot.tutor.name}</p>
                           <p className="text-[10px] text-[#a8a29e] uppercase mt-0.5">{slot.tutor.subjects[0]}</p>
-                          {slot.seatsLeft < 3 && <p className="text-[9px] font-bold mt-1" style={{ color: '#c27d38' }}>{slot.seatsLeft} seat{slot.seatsLeft !== 1 ? 's' : ''} left</p>}
+                          
+                          {/* SPOTS REMAINING DISPLAY */}
+                          <div className="mt-3 pt-2 border-t border-[#f0ece8]">
+                            <p className="text-[9px] font-bold uppercase" style={{ color: slot.seatsLeft === 1 ? '#c27d38' : '#a8a29e' }}>
+                              {slot.seatsLeft === 0 ? 'Full' : `${slot.seatsLeft} spot${slot.seatsLeft !== 1 ? 's' : ''} left`}
+                            </p>
+                          </div>
+
                           {isSelected && <div className="absolute top-2 right-2"><Check size={16} className="text-[#6d28d9]" strokeWidth={3} /></div>}
                         </button>
                       );
@@ -303,7 +324,8 @@ export function BookingForm({
                 slot: prefilledSlot || selectedSlot,
                 recurring,
                 recurringWeeks,
-                subject: subject || selectedStudent?.subject,
+                subject: selectedStudent?.subject,
+                topic: topic, // Passing the specific topic string here
               })}
               className={`flex-1 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl ${
                 canConfirm
@@ -311,7 +333,7 @@ export function BookingForm({
                   : 'bg-[#e7e3dd] text-[#a8a29e] cursor-not-allowed shadow-none'
               }`}
             >
-              {canConfirm ? `Confirm Booking: ${selectedStudent.name}` : 'Select Student & Slot to Continue'}
+              {canConfirm ? `Confirm ${topic} for ${selectedStudent.name}` : 'Select Student, Topic & Slot'}
             </button>
           </div>
         </div>
@@ -331,7 +353,7 @@ export function BookingToast({ data, onClose }: { data: BookingConfirmData; onCl
       <div className="flex-1">
         <p className="text-sm font-bold text-[#1c1917]">{data.student.name} Booked!</p>
         <p className="text-[11px] text-[#a8a29e]">
-          {data.slot.dayName} · {(data.slot as any).block?.display ?? formatTime(data.slot.time)} · {data.slot.tutor.name}
+          {data.slot.dayName} · {data.topic} · {data.slot.tutor.name}
           {data.recurring && ` · Repeated ${data.recurringWeeks} weeks`}
         </p>
       </div>
