@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useMemo } from 'react';
-import { PlusCircle, RefreshCw, Check, AlertCircle, XCircle, UserX, X, CalendarClock, Loader2, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { PlusCircle, RefreshCw, Check, AlertCircle, XCircle, UserX, X, CalendarClock, Loader2, ChevronLeft, ChevronRight, CalendarDays, ChevronDown } from "lucide-react";
 
 import { MAX_CAPACITY, getSessionsForDay, type SessionBlock } from '@/components/constants';
 import {
@@ -47,7 +47,7 @@ const TUTOR_PALETTES = [
 export default function MasterDeployment() {
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const { tutors, students, sessions, loading, error, refetch } = useScheduleData(weekStart);
+  const { tutors, students, sessions, timeOff, loading, error, refetch } = useScheduleData(weekStart);
 
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
@@ -55,6 +55,7 @@ export default function MasterDeployment() {
   const [enrollCat, setEnrollCat] = useState('math');
   const [bookingToast, setBookingToast] = useState<BookingConfirmData | null>(null);
   const [isTutorModalOpen, setIsTutorModalOpen] = useState(false);
+  const [selectedTutorFilter, setSelectedTutorFilter] = useState<string | null>(null);
 
   const tutorPaletteMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -98,7 +99,10 @@ export default function MasterDeployment() {
 
   const handleConfirmBooking = async (data: BookingConfirmData) => {
     try {
-      await bookStudent({ tutorId: data.slot.tutor.id, date: (data.slot as any).date, time: data.slot.time, student: data.student, topic: data.subject || data.student.subject, recurring: data.recurring, recurringWeeks: data.recurringWeeks });
+      await bookStudent({
+        tutorId: data.slot.tutor.id, date: (data.slot as any).date, time: data.slot.time,
+        student: data.student, topic: data.topic || data.subject || data.student.subject, recurring: data.recurring, recurringWeeks: data.recurringWeeks
+      });
       refetch();
       setBookingToast(data);
       setIsEnrollModalOpen(false);
@@ -200,15 +204,50 @@ export default function MasterDeployment() {
             <ChevronRight size={16} />
           </button>
         </div>
-        {!isCurrentWeek && (
-          <button onClick={goToThisWeek}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
-            style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}
-            onMouseEnter={e => e.currentTarget.style.background = '#fde8c0'}
-            onMouseLeave={e => e.currentTarget.style.background = '#fef3e2'}>
-            <CalendarDays size={12} /> Today
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!isCurrentWeek && (
+            <button onClick={goToThisWeek}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+              style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#fde8c0'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fef3e2'}>
+              <CalendarDays size={12} /> Today
+            </button>
+          )}
+
+          {/* ── TUTOR FILTER ── */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <select
+                value={selectedTutorFilter ?? ''}
+                onChange={e => setSelectedTutorFilter(e.target.value || null)}
+                className="appearance-none pl-3 pr-8 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
+                style={{
+                  background: selectedTutorFilter ? '#fef3e2' : 'white',
+                  border: `1px solid ${selectedTutorFilter ? '#f5d08a' : '#ddd4c8'}`,
+                  color: selectedTutorFilter ? '#a06020' : '#7a6a5a',
+                  outline: 'none',
+                }}
+              >
+                <option value="">All Tutors</option>
+                {tutors.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ color: selectedTutorFilter ? '#a06020' : '#9e8e7e' }} />
+            </div>
+            {selectedTutorFilter && (
+              <button onClick={() => setSelectedTutorFilter(null)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#fde8c0'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fef3e2'}>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── MAIN GRID ── */}
@@ -220,7 +259,10 @@ export default function MasterDeployment() {
           const dayLabel = DAY_NAMES[dayIdx];
           const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           const isToday = isoDate === toISODate(new Date());
-          const activeTutors = tutors.filter(t => t.availability.includes(dow));
+          const activeTutors = tutors.filter(t =>
+            t.availability.includes(dow) &&
+            (selectedTutorFilter === null || t.id === selectedTutorFilter)
+          );
           const daySessions = getSessionsForDay(dow);
 
           return (
@@ -268,7 +310,6 @@ export default function MasterDeployment() {
                             const palette = TUTOR_PALETTES[tutorPaletteMap[tutor.id] ?? 0];
                             return (
                               <tr key={tutor.id} style={{ borderBottom: '1px solid #ede6db' }}>
-                                {/* ── INSTRUCTOR CELL (smaller) ── */}
                                 <td className="p-3 align-middle"
                                   style={{ background: 'white', borderRight: '1px solid #ddd4c8', position: 'sticky', left: 0, zIndex: 1, minWidth: 120 }}>
                                   <div className="flex items-center gap-2">
@@ -282,15 +323,17 @@ export default function MasterDeployment() {
                                 {daySessions.map(block => {
                                   const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
                                   const hasStudents = session && session.students.length > 0;
-                                  const isAvailable = isTutorAvailable(tutor, dow, block.time) && !hasStudents;
+                                  const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate);
+                                  const isAvailable = isTutorAvailable(tutor, dow, block.time) && !hasStudents && !isOnTimeOff;
                                   const isFull = hasStudents && session!.students.length >= MAX_CAPACITY;
-                                  const isOutside = !isTutorAvailable(tutor, dow, block.time);
+                                  const isOutside = !isTutorAvailable(tutor, dow, block.time) || isOnTimeOff;
+                                  const timeOffNote = isOnTimeOff ? timeOff.find(t => t.tutorId === tutor.id && t.date === isoDate)?.note : null;
 
                                   return (
                                     <td key={block.id} className="p-2 align-top h-[160px]"
                                       style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
                                       <div className="flex flex-col gap-1.5 h-full">
-                                        {hasStudents ? (
+                                        {hasStudents && !isOnTimeOff ? (
                                           <>
                                             {session!.students.map(student => (
                                               <div key={student.rowId || student.id}
@@ -323,7 +366,6 @@ export default function MasterDeployment() {
                                             )}
                                           </>
                                         ) : isAvailable ? (
-                                          // ── GREEN AVAILABLE CELL ──
                                           <div onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, block)}
                                             className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all"
                                             style={{ background: '#f0fdf4', border: '1.5px dashed #86efac' }}
@@ -333,9 +375,18 @@ export default function MasterDeployment() {
                                             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#16a34a' }}>Open</span>
                                           </div>
                                         ) : (
-                                          <div className="w-full h-full rounded-lg flex items-center justify-center"
+                                          <div className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1"
                                             style={{ background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
-                                            <span className="text-[9px] font-semibold text-stone-300 uppercase tracking-wider">—</span>
+                                            {isOnTimeOff ? (
+                                              <>
+                                                <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
+                                                {timeOffNote && (
+                                                  <span className="text-[8px] font-medium text-center px-2 leading-tight" style={{ color: '#b0906a' }}>{timeOffNote}</span>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <span className="text-[9px] font-semibold text-stone-300 uppercase tracking-wider">—</span>
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -364,9 +415,11 @@ export default function MasterDeployment() {
                               {daySessions.map(block => {
                                 const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
                                 const hasStudents = session && session.students.length > 0;
-                                const isAvailable = isTutorAvailable(tutor, dow, block.time) && !hasStudents;
+                                const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate);
+                                const isAvailable = isTutorAvailable(tutor, dow, block.time) && !hasStudents && !isOnTimeOff;
                                 const isFull = hasStudents && session!.students.length >= MAX_CAPACITY;
-                                const isOutside = !isTutorAvailable(tutor, dow, block.time);
+                                const isOutside = !isTutorAvailable(tutor, dow, block.time) || isOnTimeOff;
+
                                 return (
                                   <div key={block.id} className="flex-shrink-0 w-44 p-2"
                                     style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
@@ -375,7 +428,7 @@ export default function MasterDeployment() {
                                       <div className="text-[8px]" style={{ color: '#b0a090' }}>{block.display}</div>
                                     </div>
                                     <div className="space-y-1.5 min-h-[100px]">
-                                      {hasStudents ? (
+                                      {hasStudents && !isOnTimeOff ? (
                                         <>
                                           {session!.students.map(student => (
                                             <div key={student.rowId || student.id}
@@ -395,7 +448,6 @@ export default function MasterDeployment() {
                                           )}
                                         </>
                                       ) : isAvailable ? (
-                                        // ── GREEN AVAILABLE CELL (mobile) ──
                                         <div onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, block)}
                                           className="w-full h-20 rounded-lg flex flex-col items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                                           style={{ background: '#f0fdf4', border: '1.5px dashed #86efac' }}
@@ -405,7 +457,14 @@ export default function MasterDeployment() {
                                           <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: '#16a34a' }}>Open</span>
                                         </div>
                                       ) : (
-                                        <div className="w-full h-20 rounded-lg" style={{ background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }} />
+                                        <div className="w-full h-20 rounded-lg flex flex-col items-center justify-center gap-1"
+                                          style={{ background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
+                                          {isOnTimeOff ? (
+                                            <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
+                                          ) : (
+                                            <span className="text-[8px] font-semibold text-stone-300 uppercase tracking-wider">—</span>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
                                   </div>

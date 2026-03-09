@@ -1,4 +1,5 @@
-"use client"
+"use client";
+
 import React, { useState, useMemo } from 'react';
 import { Search, X, Repeat, Check, Clock, BookOpen } from "lucide-react";
 
@@ -26,7 +27,7 @@ export interface BookingConfirmData {
   recurring: boolean;
   recurringWeeks: number;
   subject: string;
-  topic: string; // The specific topic for this session
+  topic: string; 
 }
 
 export interface BookingFormProps {
@@ -86,7 +87,7 @@ export function BookingForm({
 }: BookingFormProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  const [topic, setTopic] = useState(''); // New state for the 'topic' column
+  const [topic, setTopic] = useState(''); 
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [selectedSlot, setSelectedSlot] = useState<any>(prefilledSlot || null);
@@ -95,6 +96,7 @@ export function BookingForm({
   const assignedStudentIds = useMemo(() => {
     const ids = new Set<string>();
     sessions.forEach((session: any) => {
+      // Logic adjusted for slake_ session structure
       session.students?.forEach((s: any) => ids.add(s.id));
     });
     return ids;
@@ -128,9 +130,9 @@ export function BookingForm({
   }, [filteredSeats]);
 
   const selectStudent = (student: any) => {
-  setSelectedStudent(student);
-  setTopic(''); // Always start fresh so topic column is explicitly filled
-};
+    setSelectedStudent(student);
+    setTopic(''); 
+  };
 
   const canConfirm = selectedStudent && (selectedSlot || prefilledSlot) && topic.trim() !== '';
 
@@ -139,13 +141,13 @@ export function BookingForm({
 
       <div className="w-full md:w-72 bg-[#faf9f7] border-r border-[#e7e3dd] flex flex-col">
         <div className="p-5 bg-white border-b border-[#e7e3dd]">
-          <h3 className="text-lg font-bold text-[#1c1917] mb-1">Book Session</h3>
+          <h3 className="text-lg font-bold text-[#1c1917] mb-1">Slake Scheduler</h3>
           <p className="text-xs text-[#a8a29e] mb-4">Select a student to schedule</p>
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a8a29e]" />
             <input
               className="w-full pl-9 pr-3 py-2.5 bg-[#f0ece8]/50 border-none rounded-xl text-sm focus:ring-2 focus:ring-[#6d28d9] outline-none"
-              placeholder="Search by name..."
+              placeholder="Search students..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -168,7 +170,6 @@ export function BookingForm({
           )}
         </div>
 
-        {/* TOPIC INPUT FIELD */}
         {selectedStudent && (
           <div className="p-4 bg-white border-t border-[#e7e3dd]">
             <label className="text-[10px] font-black text-[#6d28d9] uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
@@ -184,10 +185,7 @@ export function BookingForm({
         )}
       </div>
 
-      {/* ── RIGHT PANEL ── */}
       <div className="flex-1 flex flex-col bg-white overflow-hidden">
-
-        {/* Header */}
         <div className="px-6 py-4 border-b border-[#f0ece8] flex justify-between items-center sticky top-0 bg-white z-10">
           <div className="flex items-center gap-4">
             <h4 className="font-bold text-[#1c1917]">
@@ -207,7 +205,6 @@ export function BookingForm({
           <button onClick={onCancel} className="p-1.5 hover:bg-[#f9f7f4] rounded-full text-[#a8a29e] transition-colors"><X size={20} /></button>
         </div>
 
-        {/* Subject filter pills */}
         {!prefilledSlot && (
           <div className="px-6 py-3 flex flex-wrap gap-1.5 border-b border-[#f0ece8]">
             <button onClick={() => setSubjectFilter(null)}
@@ -266,7 +263,6 @@ export function BookingForm({
                                 {slot.block?.label ?? formatTime(slot.time)}
                               </span>
                             </div>
-                            {/* CAPACITY DISPLAY: X / 3 */}
                             <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${isSelected ? 'bg-[#6d28d9] text-white' : 'bg-[#f0ece8] text-[#78716c]'}`}>
                               {assignedCount} / {maxSpots}
                             </span>
@@ -274,7 +270,6 @@ export function BookingForm({
                           <p className="text-xs font-bold text-[#1c1917] truncate">{slot.tutor.name}</p>
                           <p className="text-[10px] text-[#a8a29e] uppercase mt-0.5">{slot.tutor.subjects[0]}</p>
                           
-                          {/* SPOTS REMAINING DISPLAY */}
                           <div className="mt-3 pt-2 border-t border-[#f0ece8]">
                             <p className="text-[9px] font-bold uppercase" style={{ color: slot.seatsLeft === 1 ? '#c27d38' : '#a8a29e' }}>
                               {slot.seatsLeft === 0 ? 'Full' : `${slot.seatsLeft} spot${slot.seatsLeft !== 1 ? 's' : ''} left`}
@@ -296,7 +291,6 @@ export function BookingForm({
           )}
         </div>
 
-        {/* ── FOOTER ── */}
         <div className="p-6 border-t border-[#f0ece8] bg-[#faf9f7]">
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="flex items-center gap-4 bg-white px-4 py-2.5 rounded-xl border border-[#e7e3dd] w-full md:w-auto">
@@ -325,7 +319,7 @@ export function BookingForm({
                 recurring,
                 recurringWeeks,
                 subject: selectedStudent?.subject,
-                topic: topic, // Passing the specific topic string here
+                topic: topic,
               })}
               className={`flex-1 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-[0.98] shadow-xl ${
                 canConfirm
@@ -341,8 +335,6 @@ export function BookingForm({
     </div>
   );
 }
-
-// ─── BookingToast ─────────────────────────────────────────────────────────────
 
 export function BookingToast({ data, onClose }: { data: BookingConfirmData; onClose: () => void }) {
   return (

@@ -234,7 +234,7 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
   const handleSave = async (updated: Tutor) => {
     setError(null);
     const { error } = await supabase
-      .from('tutors2')
+      .from('slake_tutors')
       .update({
         name: updated.name,
         subjects: updated.subjects,
@@ -249,7 +249,7 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
 
   const handleDelete = async (id: string) => {
     setError(null);
-    const { error } = await supabase.from('tutors2').delete().eq('id', id);
+    const { error } = await supabase.from('slake_tutors').delete().eq('id', id);
     if (error) setError(error.message);
     else onRefetch();
   };
@@ -257,7 +257,7 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
   const handleAdd = async () => {
     if (!newTutor.name.trim()) return;
     setSaving(true); setError(null);
-    const { error } = await supabase.from('tutors2').insert([{
+    const { error } = await supabase.from('slake_tutors').insert([{
       name: newTutor.name,
       subjects: newTutor.subjects,
       cat: newTutor.cat,

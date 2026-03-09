@@ -35,10 +35,18 @@ export type Session = {
   students: SessionStudent[]
 }
 
+export type TimeOff = {
+  id: string
+  tutorId: string
+  date: string
+  note: string
+}
+
 export type ScheduleData = {
   tutors: Tutor[]
   students: Student[]
   sessions: Session[]
+  timeOff: TimeOff[]
   loading: boolean
   error: string | null
   refetch: () => void
@@ -46,9 +54,6 @@ export type ScheduleData = {
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
-// ── Date helpers (FIXED FOR CENTRAL TIME) ──────────────────────────────────────
-
-// Add this one new function to get "Now" in Central Time
 export function getCentralTimeNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
 }
@@ -62,7 +67,6 @@ export function getWeekStart(d: Date): Date {
   return date
 }
 
-// THIS IS THE MAIN FIX: Manual string building prevents UTC day-jumping
 export function toISODate(d: Date): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -78,21 +82,18 @@ export function getWeekDates(weekStart: Date): Date[] {
   })
 }
 
-// KEPT EXACTLY THE SAME: Monday=1, Saturday=6, Sunday=7
 export function dayOfWeek(isoDate: string): number {
   const d = new Date(isoDate + 'T00:00:00')
   const js = d.getDay()
   return js === 0 ? 7 : js
 }
 
-// KEPT EXACTLY THE SAME: Safe for rendering
 export function formatDate(isoDate: string): string {
   return new Date(isoDate + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric',
   })
 }
 
-// KEPT EXACTLY THE SAME: Just math
 export function getOccupiedBlocks(startTime: string, durationMinutes: number): string[] {
   const [h, m] = startTime.split(':').map(Number)
   const blocks: string[] = []
@@ -113,6 +114,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
   const [tutors,   setTutors]   = useState<Tutor[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
+  const [timeOff,  setTimeOff]  = useState<TimeOff[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
   const [tick,     setTick]     = useState(0)
@@ -132,24 +134,30 @@ export function useScheduleData(weekStart: Date): ScheduleData {
       const to   = toISODate(weekEnd)
 
       try {
-        const [tutorRes, studentRes, sessionRes] = await Promise.all([
-          supabase.from('tutors2').select('*').order('name'),
-          supabase.from('students2').select('*').order('name'),
+        const [tutorRes, studentRes, sessionRes, timeOffRes] = await Promise.all([
+          supabase.from('slake_tutors').select('*').order('name'),
+          supabase.from('slake_students').select('*').order('name'),
           supabase
-            .from('sessions2')
+            .from('slake_sessions')
             .select(`
               id, session_date, tutor_id, time,
-              session_students2 ( id, student_id, name, topic, status )
+              slake_session_students ( id, student_id, name, topic, status )
             `)
             .gte('session_date', from)
             .lte('session_date', to)
             .order('session_date')
             .order('time'),
+          supabase
+            .from('slake_tutor_time_off')
+            .select('*')
+            .gte('date', from)
+            .lte('date', to),
         ])
 
         if (tutorRes.error)   throw tutorRes.error
         if (studentRes.error) throw studentRes.error
         if (sessionRes.error) throw sessionRes.error
+        if (timeOffRes.error) throw timeOffRes.error
 
         const tutors: Tutor[] = (tutorRes.data ?? []).map(r => ({
           id:                 r.id,
@@ -172,7 +180,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           date:     r.session_date,
           tutorId:  r.tutor_id,
           time:     r.time,
-          students: (r.session_students2 ?? []).map((ss: any) => ({
+          students: (r.slake_session_students ?? []).map((ss: any) => ({
             id:     ss.student_id,
             rowId:  ss.id,
             name:   ss.name,
@@ -181,10 +189,18 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           })),
         }))
 
+        const timeOffMapped: TimeOff[] = (timeOffRes.data ?? []).map(r => ({
+          id:      r.id,
+          tutorId: r.tutor_id,
+          date:    r.date,
+          note:    r.note ?? '',
+        }))
+
         if (!cancelled) {
           setTutors(tutors)
           setStudents(students)
           setSessions(sessions)
+          setTimeOff(timeOffMapped)
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? 'Failed to load schedule')
@@ -197,7 +213,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
     return () => { cancelled = true }
   }, [toISODate(weekStart), tick])
 
-  return { tutors, students, sessions, loading, error, refetch }
+  return { tutors, students, sessions, timeOff, loading, error, refetch }
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
@@ -220,7 +236,7 @@ export async function bookStudent({
   recurringWeeks?: number
 }) {
   const weeks = recurring ? recurringWeeks : 1
-  const MAX_CAPACITY = 3 // Adjust this number to your center's limit
+  const MAX_CAPACITY = 3
 
   for (let w = 0; w < weeks; w++) {
     const d = new Date(date + 'T00:00:00')
@@ -228,24 +244,30 @@ export async function bookStudent({
     const isoDate = toISODate(d)
 
     // 1. CHECK FOR STUDENT DOUBLE-BOOKING
-    // Check if this student is already in ANY session on this date and time
-    const { data: studentConflict, error: conflictErr } = await supabase
-      .from('session_students2')
-      .select('id, sessions2!inner(id)')
-      .eq('student_id', student.id)
-      .eq('sessions2.session_date', isoDate)
-      .eq('sessions2.time', time)
+    const { data: sessionAtTime } = await supabase
+      .from('slake_sessions')
+      .select('id')
+      .eq('session_date', isoDate)
+      .eq('time', time)
       .maybeSingle()
 
-    if (conflictErr) throw conflictErr
-    if (studentConflict) {
-      throw new Error(`${student.name} is already booked at ${time} on ${isoDate}`)
+    if (sessionAtTime) {
+      const { data: alreadyBooked } = await supabase
+        .from('slake_session_students')
+        .select('id')
+        .eq('session_id', sessionAtTime.id)
+        .eq('student_id', student.id)
+        .maybeSingle()
+
+      if (alreadyBooked) {
+        throw new Error(`${student.name} is already booked at ${time} on ${isoDate}`)
+      }
     }
 
     // 2. FIND OR CREATE SESSION & CHECK CAPACITY
-    let { data: existing, error: fetchErr } = await supabase
-      .from('sessions2')
-      .select('id, session_students2(id)')
+    const { data: existing, error: fetchErr } = await supabase
+      .from('slake_sessions')
+      .select('id, slake_session_students(id)')
       .eq('session_date', isoDate)
       .eq('tutor_id', tutorId)
       .eq('time', time)
@@ -256,14 +278,13 @@ export async function bookStudent({
     let sessionId: string
 
     if (existing) {
-      // Check if session is full
-      if (existing.session_students2 && existing.session_students2.length >= MAX_CAPACITY) {
+      if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) {
         throw new Error(`This session with the tutor is full for ${isoDate}`)
       }
       sessionId = existing.id
     } else {
       const { data: created, error: createErr } = await supabase
-        .from('sessions2')
+        .from('slake_sessions')
         .insert({ session_date: isoDate, tutor_id: tutorId, time })
         .select('id')
         .single()
@@ -273,13 +294,13 @@ export async function bookStudent({
 
     // 3. FINAL ENROLLMENT
     const { error: enrollErr } = await supabase
-      .from('session_students2')
+      .from('slake_session_students')
       .insert({
         session_id: sessionId,
         student_id: student.id,
-        name: student.name,
+        name:       student.name,
         topic,
-        status: 'scheduled',
+        status:     'scheduled',
       })
 
     if (enrollErr) throw enrollErr
@@ -296,7 +317,7 @@ export async function updateAttendance({
   status: 'scheduled' | 'present' | 'no-show'
 }) {
   const { error } = await supabase
-    .from('session_students2')
+    .from('slake_session_students')
     .update({ status })
     .eq('session_id', sessionId)
     .eq('student_id', studentId)
@@ -312,7 +333,7 @@ export async function removeStudentFromSession({
   studentId: string
 }) {
   const { error } = await supabase
-    .from('session_students2')
+    .from('slake_session_students')
     .delete()
     .eq('session_id', sessionId)
     .eq('student_id', studentId)

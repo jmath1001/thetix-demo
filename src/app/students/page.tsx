@@ -14,7 +14,7 @@ function StudentRow({ student, onRefetch }: { student: any; onRefetch: () => voi
   const handleUpdate = async () => {
     setSaving(true);
     const { error } = await supabase
-      .from('students2')
+      .from('slake_students')
       .update({ name: draft.name, grade: parseInt(draft.grade) })
       .eq('id', student.id);
     
@@ -30,7 +30,7 @@ function StudentRow({ student, onRefetch }: { student: any; onRefetch: () => voi
       setConfirmDelete(true);
       return;
     }
-    await supabase.from('students2').delete().eq('id', student.id);
+    await supabase.from('slake_students').delete().eq('id', student.id);
     onRefetch();
   };
 
@@ -109,7 +109,7 @@ export default function StudentAdminPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('students2').select('*').order('name');
+    const { data } = await supabase.from('slake_students').select('*').order('name');
     setStudents(data || []);
     setLoading(false);
   }, []);
@@ -120,7 +120,7 @@ export default function StudentAdminPage() {
     e.preventDefault();
     if (!newStudent.name || !newStudent.grade) return;
     
-    await supabase.from('students2').insert([{
+    await supabase.from('slake_students').insert([{
       name: newStudent.name,
       grade: parseInt(newStudent.grade),
     }]);
