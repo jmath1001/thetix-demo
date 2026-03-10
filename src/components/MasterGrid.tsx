@@ -340,65 +340,74 @@ export default function MasterDeployment() {
                                   const timeOffNote = isOnTimeOff ? timeOff.find(t => t.tutorId === tutor.id && t.date === isoDate)?.note : null;
 
                                   return (
-                                    <td key={block.id} className="p-1.5 align-top"
+                                    <td key={block.id} className="p-1.5 align-top h-[110px]"
                                       style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
                                       <div className="flex flex-col gap-1 h-full">
                                         {hasStudents && !isOnTimeOff ? (
                                           <>
                                             {session!.students.map(student => (
                                               <div key={student.rowId || student.id}
-                                                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-all"
-                                                style={student.status === 'no-show'
-                                                  ? { background: 'transparent', border: '1.5px solid #ddd4c8', opacity: 0.4 }
-                                                  : student.status === 'present'
-                                                    ? { background: '#edfaf3', border: '1.5px solid #6ee7b7' }
+                                                className="group relative p-2 rounded-lg transition-all hover:shadow-md"
+                                                style={student.status === 'no-show' ? { background: 'transparent', border: '1.5px solid #ddd4c8', opacity: 0.45 }
+                                                  : student.status === 'present' ? { background: '#edfaf3', border: '1.5px solid #6ee7b7' }
                                                     : { background: palette.bg, border: `1.5px solid ${palette.border}` }}>
-                                                {/* Present toggle */}
-                                                <button
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const next = student.status === 'present' ? 'scheduled' : 'present';
-                                                    await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
-                                                    refetch();
-                                                  }}
-                                                  className="shrink-0 w-3.5 h-3.5 rounded flex items-center justify-center transition-all"
-                                                  style={student.status === 'present'
-                                                    ? { background: '#059669', border: '1.5px solid #059669' }
-                                                    : { background: 'white', border: '1.5px solid #c8b89a' }}>
-                                                  {student.status === 'present' && <Check size={8} strokeWidth={3} color="white" />}
-                                                </button>
-                                                {/* Name + meta — click opens modal */}
-                                                <div className="flex-1 min-w-0 cursor-pointer"
-                                                  onClick={() => setSelectedSession({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}>
-                                                  <p className="text-[11px] font-bold leading-none truncate" style={{ color: '#1c1008' }}>{student.name}</p>
-                                                  <p className="text-[9px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
-                                                    {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}
-                                                  </p>
+                                                {/* Top row: name + present toggle */}
+                                                <div className="flex justify-between items-start mb-0.5">
+                                                  <p
+                                                    className="text-xs font-bold leading-tight cursor-pointer"
+                                                    style={{ color: '#1c1008' }}
+                                                    onClick={() => setSelectedSession({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}
+                                                  >{student.name}</p>
+                                                  <button
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      const next = student.status === 'present' ? 'scheduled' : 'present';
+                                                      await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
+                                                      refetch();
+                                                    }}
+                                                    className="shrink-0 w-4 h-4 rounded flex items-center justify-center transition-all"
+                                                    style={student.status === 'present'
+                                                      ? { background: '#059669', border: '1.5px solid #059669' }
+                                                      : { background: 'white', border: '1.5px solid #c8b89a' }}
+                                                    title="Toggle present"
+                                                  >
+                                                    {student.status === 'present' && <Check size={9} strokeWidth={3} color="white" />}
+                                                  </button>
+                                                </div>
+                                                {/* Topic + grade */}
+                                                <div
+                                                  className="cursor-pointer"
+                                                  onClick={() => setSelectedSession({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}
+                                                >
+                                                  <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
+                                                  {student.grade && (
+                                                    <p className="text-[9px] font-medium mt-0.5" style={{ color: '#b0a090' }}>Grade {student.grade}</p>
+                                                  )}
                                                 </div>
                                               </div>
                                             ))}
                                             {!isFull && (
                                               <button onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, block)}
-                                                className="py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
+                                                className="mt-auto py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
                                                 style={{ background: 'transparent', border: '1.5px dashed #c8b89a', color: '#9e8e7e' }}
                                                 onMouseEnter={e => { e.currentTarget.style.background = '#2d2318'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = '#2d2318'; }}
                                                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9e8e7e'; e.currentTarget.style.borderColor = '#c8b89a'; }}>
-                                                + ADD
+                                                + ADD ({MAX_CAPACITY - session!.students.length})
                                               </button>
                                             )}
                                           </>
                                         ) : isAvailable ? (
                                           <div onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, block)}
-                                            className="w-full rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
-                                            style={{ minHeight: 64, background: '#f0fdf4', border: '1.5px dashed #86efac' }}
+                                            className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
+                                            style={{ background: '#f0fdf4', border: '1.5px dashed #86efac' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = '#dcfce7'; e.currentTarget.style.borderColor = '#4ade80'; }}
                                             onMouseLeave={e => { e.currentTarget.style.background = '#f0fdf4'; e.currentTarget.style.borderColor = '#86efac'; }}>
                                             <PlusCircle size={14} style={{ color: '#16a34a' }} />
                                             <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#16a34a' }}>Open</span>
                                           </div>
                                         ) : (
-                                          <div className="w-full rounded-lg flex flex-col items-center justify-center gap-1"
-                                            style={{ minHeight: 64, background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
+                                          <div className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1"
+                                            style={{ background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
                                             {isOnTimeOff ? (
                                               <>
                                                 <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
@@ -549,11 +558,13 @@ export default function MasterDeployment() {
         const sessionTime = s.time ?? s.block?.time;
         const originalTutor = tutors.find(t => t.id === s.tutorId);
 
+        // Alt tutors: same cat, available that day+block, not at capacity, not the original
         const altTutors = tutors.filter(t => {
           if (t.id === s.tutorId) return false;
           if (t.cat !== originalTutor?.cat) return false;
           if (!t.availability.includes(sessionDow)) return false;
           if (!isTutorAvailable(t, sessionDow, sessionTime)) return false;
+          // Check not at capacity
           const altSession = sessions.find(ss => ss.date === s.date && ss.tutorId === t.id && ss.time === sessionTime);
           if (altSession && altSession.students.length >= MAX_CAPACITY) return false;
           return true;
@@ -561,105 +572,113 @@ export default function MasterDeployment() {
 
         const currentStatus = student.status;
 
-        const handleReassign = async (newTutor: Tutor) => {
-          try {
-            // Remove from current session
-            await removeStudentFromSession({ sessionId: s.id, studentId: student.id });
-            // Book with new tutor (reuses find-or-create logic)
-            const studentObj = students.find(st => st.id === student.id) ?? { id: student.id, name: student.name, subject: student.topic, grade: student.grade ?? null, hoursLeft: 0 };
-            await bookStudent({ tutorId: newTutor.id, date: s.date, time: sessionTime, student: studentObj, topic: student.topic });
-            refetch();
-            setSelectedSession(null);
-          } catch (err: any) {
-            alert(err.message || 'Reassignment failed');
-          }
-        };
-
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(28,16,8,0.7)', backdropFilter: 'blur(8px)' }}>
-            <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden border border-[#e7e3dd] shadow-2xl" style={{ maxHeight: 'min(560px, 90vh)' }}>
+            <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden border border-[#e7e3dd] shadow-2xl flex flex-col" style={{ maxHeight: '85vh' }}>
 
               {/* Header */}
-              <div className="p-4 bg-[#faf9f7] border-b border-[#e7e3dd] flex items-center justify-between">
+              <div className="p-5 bg-[#faf9f7] border-b border-[#e7e3dd] flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#ede9fe] flex items-center justify-center text-sm font-black text-[#6d28d9] shrink-0">
+                  <div className="w-11 h-11 rounded-full bg-[#ede9fe] flex items-center justify-center text-sm font-black text-[#6d28d9]">
                     {student.name.charAt(0)}
                   </div>
                   <div>
-                    <p className="text-sm font-black text-[#1c1917] leading-tight">{student.name}</p>
-                    <p className="text-[10px] text-[#a8a29e] font-medium">
-                      {student.grade ? `Grade ${student.grade} · ` : ''}{student.topic}
-                    </p>
+                    <p className="text-base font-black text-[#1c1917] leading-tight">{student.name}</p>
+                    {student.grade && <p className="text-[10px] text-[#a8a29e] uppercase font-medium">Grade {student.grade}</p>}
+                    <p className="text-[10px] text-[#6d28d9] font-bold uppercase tracking-wide mt-0.5">{student.topic}</p>
                   </div>
                 </div>
-                <button onClick={() => setSelectedSession(null)} className="p-1.5 hover:bg-[#f0ece8] rounded-full text-[#a8a29e] transition-colors shrink-0">
-                  <X size={16} />
+                <button onClick={() => setSelectedSession(null)} className="p-1.5 hover:bg-[#f0ece8] rounded-full text-[#a8a29e] transition-colors">
+                  <X size={18} />
                 </button>
               </div>
 
               {/* Session info strip */}
-              <div className="px-4 py-2 bg-white border-b border-[#f0ece8] flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-[#1c1917] text-white uppercase tracking-wider">{s.dayName}</span>
-                <span className="text-[10px] text-[#78716c]">{formatDate(s.date)}</span>
+              <div className="px-5 py-2.5 bg-white border-b border-[#f0ece8] flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black px-2 py-1 rounded-lg bg-[#1c1917] text-white uppercase tracking-wider">{s.dayName}</span>
+                <span className="text-[10px] font-semibold text-[#78716c]">{formatDate(s.date)}</span>
                 <span className="text-[#d4cfc9]">·</span>
-                <span className="text-[10px] text-[#78716c]">{s.block?.label ?? sessionTime}{s.block?.display ? ` · ${s.block.display}` : ''}</span>
+                <span className="text-[10px] font-semibold text-[#78716c]">{s.block?.label ?? sessionTime} {s.block?.display ? `· ${s.block.display}` : ''}</span>
                 <span className="text-[#d4cfc9]">·</span>
-                <span className="text-[10px] font-semibold text-[#6d28d9]">{s.tutorName}</span>
+                <span className="text-[10px] font-semibold text-[#78716c]">{s.tutorName}</span>
               </div>
 
-              <div className="overflow-y-auto" style={{ maxHeight: 'calc(min(560px, 90vh) - 120px)' }}>
+              <div className="flex-1 overflow-y-auto">
                 {/* Attendance */}
-                <div className="p-4 border-b border-[#f0ece8]">
-                  <p className="text-[9px] font-black text-[#a8a29e] uppercase tracking-widest mb-2">Attendance</p>
-                  <div className="flex gap-2 mb-2">
-                    {([
-                      { status: 'present', label: 'Present', activeStyle: { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' } },
-                      { status: 'no-show', label: 'No-show', activeStyle: { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' } },
-                      { status: 'scheduled', label: 'Scheduled', activeStyle: { background: '#fef3c7', borderColor: '#f59e0b', color: '#b45309' } },
-                    ] as const).map(({ status, label, activeStyle }) => (
-                      <button key={status} onClick={() => handleAttendance(status)}
-                        className="flex-1 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all active:scale-95 border-2"
-                        style={currentStatus === status ? activeStyle : { background: 'white', borderColor: '#e7e3dd', color: '#a8a29e' }}>
-                        {label}
-                      </button>
-                    ))}
+                <div className="p-5 border-b border-[#f0ece8]">
+                  <p className="text-[10px] font-black text-[#a8a29e] uppercase tracking-widest mb-3">Mark Attendance</p>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <button onClick={() => handleAttendance('present')}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all active:scale-95 border-2"
+                      style={currentStatus === 'present'
+                        ? { background: '#dcfce7', borderColor: '#16a34a', color: '#15803d' }
+                        : { background: 'white', borderColor: '#e7e3dd', color: '#78716c' }}>
+                      <Check size={16} strokeWidth={2.5} />
+                      Present
+                    </button>
+                    <button onClick={() => handleAttendance('no-show')}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all active:scale-95 border-2"
+                      style={currentStatus === 'no-show'
+                        ? { background: '#fee2e2', borderColor: '#dc2626', color: '#b91c1c' }
+                        : { background: 'white', borderColor: '#e7e3dd', color: '#78716c' }}>
+                      <XCircle size={16} strokeWidth={2} />
+                      No-show
+                    </button>
+                    <button onClick={() => handleAttendance('scheduled')}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all active:scale-95 border-2"
+                      style={currentStatus === 'scheduled'
+                        ? { background: '#fef3c7', borderColor: '#f59e0b', color: '#b45309' }
+                        : { background: 'white', borderColor: '#e7e3dd', color: '#78716c' }}>
+                      <CalendarClock size={16} strokeWidth={2} />
+                      Scheduled
+                    </button>
                   </div>
                   <button onClick={handleRemove}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border border-dashed border-[#fca5a5] text-[#ef4444] hover:bg-[#fff1f1] transition-all">
-                    <UserX size={12} strokeWidth={2} /> Remove
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border-2 border-dashed border-[#fca5a5] text-[#ef4444] hover:bg-[#fff1f1] transition-all active:scale-[0.98]">
+                    <UserX size={13} strokeWidth={2} /> Remove from session
                   </button>
                 </div>
 
                 {/* Alt coverage */}
-                {altTutors.length > 0 && (
-                  <div className="p-4">
-                    <p className="text-[9px] font-black text-[#a8a29e] uppercase tracking-widest mb-2">Reassign to</p>
+                <div className="p-5">
+                  <p className="text-[10px] font-black text-[#a8a29e] uppercase tracking-widest mb-3">
+                    Alternative Coverage
+                    <span className="ml-2 font-semibold normal-case text-[#c4b5fd]">{s.block?.label ?? sessionTime}</span>
+                  </p>
+                  {altTutors.length === 0 ? (
+                    <div className="py-6 text-center rounded-xl border border-dashed border-[#e7e3dd]">
+                      <p className="text-xs text-[#a8a29e] italic">No available tutors for this slot</p>
+                    </div>
+                  ) : (
                     <div className="space-y-2">
                       {altTutors.map(t => {
                         const altSession = sessions.find(ss => ss.date === s.date && ss.tutorId === t.id && ss.time === sessionTime);
                         const spotsUsed = altSession ? altSession.students.length : 0;
                         return (
-                          <div key={t.id} className="flex items-center justify-between p-3 rounded-xl border-2 border-[#f0ece8] hover:border-[#c4b5fd] hover:bg-[#faf9ff] transition-all">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-[#ede9fe] flex items-center justify-center text-xs font-black text-[#6d28d9]">
+                          <div key={t.id} className="flex items-center justify-between p-3.5 rounded-xl border-2 border-[#f0ece8] hover:border-[#c4b5fd] hover:bg-[#faf9ff] transition-all cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#ede9fe] flex items-center justify-center text-xs font-black text-[#6d28d9]">
                                 {t.name.charAt(0)}
                               </div>
                               <div>
-                                <p className="text-xs font-bold text-[#1c1917]">{t.name}</p>
-                                <p className="text-[9px] text-[#a8a29e] uppercase">{spotsUsed}/{MAX_CAPACITY} spots</p>
+                                <p className="text-sm font-bold text-[#1c1917] leading-tight">{t.name}</p>
+                                <p className="text-[9px] text-[#a8a29e] uppercase font-medium">{t.subjects.join(', ')}</p>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleReassign(t)}
-                              className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white bg-[#6d28d9] hover:bg-[#5b21b6] transition-all active:scale-95">
-                              Move
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#f0ece8] text-[#78716c]">
+                                {spotsUsed}/{MAX_CAPACITY}
+                              </span>
+                              <button className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white bg-[#6d28d9] hover:bg-[#5b21b6] transition-all active:scale-95">
+                                Reassign
+                              </button>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
