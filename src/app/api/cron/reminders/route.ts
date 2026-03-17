@@ -9,14 +9,23 @@ const supabase = createClient(
 
 export async function GET() {
   try {
-    const { data: settings } = await supabase
+    const { data: settings, error: settingsError } = await supabase
       .from('slake_center_settings')
       .select('*')
       .single();
 
-    if (!settings) throw new Error('Settings not found');
+    if (settingsError || !settings) {
+      throw new Error('Settings not found');
+    }
 
-    const today = new Date().toISOString().split('T')[0];
+    // Get tomorrow's date (YYYY-MM-DD)
+    const now = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(now.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    console.log('Running cron job...');
+    console.log('Looking for sessions on:', tomorrowStr);
 
     const { data: sessions, error } = await supabase
       .from('slake_sessions')
@@ -32,14 +41,12 @@ export async function GET() {
             parent_email
           )
         )
-      `)
-      .gte('session_date', today);
+      `);
 
     if (error) throw error;
 
-    console.log('Sessions:', JSON.stringify(sessions, null, 2));
-
     if (!sessions || sessions.length === 0) {
+      console.log('No sessions found at all');
       return NextResponse.json({ status: 'No sessions found' });
     }
 
@@ -54,6 +61,11 @@ export async function GET() {
     let sent = 0;
 
     for (const session of sessions) {
+      // ✅ ONLY tomorrow's sessions
+      if (session.session_date !== tomorrowStr) continue;
+
+      console.log(`Processing session ${session.id} on ${session.session_date}`);
+
       for (const entry of session.slake_session_students as any[]) {
         const student = entry.slake_students;
         if (!student) continue;
@@ -66,6 +78,8 @@ export async function GET() {
           .replace('{{date}}', session.session_date)
           .replace('{{time}}', session.time);
 
+        console.log(`Sending email to ${targetEmail}`);
+
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: targetEmail,
@@ -77,8 +91,11 @@ export async function GET() {
       }
     }
 
+    console.log(`Total emails sent: ${sent}`);
+
     return NextResponse.json({ sent });
   } catch (err: any) {
+    console.error('ERROR:', err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
