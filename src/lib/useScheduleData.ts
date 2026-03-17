@@ -29,6 +29,7 @@ export type SessionStudent = {
   status: string
   grade: string | null
   notes: string | null
+  confirmationStatus: string | null
 }
 
 export type Session = {
@@ -145,7 +146,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
             .from('slake_sessions')
             .select(`
               id, session_date, tutor_id, time,
-              slake_session_students ( id, student_id, name, topic, status, notes )
+              slake_session_students ( id, student_id, name, topic, status, notes, confirmation_status )
             `)
             .gte('session_date', from)
             .lte('session_date', to)
@@ -191,13 +192,14 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           tutorId:  r.tutor_id,
           time:     r.time,
           students: (r.slake_session_students ?? []).map((ss: any) => ({
-            id:     ss.student_id,
-            rowId:  ss.id,
-            name:   ss.name,
-            topic:  ss.topic,
-            status: ss.status,
-            grade:  gradeMap[ss.student_id] ?? null,
-            notes:  ss.notes ?? null,
+            id:                 ss.student_id,
+            rowId:              ss.id,
+            name:               ss.name,
+            topic:              ss.topic,
+            status:             ss.status,
+            grade:              gradeMap[ss.student_id] ?? null,
+            notes:              ss.notes ?? null,
+            confirmationStatus: ss.confirmation_status ?? null,
           })),
         }))
 

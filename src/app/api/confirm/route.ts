@@ -11,17 +11,14 @@ export async function POST(req: Request) {
     const { token } = await req.json();
 
     if (!token) {
-      return NextResponse.json(
-        { error: "Missing token" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing token" }, { status: 400 });
     }
 
-    // Find session student by token
     const { data, error } = await supabase
       .from("slake_session_students")
       .update({
         status: "confirmed",
+        confirmation_status: "confirmed",
         confirmed_at: new Date().toISOString(),
       })
       .eq("confirmation_token", token)
@@ -29,17 +26,11 @@ export async function POST(req: Request) {
       .single();
 
     if (error || !data) {
-      return NextResponse.json(
-        { error: "Invalid or expired token" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 });
     }
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

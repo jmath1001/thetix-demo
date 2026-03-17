@@ -45,6 +45,46 @@ const TUTOR_PALETTES = [
   { bg: '#e8f9f9', border: '#4dc8c8', text: '#0e5a5a', tag: '#0f9898' },
 ];
 
+function NotesEditor({ rowId, initialNotes, onSaved }: { rowId: any; initialNotes: string; onSaved: () => void }) {
+  const [notes, setNotes] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateSessionNotes({ rowId, notes: notes || null });
+      onSaved();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) { console.error(err); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="p-4 border-b border-[#f0ece8]">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[9px] font-black text-[#a8a29e] uppercase tracking-widest">Session Notes</p>
+        {saved && <span className="text-[9px] font-bold text-[#16a34a] uppercase tracking-wider">Saved ✓</span>}
+      </div>
+      <textarea
+        className="w-full px-3 py-2.5 rounded-xl text-sm text-[#1c1917] border-2 border-[#e7e3dd] focus:border-[#6d28d9] outline-none transition-all resize-none"
+        placeholder="Add notes about this session…"
+        rows={notes ? 4 : 2}
+        value={notes}
+        onChange={e => { setNotes(e.target.value); setSaved(false); }}
+      />
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="mt-2 w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
+        style={{ background: saving ? '#e7e3dd' : '#6d28d9', color: saving ? '#a8a29e' : 'white' }}>
+        {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Notes'}
+      </button>
+    </div>
+  );
+}
+
 export default function MasterDeployment() {
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
@@ -62,16 +102,16 @@ export default function MasterDeployment() {
   const [notesSaved, setNotesSaved] = useState(false);
   const [todayView, setTodayView] = useState(false);
 
+  const goToPrevWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() - 7); return d; });
+  const goToNextWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() + 7); return d; });
+  const goToThisWeek = () => setWeekStart(getWeekStart(new Date()));
+  const isCurrentWeek = toISODate(weekStart) === toISODate(getWeekStart(new Date()));
+
   const tutorPaletteMap = useMemo(() => {
     const map: Record<string, number> = {};
     tutors.forEach((t, i) => { map[t.id] = i % TUTOR_PALETTES.length; });
     return map;
   }, [tutors]);
-
-  const goToPrevWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() - 7); return d; });
-  const goToNextWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() + 7); return d; });
-  const goToThisWeek = () => setWeekStart(getWeekStart(new Date()));
-  const isCurrentWeek = toISODate(weekStart) === toISODate(getWeekStart(new Date()));
 
   const activeDates = useMemo(() =>
     weekDates.filter(d => ACTIVE_DAYS.includes(dayOfWeek(toISODate(d)))),
@@ -136,13 +176,13 @@ export default function MasterDeployment() {
     } catch (err) { console.error(err); }
   };
 
+  const closeAllModals = () => { setIsEnrollModalOpen(false); setGridSlotToBook(null); };
+
   const setSelectedSessionWithNotes = (s: any) => {
     setSelectedSession(s);
     setLocalNotes(s?.activeStudent?.notes ?? '');
     setNotesSaved(false);
   };
-
-  const closeAllModals = () => { setIsEnrollModalOpen(false); setGridSlotToBook(null); };
 
   if (loading) return (
     <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#f7f4ef' }}>
@@ -164,119 +204,7 @@ export default function MasterDeployment() {
   );
 
   return (
-    <div className="w-full min-h-screen pb-12 overflow-x-hidden" style={{ background: '#f7f4ef', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-
-      {/* ── HEADER ── */}
-      <div className="sticky top-0 z-40 flex justify-between items-center px-4 md:px-8 py-3 border-b"
-        style={{ background: 'rgba(247,244,239,0.95)', backdropFilter: 'blur(16px)', borderColor: '#e2d9cc' }}>
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-none" style={{ color: '#1c1008', fontFamily: 'ui-serif, Georgia, serif' }}>
-              {todayView ? 'Today' : 'Weekly Schedule'}
-            </h1>
-            <p className="text-[9px] font-semibold uppercase tracking-widest mt-0.5" style={{ color: '#c27d38' }}>Tutor Management</p>
-          </div>
-          {/* Today / Week toggle */}
-          <div className="flex gap-0.5 bg-[#ede8e1] p-0.5 rounded-lg">
-            <button onClick={() => setTodayView(false)}
-              className="px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all"
-              style={!todayView ? { background: 'white', color: '#1c1008', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' } : { color: '#9e8e7e' }}>
-              Week
-            </button>
-            <button onClick={() => setTodayView(true)}
-              className="px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider transition-all"
-              style={todayView ? { background: '#c27d38', color: 'white', boxShadow: '0 1px 4px rgba(0,0,0,0.15)' } : { color: '#9e8e7e' }}>
-              Today
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setIsTutorModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-2 md:px-4 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all"
-            style={{ background: 'white', border: '1px solid #ddd4c8', color: '#7a6a5a' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f0ebe3'; e.currentTarget.style.color = '#3d2f1f'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = '#7a6a5a'; }}>
-            <PlusCircle size={14} />
-            <span className="hidden md:inline">Manage Tutors</span>
-          </button>
-          <button onClick={() => setIsEnrollModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 md:px-6 md:py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider text-white transition-all active:scale-95"
-            style={{ background: '#2d2318', boxShadow: '0 2px 8px rgba(0,0,0,0.25)' }}
-            onMouseEnter={e => e.currentTarget.style.background = '#4a3828'}
-            onMouseLeave={e => e.currentTarget.style.background = '#2d2318'}>
-            <PlusCircle size={14} />
-            <span className="hidden md:inline">Schedule Student</span>
-            <span className="md:hidden">Book</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ── WEEK NAVIGATION ── */}
-      {!todayView && (
-      <div className="max-w-[1600px] mx-auto px-3 md:px-6 pt-6 pb-2 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={goToPrevWeek} className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
-            style={{ background: 'white', border: '1px solid #ddd4c8', color: '#9e8e7e' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f0ebe3'; e.currentTarget.style.color = '#3d2f1f'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = '#9e8e7e'; }}>
-            <ChevronLeft size={16} />
-          </button>
-          <div>
-            <div className="text-base md:text-lg font-bold tracking-tight leading-none" style={{ color: '#1c1008', fontFamily: 'ui-serif, Georgia, serif' }}>
-              {formatWeekRange(weekStart)}
-            </div>
-            {isCurrentWeek && <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: '#c27d38' }}>Current Week</span>}
-          </div>
-          <button onClick={goToNextWeek} className="w-9 h-9 rounded-lg flex items-center justify-center transition-all"
-            style={{ background: 'white', border: '1px solid #ddd4c8', color: '#9e8e7e' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#f0ebe3'; e.currentTarget.style.color = '#3d2f1f'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = '#9e8e7e'; }}>
-            <ChevronRight size={16} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isCurrentWeek && (
-            <button onClick={goToThisWeek}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
-              style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#fde8c0'}
-              onMouseLeave={e => e.currentTarget.style.background = '#fef3e2'}>
-              <CalendarDays size={12} /> Today
-            </button>
-          )}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <select
-                value={selectedTutorFilter ?? ''}
-                onChange={e => setSelectedTutorFilter(e.target.value || null)}
-                className="appearance-none pl-3 pr-8 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
-                style={{
-                  background: selectedTutorFilter ? '#fef3e2' : 'white',
-                  border: `1px solid ${selectedTutorFilter ? '#f5d08a' : '#ddd4c8'}`,
-                  color: selectedTutorFilter ? '#a06020' : '#7a6a5a',
-                  outline: 'none',
-                }}>
-                <option value="">All Tutors</option>
-                {tutors.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-              <ChevronDown size={11} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                style={{ color: selectedTutorFilter ? '#a06020' : '#9e8e7e' }} />
-            </div>
-            {selectedTutorFilter && (
-              <button onClick={() => setSelectedTutorFilter(null)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-                style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#fde8c0'}
-                onMouseLeave={e => e.currentTarget.style.background = '#fef3e2'}>
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-      )}
+    <div className="w-full min-h-screen overflow-x-hidden" style={{ background: '#f7f4ef', fontFamily: 'ui-sans-serif, system-ui, sans-serif', overflowY: todayView ? 'hidden' : undefined }}>
 
       {/* ── TODAY VIEW ── */}
       {todayView && (() => {
@@ -292,26 +220,26 @@ export default function MasterDeployment() {
         const isWeekend = !ACTIVE_DAYS.includes(todayDow);
 
         return (
-          <div className="max-w-[1600px] mx-auto p-3 md:p-6">
+          <div className="flex flex-col px-3 md:px-6 pb-3 md:pb-6" style={{ height: 'calc(100vh - 92px)' }}>
             {isWeekend ? (
-              <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <div className="flex-1 flex flex-col items-center justify-center gap-3">
                 <p className="text-4xl">🎉</p>
                 <p className="text-lg font-bold" style={{ color: '#1c1008', fontFamily: 'ui-serif, Georgia, serif' }}>No sessions today</p>
                 <p className="text-xs" style={{ color: '#a8a29e' }}>Enjoy your day off</p>
               </div>
             ) : (
-              <>
+              <div className="flex flex-col flex-1 min-h-0 pt-4">
                 {/* Date header */}
-                <div className="flex items-center gap-3 mb-5">
+                <div className="flex items-center gap-3 mb-4 shrink-0">
                   <div>
-                    <h2 className="text-3xl font-bold" style={{ color: '#c27d38', fontFamily: 'ui-serif, Georgia, serif' }}>{dayLabel}</h2>
-                    <p className="text-sm font-semibold" style={{ color: '#c27d38' }}>
+                    <h2 className="text-2xl font-bold leading-none" style={{ color: '#c27d38', fontFamily: 'ui-serif, Georgia, serif' }}>{dayLabel}</h2>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#c27d38' }}>
                       {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </p>
                   </div>
                   <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(90deg, #f5d08a, transparent)' }} />
                   {/* Tutor filter */}
-                  <div className="relative">
+                  <div className="relative shrink-0">
                     <select value={selectedTutorFilter ?? ''} onChange={e => setSelectedTutorFilter(e.target.value || null)}
                       className="appearance-none pl-3 pr-8 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider cursor-pointer outline-none"
                       style={{ background: selectedTutorFilter ? '#fef3e2' : 'white', border: `1px solid ${selectedTutorFilter ? '#f5d08a' : '#ddd4c8'}`, color: selectedTutorFilter ? '#a06020' : '#7a6a5a' }}>
@@ -327,10 +255,9 @@ export default function MasterDeployment() {
                     <p className="text-sm italic" style={{ color: '#c4b5a0' }}>No tutors available today</p>
                   </div>
                 ) : (
-                  /* Time-slot columns across, tutors down */
-                  <div className="rounded-2xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
-                    <div className="overflow-x-auto">
-                      <table className="border-collapse w-full">
+                  <div className="flex-1 min-h-0 rounded-2xl overflow-hidden flex flex-col" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+                    <div className="flex-1 overflow-auto">
+                      <table className="border-collapse" style={{ width: '100%', minWidth: 'max-content' }}>
                         <thead>
                           <tr style={{ background: '#f7f2eb', borderBottom: '1px solid #ddd4c8' }}>
                             <th className="px-3 py-3 text-left text-xs font-bold uppercase tracking-wider"
@@ -454,7 +381,7 @@ export default function MasterDeployment() {
                     </div>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         );
@@ -582,6 +509,15 @@ export default function MasterDeployment() {
                                                 {student.grade && <p className="text-[9px] font-medium mt-0.5" style={{ color: '#b0a090' }}>Grade {student.grade}</p>}
                                                 {student.notes && (
                                                   <p className="text-[9px] mt-1 italic truncate" style={{ color: '#b0a090' }}>📝 {student.notes}</p>
+                                                )}
+                                                {student.confirmationStatus && student.confirmationStatus !== 'pending' && (
+                                                  <span className="text-[8px] font-black mt-1 inline-block px-1.5 py-0.5 rounded"
+                                                    style={{
+                                                      background: student.confirmationStatus === 'confirmed' ? '#dcfce7' : student.confirmationStatus === 'cancelled' ? '#fee2e2' : '#ede9fe',
+                                                      color: student.confirmationStatus === 'confirmed' ? '#15803d' : student.confirmationStatus === 'cancelled' ? '#dc2626' : '#6d28d9',
+                                                    }}>
+                                                    {student.confirmationStatus === 'confirmed' ? '✓ Confirmed' : student.confirmationStatus === 'cancelled' ? '✕ Cancelled' : '↗ Reschedule'}
+                                                  </span>
                                                 )}
                                               </div>
                                             ))}
@@ -761,17 +697,6 @@ export default function MasterDeployment() {
 
         const currentStatus = student.status;
 
-        const handleSaveNotes = async () => {
-          setNotesSaving(true);
-          try {
-            await updateSessionNotes({ rowId: student.rowId, notes: localNotes || null });
-            refetch();
-            setNotesSaved(true);
-            setTimeout(() => setNotesSaved(false), 2000);
-          } catch (err) { console.error(err); }
-          setNotesSaving(false);
-        };
-
         const handleReassign = async (newTutor: Tutor) => {
           try {
             await removeStudentFromSession({ sessionId: s.id, studentId: student.id });
@@ -785,7 +710,7 @@ export default function MasterDeployment() {
         };
 
         // Shared inner content
-        const ModalContent = () => (
+        const modalJsx = (
           <>
             {/* Header */}
             <div className="p-4 bg-[#faf9f7] border-b border-[#e7e3dd] flex items-center justify-between shrink-0">
@@ -810,6 +735,18 @@ export default function MasterDeployment() {
               <span className="text-[10px] text-[#78716c]">{s.block?.label ?? sessionTime}</span>
               <span className="text-[#d4cfc9]">·</span>
               <span className="text-[10px] font-semibold text-[#6d28d9]">{s.tutorName}</span>
+              {student.confirmationStatus && student.confirmationStatus !== 'pending' && (
+                <>
+                  <span className="text-[#d4cfc9]">·</span>
+                  <span className="text-[9px] font-black px-2 py-0.5 rounded-lg capitalize"
+                    style={{
+                      background: student.confirmationStatus === 'confirmed' ? '#dcfce7' : student.confirmationStatus === 'cancelled' ? '#fee2e2' : '#ede9fe',
+                      color: student.confirmationStatus === 'confirmed' ? '#15803d' : student.confirmationStatus === 'cancelled' ? '#dc2626' : '#6d28d9',
+                    }}>
+                    {student.confirmationStatus === 'reschedule_requested' ? '↗ Reschedule Requested' : student.confirmationStatus === 'confirmed' ? '✓ Confirmed' : '✕ Cancelled'}
+                  </span>
+                </>
+              )}
             </div>
             {/* Scrollable body */}
             <div className="overflow-y-auto flex-1">
@@ -834,26 +771,7 @@ export default function MasterDeployment() {
                 </button>
               </div>
               {/* Notes */}
-              <div className="p-4 border-b border-[#f0ece8]">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[9px] font-black text-[#a8a29e] uppercase tracking-widest">Session Notes</p>
-                  {notesSaved && <span className="text-[9px] font-bold text-[#16a34a] uppercase tracking-wider">Saved ✓</span>}
-                </div>
-                <textarea
-                  className="w-full px-3 py-2 rounded-xl text-sm text-black border-2 border-[#161007] focus:border-[#6d28d9] outline-none transition-all resize-none"
-                  placeholder="Add notes about this session…"
-                  rows={3}
-                  value={localNotes}
-                  onChange={e => { setLocalNotes(e.target.value); setNotesSaved(false); }}
-                />
-                <button
-                  onClick={handleSaveNotes}
-                  disabled={notesSaving}
-                  className="mt-2 w-full py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all"
-                  style={{ background: notesSaving ? '#e7e3dd' : '#6d28d9', color: notesSaving ? '#a8a29e' : 'white' }}>
-                  {notesSaving ? 'Saving…' : 'Save Notes'}
-                </button>
-              </div>
+              <NotesEditor rowId={student.rowId} initialNotes={student.notes ?? ''} onSaved={refetch} />
               {altTutors.length > 0 && (
                 <div className="p-4">
                   <p className="text-[9px] font-black text-[#a8a29e] uppercase tracking-widest mb-2">Reassign to</p>
@@ -891,18 +809,17 @@ export default function MasterDeployment() {
             {/* Desktop: centered modal */}
             <div className="hidden md:flex items-center justify-center h-full p-4">
               <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden border border-[#e7e3dd] shadow-2xl flex flex-col" style={{ maxHeight: 'min(560px, 90vh)' }}>
-                <ModalContent />
+                {modalJsx}
               </div>
             </div>
             {/* Mobile: bottom sheet — tap backdrop to close */}
             <div className="md:hidden flex flex-col h-full">
               <div className="flex-1" onClick={() => setSelectedSession(null)} />
               <div className="bg-white rounded-t-2xl border-t border-[#e7e3dd] shadow-2xl flex flex-col" style={{ maxHeight: '80vh' }}>
-                {/* Drag handle */}
                 <div className="flex justify-center pt-3 pb-1 shrink-0">
                   <div className="w-10 h-1 rounded-full bg-[#e7e3dd]" />
                 </div>
-                <ModalContent />
+                {modalJsx}
               </div>
             </div>
           </div>
