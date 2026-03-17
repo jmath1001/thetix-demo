@@ -17,7 +17,7 @@ export function Navbar() {
         {/* Logo - Clickable to Home */}
         <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
           <div className="w-8 h-8 bg-[#ea2709] rounded-lg flex items-center justify-center text-white font-bold">C2</div>
-          <span className="font-bold text-sm md:text-base text-stone-900">C2 Southlake</span>
+          <span className="font-bold text-sm md:text-base text-stone-900">C2</span>
         </a>
 
         {/* Desktop Links (Hidden on Mobile) */}
