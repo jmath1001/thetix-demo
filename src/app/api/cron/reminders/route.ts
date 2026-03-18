@@ -15,11 +15,8 @@ export async function GET() {
       .select("*")
       .single();
 
-    if (settingsError || !settings) {
-      throw new Error("Settings not found");
-    }
+    if (settingsError || !settings) throw new Error("Settings not found");
 
-    // Tomorrow date (YYYY-MM-DD)
     const now = new Date();
     const tomorrow = new Date();
     tomorrow.setDate(now.getDate() + 1);
@@ -31,11 +28,10 @@ export async function GET() {
         id,
         session_date,
         time,
-        reminder_sent,
         slake_session_students (
           id,
           status,
-          confirmed_at,
+          reminder_sent,
           confirmation_token,
           topic,
           slake_students (
@@ -48,10 +44,7 @@ export async function GET() {
       .eq("session_date", tomorrowStr);
 
     if (error) throw error;
-
-    if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ sent: 0 });
-    }
+    if (!sessions || sessions.length === 0) return NextResponse.json({ sent: 0 });
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -65,10 +58,11 @@ export async function GET() {
 
     for (const session of sessions) {
       for (const entry of session.slake_session_students as any[]) {
-        if (!entry.slake_students) continue;
+        // Skip if already sent, confirmed, or no-show
+        if (entry.reminder_sent) continue;
+        if (entry.status === 'confirmed' || entry.status === 'no-show') continue;
 
-        // Only send if scheduled and not confirmed/canceled
-        if (entry.status !== "scheduled") continue;
+        if (!entry.slake_students) continue;
 
         const student = entry.slake_students;
         const targetEmail = student.parent_email || student.email;
@@ -76,10 +70,8 @@ export async function GET() {
 
         // Generate token if missing
         let token = entry.confirmation_token;
-
         if (!token) {
           token = randomUUID();
-
           await supabase
             .from("slake_session_students")
             .update({ confirmation_token: token })
@@ -89,10 +81,10 @@ export async function GET() {
         const confirmLink = `${process.env.NEXT_PUBLIC_BASE_URL}/confirm?token=${token}`;
 
         const body = settings.reminder_body
-  .replace("{{name}}", student.name)
-  .replace("{{date}}", session.session_date)
-  .replace("{{time}}", session.time)
-  .replace("{{link}}", confirmLink);
+          .replace("{{name}}", student.name)
+          .replace("{{date}}", session.session_date)
+          .replace("{{time}}", session.time)
+          .replace("{{link}}", confirmLink);
 
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
@@ -101,15 +93,13 @@ export async function GET() {
           text: body,
         });
 
-        sent++;
-      }
-
-      // Mark session reminder as sent (optional but recommended)
-      if (!session.reminder_sent) {
+        // Mark this student's reminder as sent
         await supabase
-          .from("slake_sessions")
+          .from("slake_session_students")
           .update({ reminder_sent: true })
-          .eq("id", session.id);
+          .eq("id", entry.id);
+
+        sent++;
       }
     }
 

@@ -365,7 +365,9 @@ export default function MasterDeployment() {
                     <p className="text-sm italic" style={{ color: '#c4b5a0' }}>No tutors available today</p>
                   </div>
                 ) : (
-                  <div className="rounded-2xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+                  <>
+                  {/* Desktop */}
+                  <div className="hidden md:block rounded-2xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
                     <div className="overflow-x-auto">
                       <table className="border-collapse w-full">
                         <thead>
@@ -494,6 +496,99 @@ export default function MasterDeployment() {
                       </table>
                     </div>
                   </div>
+
+                  {/* Mobile */}
+                  <div className="md:hidden space-y-2">
+                    {todayTutors.map(tutor => {
+                      const palette = TUTOR_PALETTES[tutorPaletteMap[tutor.id] ?? 0];
+                      const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === todayIso);
+                      return (
+                        <div key={tutor.id} className="rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 8px rgba(0,0,0,0.07)' }}>
+                          <div className="p-2.5" style={{ background: '#f7f2eb', borderBottom: '1px solid #ddd4c8' }}>
+                            <p className="text-xs font-bold" style={{ color: '#1c1008' }}>{tutor.name}</p>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <div className="flex">
+                              {daySessions.map(block => {
+                                const session = sessions.find(s => s.date === todayIso && s.tutorId === tutor.id && s.time === block.time);
+                                const hasStudents = session && session.students.length > 0;
+                                const isAvailable = isTutorAvailable(tutor, todayDow, block.time) && !hasStudents && !isOnTimeOff;
+                                const isFull = hasStudents && session!.students.length >= MAX_CAPACITY;
+                                const isOutside = !isTutorAvailable(tutor, todayDow, block.time) || isOnTimeOff;
+                                return (
+                                  <div key={block.id} className="flex-shrink-0 w-40 p-1.5"
+                                    style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
+                                    <div className="text-center mb-1.5">
+                                      <div className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#9e8e7e' }}>{block.label}</div>
+                                      <div className="text-[8px]" style={{ color: '#b0a090' }}>{block.display}</div>
+                                    </div>
+                                    <div className="space-y-1" style={{ minHeight: 64 }}>
+                                      {hasStudents && !isOnTimeOff ? (
+                                        <>
+                                          {session!.students.map(student => (
+                                            <div key={student.rowId || student.id}
+                                              className="flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg transition-all"
+                                              style={student.status === 'no-show'
+                                                ? { background: 'transparent', border: '1.5px solid #ddd4c8', opacity: 0.4 }
+                                                : student.status === 'present'
+                                                  ? { background: '#edfaf3', border: '1.5px solid #6ee7b7' }
+                                                  : { background: palette.bg, border: `1.5px solid ${palette.border}` }}>
+                                              <button
+                                                onClick={async e => {
+                                                  e.stopPropagation();
+                                                  const next = student.status === 'present' ? 'scheduled' : 'present';
+                                                  await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
+                                                  refetch();
+                                                }}
+                                                className="shrink-0 w-3 h-3 rounded flex items-center justify-center"
+                                                style={student.status === 'present'
+                                                  ? { background: '#059669', border: '1.5px solid #059669' }
+                                                  : { background: 'white', border: '1.5px solid #c8b89a' }}>
+                                                {student.status === 'present' && <Check size={7} strokeWidth={3} color="white" />}
+                                              </button>
+                                              <div className="flex-1 min-w-0 cursor-pointer"
+                                                onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
+                                                <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#1c1008' }}>{student.name}</p>
+                                                <p className="text-[8px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
+                                                  {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {!isFull && (
+                                            <button onClick={() => handleGridSlotClick(tutor, todayIso, dayLabel, block)}
+                                              className="w-full py-1 rounded-lg text-[7px] font-bold uppercase transition-all"
+                                              style={{ background: 'transparent', border: '1.5px dashed #c8b89a', color: '#9e8e7e' }}>
+                                              + ADD
+                                            </button>
+                                          )}
+                                        </>
+                                      ) : isAvailable ? (
+                                        <div onClick={() => handleGridSlotClick(tutor, todayIso, dayLabel, block)}
+                                          className="w-full h-full rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all"
+                                          style={{ minHeight: 56, background: '#f0fdf4', border: '1.5px dashed #86efac' }}>
+                                          <PlusCircle size={14} style={{ color: '#16a34a' }} />
+                                          <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: '#16a34a' }}>Open</span>
+                                        </div>
+                                      ) : (
+                                        <div className="w-full rounded-lg flex flex-col items-center justify-center gap-1"
+                                          style={{ minHeight: 56, background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
+                                          {isOnTimeOff
+                                            ? <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
+                                            : <span className="text-[8px] font-semibold text-stone-300 uppercase tracking-wider">—</span>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  </>
                 )}
               </>
             )}
