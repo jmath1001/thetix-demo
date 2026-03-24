@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 
 import { MAX_CAPACITY, getSessionsForDay, type SessionBlock } from '@/components/constants';
@@ -39,7 +39,14 @@ export default function MasterDeployment() {
   const [localNotes, setLocalNotes] = useState<string>('');
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesSaved, setNotesSaved] = useState(false);
-  const [todayView, setTodayView] = useState(false);
+  const [todayView, setTodayView] = useState(true);
+
+  // Lock page scroll when in today view (fixed layout), restore for week view
+  useEffect(() => {
+    document.body.style.overflow = todayView ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [todayView]);
+
   const [modalTab, setModalTab] = useState<'session' | 'notes' | 'contact'>('session');
 
   const tutorPaletteMap = useMemo(() => {
@@ -110,7 +117,7 @@ export default function MasterDeployment() {
   const closeAllModals = () => { setIsEnrollModalOpen(false); setGridSlotToBook(null); };
 
   if (loading) return (
-    <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#f7f4ef' }}>
+    <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#fafafa' }}>
       <div className="flex flex-col items-center gap-3">
         <Loader2 size={28} className="animate-spin" style={{ color: '#c27d38' }} />
         <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#a07850', fontFamily: 'ui-serif, Georgia, serif' }}>Loading schedule…</p>
@@ -119,7 +126,7 @@ export default function MasterDeployment() {
   );
 
   if (error) return (
-    <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#f7f4ef' }}>
+    <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#fafafa' }}>
       <div className="text-center">
         <p className="text-sm font-bold mb-2" style={{ color: '#c0392b' }}>Failed to load</p>
         <p className="text-xs mb-6" style={{ color: '#9e8e7e' }}>{error}</p>
@@ -129,7 +136,7 @@ export default function MasterDeployment() {
   );
 
   return (
-    <div className="w-full min-h-screen pb-12 pt-11" style={{ background: '#f7f4ef', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+    <div className={`w-full pt-11 ${todayView ? '' : 'min-h-screen pb-12'}`} style={{ background: '#fafafa', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
 
       <ScheduleNav
         todayView={todayView}

@@ -48,38 +48,38 @@ export function WeekView({
           <div key={isoDate} className="space-y-3 md:space-y-4">
             <div className="flex items-center gap-3 md:gap-4 px-1">
               <div className="flex items-baseline gap-3">
-                <h2 className="text-3xl md:text-4xl font-bold tracking-tight leading-none" style={{ color: isToday ? '#c27d38' : '#1c1008', fontFamily: 'ui-serif, Georgia, serif' }}>
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight leading-none" style={{ color: isToday ? '#dc2626' : '#1f2937', fontFamily: 'ui-serif, Georgia, serif' }}>
                   {dayLabel}
                 </h2>
-                <span className="text-base md:text-lg font-semibold" style={{ color: isToday ? '#c27d38' : '#9e8e7e' }}>
+                <span className="text-base md:text-lg font-semibold" style={{ color: isToday ? '#dc2626' : '#6b7280' }}>
                   {dateLabel}
-                  {isToday && <span className="ml-2 text-[9px] font-bold px-2 py-0.5 rounded-full align-middle uppercase tracking-wider" style={{ background: '#fef3e2', border: '1px solid #f5d08a', color: '#a06020' }}>Today</span>}
+                  {isToday && <span className="ml-2 text-[9px] font-bold px-2 py-0.5 rounded-full align-middle uppercase tracking-wider" style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>Today</span>}
                 </span>
               </div>
-              <div className="h-px grow rounded-full" style={{ background: isToday ? 'linear-gradient(90deg, #f5d08a, transparent)' : 'linear-gradient(90deg, #ddd4c8, transparent)' }} />
+              <div className="h-px grow rounded-full" style={{ background: isToday ? 'linear-gradient(90deg, #fca5a5, transparent)' : 'linear-gradient(90deg, #e5e7eb, transparent)' }} />
             </div>
 
             {activeTutors.length === 0 ? (
-              <div className="rounded-xl p-6 text-center border border-dashed" style={{ borderColor: '#ddd4c8' }}>
-                <p className="text-xs font-medium italic" style={{ color: '#c4b5a0' }}>No tutors available</p>
+              <div className="rounded-xl p-6 text-center border border-dashed" style={{ borderColor: '#fca5a5' }}>
+                <p className="text-xs font-medium italic" style={{ color: '#f87171' }}>No tutors available</p>
               </div>
             ) : (
               <>
                 {/* Desktop Table */}
                 <div className="hidden md:block rounded-xl overflow-hidden"
-                  style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+                  style={{ background: 'white', border: '1px solid #fca5a5', boxShadow: '0 2px 12px rgba(220,38,38,0.07)' }}>
                   <div className="overflow-x-auto">
                     <table className="border-collapse" style={{ minWidth: '100%', width: 'max-content', borderCollapse: 'separate', borderSpacing: 0 }}>
                       <thead>
-                        <tr style={{ background: '#f7f2eb', borderBottom: '1px solid #ddd4c8' }}>
+                        <tr style={{ background: '#dc2626', borderBottom: '1px solid #b91c1c' }}>
                           <th className="px-2 py-2 text-left text-xs font-bold uppercase tracking-wider"
-                            style={{ color: '#9e8e7e', borderRight: '1px solid #ddd4c8', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#f7f2eb' }}>
+                            style={{ color: 'rgba(255,255,255,0.85)', borderRight: '1px solid rgba(255,255,255,0.15)', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#dc2626' }}>
                             Instructor
                           </th>
                           {daySessions.map(block => (
-                            <th key={block.id} className="px-3 py-2 text-center" style={{ color: '#9e8e7e', borderRight: '1px solid #ddd4c8', minWidth: 160, position: 'sticky', top: 0, background: '#f7f2eb', zIndex: 3 }}>
-                              <div className="text-sm font-black uppercase tracking-wider" style={{ color: '#1c1008' }}>{block.label}</div>
-                              <div className="text-xs font-semibold mt-0.5" style={{ color: '#57534e' }}>{block.display}</div>
+                            <th key={block.id} className="px-3 py-2 text-center" style={{ color: 'rgba(255,255,255,0.7)', borderRight: '1px solid rgba(255,255,255,0.15)', minWidth: 160, position: 'sticky', top: 0, background: '#dc2626', zIndex: 3 }}>
+                              <div className="text-sm font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.85)' }}>{block.label}</div>
+                              <div className="text-xs font-semibold mt-0.5" style={{ color: 'rgba(255,255,255,0.7)' }}>{block.display}</div>
                             </th>
                           ))}
                         </tr>
@@ -88,16 +88,16 @@ export function WeekView({
                         {activeTutors.map(tutor => {
                           const palette = TUTOR_PALETTES[tutorPaletteMap[tutor.id] ?? 0];
                           return (
-                            <tr key={tutor.id} style={{ borderBottom: '1px solid #ede6db' }}>
+                            <tr key={tutor.id} style={{ borderBottom: '1px solid #fee2e2' }}>
                               <td className="px-2 py-2 align-middle"
-                                style={{ background: 'white', borderRight: '1px solid #ddd4c8', position: 'sticky', left: 0, zIndex: 1, width: 1, whiteSpace: 'nowrap' }}>
+                                style={{ background: '#fff5f5', borderRight: '2px solid #fca5a5', position: 'sticky', left: 0, zIndex: 1, width: 1, whiteSpace: 'nowrap' }}>
                                 <div className="flex items-center gap-2">
                                   <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0"
                                     style={{ background: palette.bg, color: palette.text, border: `1px solid ${palette.border}` }}>
                                     {tutor.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                                   </div>
                                   <div>
-                                    <p className="text-xs font-bold leading-tight whitespace-nowrap" style={{ color: '#1c1008' }}>{tutor.name}</p>
+                                    <p className="text-xs font-bold leading-tight whitespace-nowrap" style={{ color: '#1f2937', fontWeight: 700 }}>{tutor.name}</p>
                                     <span className="text-[8px] font-bold px-1 py-0.5 rounded mt-0.5 inline-block"
                                       style={{ background: tutor.cat === 'math' ? '#dbeafe' : '#fce7f3', color: tutor.cat === 'math' ? '#1d4ed8' : '#be185d' }}>
                                       {tutor.cat === 'math' ? 'Math' : 'English'}
@@ -115,7 +115,7 @@ export function WeekView({
                                 const timeOffNote = isOnTimeOff ? timeOff.find(t => t.tutorId === tutor.id && t.date === isoDate)?.note : null;
                                 return (
                                   <td key={block.id} className="p-1.5 align-top"
-                                    style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
+                                    style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #fff5f5, #fff5f5 4px, #fee2e2 4px, #fee2e2 8px)' : 'white', borderRight: '1px solid #fee2e2' }}>
                                     <div className="flex flex-col gap-1 min-h-[110px]">
                                       {hasStudents && !isOnTimeOff ? (
                                         <>
@@ -129,7 +129,7 @@ export function WeekView({
                                                   : { background: palette.bg, border: `1.5px solid ${palette.border}` }}
                                               onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}>
                                               <div className="flex justify-between items-start mb-0.5">
-                                                <p className="text-xs font-bold leading-tight" style={{ color: '#1c1008' }}>{student.name}</p>
+                                                <p className="text-xs font-bold leading-tight" style={{ color: '#111827' }}>{student.name}</p>
                                                 <div className="flex items-center gap-1">
                                                   {student.confirmationStatus === 'confirmed' && <span style={{ color: '#15803d', fontSize: 10 }}>✓</span>}
                                                   {student.confirmationStatus === 'cancelled' && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
@@ -144,15 +144,15 @@ export function WeekView({
                                                     className="shrink-0 w-4 h-4 rounded flex items-center justify-center transition-all"
                                                     style={student.status === 'present'
                                                       ? { background: '#059669', border: '1.5px solid #059669' }
-                                                      : { background: 'white', border: '1.5px solid #c8b89a' }}>
+                                                      : { background: 'white', border: '1.5px solid #fca5a5' }}>
                                                     {student.status === 'present' && <Check size={9} strokeWidth={3} color="white" />}
                                                   </button>
                                                 </div>
                                               </div>
                                               <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
-                                              {student.grade && <p className="text-[9px] font-medium mt-0.5" style={{ color: '#b0a090' }}>Grade {student.grade}</p>}
+                                              {student.grade && <p className="text-[9px] font-medium mt-0.5" style={{ color: '#9ca3af' }}>Grade {student.grade}</p>}
                                               {student.notes && (
-                                                <p className="text-[9px] mt-1 italic truncate" style={{ color: '#b0a090' }}>📝 {student.notes}</p>
+                                                <p className="text-[9px] mt-1 italic truncate" style={{ color: '#9ca3af' }}>📝 {student.notes}</p>
                                               )}
                                             </div>
                                           ))}
@@ -180,11 +180,11 @@ export function WeekView({
                                           style={{ minHeight: 64, background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
                                           {isOnTimeOff ? (
                                             <>
-                                              <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
-                                              {timeOffNote && <span className="text-[8px] font-medium text-center px-2 leading-tight" style={{ color: '#b0906a' }}>{timeOffNote}</span>}
+                                              <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#dc2626' }}>OFF</span>
+                                              {timeOffNote && <span className="text-[8px] font-medium text-center px-2 leading-tight" style={{ color: '#f87171' }}>{timeOffNote}</span>}
                                             </>
                                           ) : (
-                                            <span className="text-[9px] font-semibold text-stone-300 uppercase tracking-wider">—</span>
+                                            <span style={{ color: '#fca5a5' }} className="text-[9px] font-semibold uppercase tracking-wider">—</span>
                                           )}
                                         </div>
                                       )}
@@ -205,9 +205,9 @@ export function WeekView({
                   {activeTutors.map(tutor => {
                     const palette = TUTOR_PALETTES[tutorPaletteMap[tutor.id] ?? 0];
                     return (
-                      <div key={tutor.id} className="rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #ddd4c8', boxShadow: '0 2px 8px rgba(0,0,0,0.07)' }}>
-                        <div className="p-2.5" style={{ background: '#f7f2eb', borderBottom: '1px solid #ddd4c8' }}>
-                          <p className="text-xs font-bold" style={{ color: '#1c1008' }}>{tutor.name}</p>
+                      <div key={tutor.id} className="rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #fca5a5', boxShadow: '0 2px 8px rgba(220,38,38,0.07)' }}>
+                        <div className="p-2.5" style={{ background: '#dc2626', borderBottom: '1px solid #b91c1c' }}>
+                          <p className="text-xs font-bold" style={{ color: '#1f2937', fontWeight: 700 }}>{tutor.name}</p>
                         </div>
                         <div className="overflow-x-auto">
                           <div className="flex">
@@ -220,10 +220,10 @@ export function WeekView({
                               const isOutside = !isTutorAvailable(tutor, dow, block.time) || isOnTimeOff;
                               return (
                                 <div key={block.id} className="flex-shrink-0 w-40 p-1.5"
-                                  style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' : 'white', borderRight: '1px solid #ede6db' }}>
+                                  style={{ background: isOutside ? 'repeating-linear-gradient(45deg, #fff5f5, #fff5f5 4px, #fee2e2 4px, #fee2e2 8px)' : 'white', borderRight: '1px solid #fee2e2' }}>
                                   <div className="text-center mb-1.5">
-                                    <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#3d2f1f' }}>{block.label}</div>
-                                    <div className="text-[9px] font-semibold" style={{ color: '#78716c' }}>{block.display}</div>
+                                    <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#dc2626', fontWeight: 800 }}>{block.label}</div>
+                                    <div className="text-[9px] font-semibold" style={{ color: '#9ca3af' }}>{block.display}</div>
                                   </div>
                                   <div className="space-y-1" style={{ minHeight: 64 }}>
                                     {hasStudents && !isOnTimeOff ? (
@@ -246,12 +246,12 @@ export function WeekView({
                                               className="shrink-0 w-3 h-3 rounded flex items-center justify-center"
                                               style={student.status === 'present'
                                                 ? { background: '#059669', border: '1.5px solid #059669' }
-                                                : { background: 'white', border: '1.5px solid #c8b89a' }}>
+                                                : { background: 'white', border: '1.5px solid #fca5a5' }}>
                                               {student.status === 'present' && <Check size={7} strokeWidth={3} color="white" />}
                                             </button>
                                             <div className="flex-1 min-w-0 cursor-pointer"
                                               onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}>
-                                              <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#1c1008' }}>{student.name}</p>
+                                              <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827' }}>{student.name}</p>
                                               <p className="text-[8px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
                                                 {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}
                                               </p>
@@ -261,7 +261,7 @@ export function WeekView({
                                         {!isFull && (
                                           <button onClick={() => handleGridSlotClick(tutor, isoDate, dayLabel, block)}
                                             className="w-full py-1 rounded-lg text-[7px] font-bold uppercase transition-all"
-                                            style={{ background: 'transparent', border: '1.5px dashed #c8b89a', color: '#9e8e7e' }}>
+                                            style={{ background: 'transparent', border: '1.5px dashed #fca5a5', color: '#f87171' }}>
                                             + ADD
                                           </button>
                                         )}
@@ -277,7 +277,7 @@ export function WeekView({
                                       <div className="w-full rounded-lg flex flex-col items-center justify-center gap-1"
                                         style={{ minHeight: 56, background: 'repeating-linear-gradient(45deg, #f7f2eb, #f7f2eb 4px, #f0e8d8 4px, #f0e8d8 8px)' }}>
                                         {isOnTimeOff
-                                          ? <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: '#c27d38' }}>OFF</span>
+                                          ? <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: '#dc2626' }}>OFF</span>
                                           : <span className="text-[8px] font-semibold text-stone-300 uppercase tracking-wider">—</span>}
                                       </div>
                                     )}

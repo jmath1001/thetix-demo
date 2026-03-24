@@ -81,6 +81,7 @@ export async function GET() {
       emailedTo: string;
       sessionDate: string;
       sessionTime: string;
+      sessionStudentId: string;
     };
     const summaryEntries: SummaryEntry[] = [];
 
@@ -104,17 +105,75 @@ export async function GET() {
 
         const confirmLink = `${process.env.NEXT_PUBLIC_BASE_URL}/confirm?token=${token}`;
 
-        const body = settings.reminder_body
+        // Build plain text version (fallback)
+        const plainBody = settings.reminder_body
           .replace("{{name}}", student.name)
           .replace("{{date}}", session.session_date)
           .replace("{{time}}", session.time)
           .replace("{{link}}", confirmLink);
 
+        // Build HTML version with a styled button
+        const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:ui-sans-serif,system-ui,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:white;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:hidden;">
+        <!-- Header -->
+        <tr>
+          <td style="background:#dc2626;padding:20px 28px;">
+            <p style="margin:0;font-size:18px;font-weight:800;color:white;letter-spacing:-0.3px;">${settings.center_name}</p>
+            <p style="margin:4px 0 0;font-size:12px;color:rgba(255,255,255,0.8);font-weight:500;">Session Reminder</p>
+          </td>
+        </tr>
+        <!-- Body -->
+        <tr>
+          <td style="padding:28px;">
+            <p style="margin:0 0 16px;font-size:15px;color:#111827;line-height:1.6;">
+              ${settings.reminder_body
+                .replace("{{name}}", `<strong>${student.name}</strong>`)
+                .replace("{{date}}", `<strong>${session.session_date}</strong>`)
+                .replace("{{time}}", `<strong>${session.time}</strong>`)
+                .replace("{{link}}", "")
+                .replace(/\n/g, "<br>")
+                .trim()}
+            </p>
+            <!-- Confirm button -->
+            <table cellpadding="0" cellspacing="0" style="margin:24px 0 0;">
+              <tr>
+                <td style="border-radius:8px;background:#dc2626;">
+                  <a href="${confirmLink}"
+                     style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:700;color:white;text-decoration:none;border-radius:8px;letter-spacing:0.2px;">
+                    ✓ Confirm Attendance
+                  </a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:16px 0 0;font-size:11px;color:#9ca3af;">
+              If the button doesn't work, copy this link: <a href="${confirmLink}" style="color:#dc2626;">${confirmLink}</a>
+            </p>
+          </td>
+        </tr>
+        <!-- Footer -->
+        <tr>
+          <td style="padding:16px 28px;background:#f9fafb;border-top:1px solid #f3f4f6;">
+            <p style="margin:0;font-size:11px;color:#9ca3af;">— ${settings.center_name} Automated Reminders</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: targetEmail,
           subject: settings.reminder_subject,
-          text: body,
+          text: plainBody,
+          html: htmlBody,
         });
 
         await supabase
@@ -122,11 +181,21 @@ export async function GET() {
           .update({ reminder_sent: true })
           .eq("id", entry.id);
 
+        // Log to slake_reminder_logs
+        await supabase.from("slake_reminder_logs").insert({
+          session_date: session.session_date,
+          session_time: session.time,
+          student_name: student.name,
+          emailed_to: targetEmail,
+          session_student_id: entry.id,
+        });
+
         summaryEntries.push({
           studentName: student.name,
           emailedTo: targetEmail,
           sessionDate: session.session_date,
           sessionTime: session.time,
+          sessionStudentId: entry.id,
         });
 
         sent++;
@@ -136,7 +205,6 @@ export async function GET() {
     // Send summary email to center
     if (settings.center_email) {
       if (sent === 0) {
-        // Sessions exist but all reminders were already sent previously
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: settings.center_email,
@@ -153,10 +221,7 @@ export async function GET() {
         });
       } else {
         const rows = summaryEntries
-          .map(
-            (e) =>
-              `  • ${e.studentName} (${e.emailedTo}) — ${e.sessionDate} at ${e.sessionTime}`
-          )
+          .map((e) => `  • ${e.studentName} (${e.emailedTo}) — ${e.sessionDate} at ${e.sessionTime}`)
           .join("\n");
 
         await transporter.sendMail({
