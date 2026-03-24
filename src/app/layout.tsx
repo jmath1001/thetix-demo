@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "C2 Southlake",
+  title: "C2 Coppell",
   description: "Tutor scheduling and management",
 };
 
@@ -27,8 +27,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Navbar />
-        {/* pt-14 = 56px navbar. On mobile week view navbar has a second row (~44px extra) */}
-        <main className="w-full pt-14">
+        <main className="w-full pt-16">
           {children}
         </main>
       </body>
