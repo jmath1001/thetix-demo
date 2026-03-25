@@ -18,6 +18,11 @@ export async function GET() {
     if (settingsError || !settings) throw new Error("Settings not found");
 
     const now = new Date();
+    
+    // TODAY calculation
+    const todayStr = now.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    
+    // TOMORROW calculation
     const tomorrow = new Date();
     tomorrow.setDate(now.getDate() + 1);
     const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -41,7 +46,8 @@ export async function GET() {
           )
         )
       `)
-      .eq("session_date", tomorrowStr);
+      // Logic Change: Changed .eq() to .in() to fetch both days
+      .in("session_date", [todayStr, tomorrowStr]);
 
     if (error) throw error;
 
@@ -59,11 +65,12 @@ export async function GET() {
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: settings.center_email,
-          subject: `Reminder Summary — No scheduled students for ${tomorrowStr}`,
+          // Updated subject to reflect range
+          subject: `Reminder Summary — No scheduled students for ${todayStr} - ${tomorrowStr}`,
           text: [
             `Hi,`,
             ``,
-            `The automated reminder job ran for ${tomorrowStr} but found no scheduled students to notify.`,
+            `The automated reminder job ran for the period ${todayStr} to ${tomorrowStr} but found no scheduled students to notify.`,
             ``,
             `No reminder emails were sent.`,
             ``,
@@ -121,14 +128,12 @@ export async function GET() {
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:32px 16px;">
     <tr><td align="center">
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:white;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:hidden;">
-        <!-- Header -->
         <tr>
           <td style="background:#dc2626;padding:20px 28px;">
             <p style="margin:0;font-size:18px;font-weight:800;color:white;letter-spacing:-0.3px;">${settings.center_name}</p>
             <p style="margin:4px 0 0;font-size:12px;color:rgba(255,255,255,0.8);font-weight:500;">Session Reminder</p>
           </td>
         </tr>
-        <!-- Body -->
         <tr>
           <td style="padding:28px;">
             <p style="margin:0 0 16px;font-size:15px;color:#111827;line-height:1.6;">
@@ -140,7 +145,6 @@ export async function GET() {
                 .replace(/\n/g, "<br>")
                 .trim()}
             </p>
-            <!-- Confirm button -->
             <table cellpadding="0" cellspacing="0" style="margin:24px 0 0;">
               <tr>
                 <td style="border-radius:8px;background:#dc2626;">
@@ -156,7 +160,6 @@ export async function GET() {
             </p>
           </td>
         </tr>
-        <!-- Footer -->
         <tr>
           <td style="padding:16px 28px;background:#f9fafb;border-top:1px solid #f3f4f6;">
             <p style="margin:0;font-size:11px;color:#9ca3af;">— ${settings.center_name} Automated Reminders</p>
@@ -208,11 +211,11 @@ export async function GET() {
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: settings.center_email,
-          subject: `Reminder Summary — No scheduled students for ${tomorrowStr}`,
+          subject: `Reminder Summary — No new students notified (${todayStr}/${tomorrowStr})`,
           text: [
             `Hi,`,
             ``,
-            `The automated reminder job ran for ${tomorrowStr} but found no scheduled students to notify.`,
+            `The automated reminder job ran for ${todayStr} and ${tomorrowStr} but found no new scheduled students to notify.`,
             ``,
             `No reminder emails were sent.`,
             ``,
@@ -227,11 +230,11 @@ export async function GET() {
         await transporter.sendMail({
           from: `"${settings.center_name}" <${process.env.GOOGLE_EMAIL}>`,
           to: settings.center_email,
-          subject: `Reminder Summary — ${sent} email${sent !== 1 ? "s" : ""} sent for ${tomorrowStr}`,
+          subject: `Reminder Summary — ${sent} email${sent !== 1 ? "s" : ""} sent (${todayStr}/${tomorrowStr})`,
           text: [
             `Hi,`,
             ``,
-            `Here is a summary of the reminder emails sent on ${now.toLocaleDateString("en-CA", { timeZone: "America/Chicago" })}:`,
+            `Here is a summary of the reminder emails sent on ${now.toLocaleDateString("en-CA", { timeZone: "America/Chicago" })} for today and tomorrow:`,
             ``,
             rows,
             ``,

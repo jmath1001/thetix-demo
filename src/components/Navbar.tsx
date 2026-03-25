@@ -1,14 +1,19 @@
 'use client';
 import React, { useState } from 'react';
-import { Menu, X, Calendar, Users, GraduationCap } from 'lucide-react';
+import { 
+  Menu, X, Calendar, Users, GraduationCap, 
+  Repeat, Mail 
+} from 'lucide-react';
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
 
   const navItems = [
     { name: 'Schedule', icon: Calendar, href: '/' },
-    { name: 'Manage Tutors', icon: Users, href: '/tutor' }, // You can trigger your modal here
+    { name: 'Recurring', icon: Repeat, href: '/recurring' }, // New Route
+    { name: 'Manage Tutors', icon: Users, href: '/tutor' },
     { name: 'Students', icon: GraduationCap, href: '/students' },
+    { name: 'Contact', icon: Mail, href: '/contact' },      // New Route
   ];
 
   return (
@@ -23,7 +28,11 @@ export function Navbar() {
         {/* Desktop Links (Hidden on Mobile) */}
         <div className="hidden md:flex items-center gap-6">
           {navItems.map((item) => (
-            <a key={item.name} href={item.href} className="text-sm font-medium text-stone-600 hover:text-[#6d28d9]">
+            <a 
+              key={item.name} 
+              href={item.href} 
+              className="text-sm font-medium text-stone-600 hover:text-[#ea2709] transition-colors"
+            >
               {item.name}
             </a>
           ))}
@@ -33,6 +42,7 @@ export function Navbar() {
         <button 
           className="md:hidden p-2 text-stone-600" 
           onClick={() => setIsOpen(!isOpen)}
+          aria-label="Toggle menu"
         >
           {isOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
@@ -49,7 +59,7 @@ export function Navbar() {
                 onClick={() => setIsOpen(false)}
                 className="flex items-center gap-3 p-3 rounded-xl hover:bg-stone-50 text-xs font-semibold text-stone-700"
               >
-                <item.icon size={16} className="text-[#6d28d9]" />
+                <item.icon size={16} className="text-[#ea2709]" />
                 {item.name}
               </a>
             ))}
