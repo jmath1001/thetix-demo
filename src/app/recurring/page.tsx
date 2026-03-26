@@ -15,10 +15,14 @@ import {
 import { getSessionsForDay } from '@/components/constants';
 import {
   Repeat, ChevronDown, ChevronUp, X, AlertTriangle,
-  Check, Clock, RefreshCw, Calendar, User, BookOpen, Edit3
+  RefreshCw, Calendar, User, BookOpen, Edit3, Clock,
 } from 'lucide-react';
 
-const DAY_NAMES: Record<number, string> = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
+const DAY_NAMES: Record<number, string> = {
+  1: 'Monday', 2: 'Tuesday', 3: 'Wednesday',
+  4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday',
+};
+
 const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string }> = {
   active:    { bg: '#fff5f5', text: '#dc2626', dot: '#dc2626' },
   completed: { bg: '#f0fdf4', text: '#16a34a', dot: '#16a34a' },
@@ -43,6 +47,18 @@ type SessionRow = {
   slake_sessions: { id: string; session_date: string; time: string; tutor_id: string } | null;
 };
 
+type EditTab = 'schedule' | 'duration' | 'day';
+
+function addWeeks(dateStr: string, weeks: number): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + weeks * 7);
+  return toISODate(d);
+}
+
+function endDateFromWeeks(startDate: string, totalWeeks: number): string {
+  return addWeeks(startDate, totalWeeks - 1);
+}
+
 export default function RecurringManager() {
   const [series, setSeries] = useState<RecurringSeries[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,24 +66,33 @@ export default function RecurringManager() {
   const [tutors, setTutors] = useState<Tutor[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
-  // Expanded series row
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedSessions, setExpandedSessions] = useState<SessionRow[]>([]);
   const [loadingExpanded, setLoadingExpanded] = useState(false);
 
-  // Cancel confirm
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
-  // Reschedule modal
-  const [reschedulingSeries, setReschedulingSeries] = useState<RecurringSeries | null>(null);
+  // Edit modal
+  const [editingSeries, setEditingSeries] = useState<RecurringSeries | null>(null);
+  const [editTab, setEditTab] = useState<EditTab>('schedule');
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Schedule tab
   const [newTutorId, setNewTutorId] = useState('');
   const [newTime, setNewTime] = useState('');
-  const [newTopic, setNewTopic] = useState('');
-  const [rescheduling, setRescheduling] = useState(false);
-  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
-  // Status filter
+  // Duration tab
+  const [newTotalWeeks, setNewTotalWeeks] = useState(0);
+
+  // Day tab
+  const [newDayOfWeek, setNewDayOfWeek] = useState(0);
+
+  // Confirm-deletion step (duration shortening or day change)
+  const [confirmStep, setConfirmStep] = useState(false);
+  const [sessionsToRemove, setSessionsToRemove] = useState(0);
+
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
 
   const load = useCallback(async () => {
@@ -100,35 +125,20 @@ export default function RecurringManager() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Replace your existing toggleExpand function with this:
-const toggleExpand = async (id: string) => {
-  if (expandedId === id) {
-    setExpandedId(null);
-    return;
-  }
-  setExpandedId(id);
-  setLoadingExpanded(true);
-  try {
-    const data = await fetchSeriesSessions(id);
-
-    // Map the data to flatten the slake_sessions array into a single object
-    const mappedRows: SessionRow[] = (data as any[]).map((row) => ({
-      id: row.id,
-      status: row.status,
-      notes: row.notes,
-      // If slake_sessions is an array, take the first element. 
-      // If it's already an object or null, use it as is.
-      slake_sessions: Array.isArray(row.slake_sessions)
-        ? row.slake_sessions[0] || null
-        : row.slake_sessions || null,
-    }));
-
-    setExpandedSessions(mappedRows);
-  } catch (e) {
-    console.error("Error fetching sessions:", e);
-  }
-  setLoadingExpanded(false);
-};
+  const toggleExpand = async (id: string) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    setLoadingExpanded(true);
+    try {
+      const data = await fetchSeriesSessions(id);
+      setExpandedSessions((data as any[]).map((row) => ({
+        id: row.id, status: row.status, notes: row.notes,
+        slake_sessions: Array.isArray(row.slake_sessions)
+          ? row.slake_sessions[0] || null : row.slake_sessions || null,
+      })));
+    } catch (e) { console.error('Error fetching sessions:', e); }
+    setLoadingExpanded(false);
+  };
 
   const handleCancel = async (id: string) => {
     setCancelling(true);
@@ -137,44 +147,198 @@ const toggleExpand = async (id: string) => {
       await load();
       setCancellingId(null);
       if (expandedId === id) setExpandedId(null);
-    } catch (e: any) {
-      alert(e.message);
-    }
+    } catch (e: any) { alert(e.message); }
     setCancelling(false);
   };
 
-  const openReschedule = (s: RecurringSeries) => {
-    setReschedulingSeries(s);
+  const openEdit = (s: RecurringSeries) => {
+    setEditingSeries(s);
+    setEditTab('schedule');
     setNewTutorId(s.tutorId);
     setNewTime(s.time);
-    setNewTopic(s.topic);
-    setRescheduleError(null);
+    setNewTotalWeeks(s.totalWeeks);
+    setNewDayOfWeek(s.dayOfWeek);
+    setEditError(null);
+    setConfirmStep(false);
+    setSessionsToRemove(0);
+    setEditing(false);
   };
 
-  const handleReschedule = async () => {
-    if (!reschedulingSeries) return;
-    setRescheduling(true);
-    setRescheduleError(null);
-    const student = students.find(s => s.id === reschedulingSeries.studentId);
-    if (!student) { setRescheduleError('Student not found'); setRescheduling(false); return; }
+  const closeEdit = () => {
+    setEditingSeries(null);
+    setConfirmStep(false);
+    setEditError(null);
+  };
+
+  // Fetch sessions for a series (uses cached expandedSessions if already loaded)
+  const getSeriesSessions = async (seriesId: string): Promise<SessionRow[]> => {
+    if (expandedId === seriesId) return expandedSessions;
+    const data = await fetchSeriesSessions(seriesId);
+    return (data as any[]).map((row) => ({
+      id: row.id, status: row.status, notes: row.notes,
+      slake_sessions: Array.isArray(row.slake_sessions)
+        ? row.slake_sessions[0] || null : row.slake_sessions || null,
+    }));
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editingSeries) return;
+    setEditError(null);
+    const today = toISODate(new Date());
+
+    if (editTab === 'duration') {
+      const newEnd = endDateFromWeeks(editingSeries.startDate, newTotalWeeks);
+      if (newTotalWeeks < editingSeries.totalWeeks) {
+        // Count future sessions that would be cut
+        try {
+          const sessions = await getSeriesSessions(editingSeries.id);
+          const dropping = sessions.filter(r => {
+            const d = r.slake_sessions?.session_date ?? '';
+            return d >= today && d > newEnd;
+          }).length;
+          if (dropping > 0) {
+            setSessionsToRemove(dropping);
+            setConfirmStep(true);
+            return;
+          }
+        } catch {}
+      }
+    }
+
+    if (editTab === 'day') {
+      try {
+        const sessions = await getSeriesSessions(editingSeries.id);
+        const future = sessions.filter(r => (r.slake_sessions?.session_date ?? '') >= today).length;
+        if (future > 0) {
+          setSessionsToRemove(future);
+          setConfirmStep(true);
+          return;
+        }
+      } catch {}
+    }
+
+    await commitEdit();
+  };
+
+  const commitEdit = async () => {
+    if (!editingSeries) return;
+    setEditing(true);
+    setEditError(null);
+    const student = students.find(s => s.id === editingSeries.studentId);
+    if (!student) { setEditError('Student not found'); setEditing(false); return; }
+
     try {
-      await rescheduleSeries({
-        seriesId: reschedulingSeries.id,
-        newTutorId,
-        newTime,
-        student,
-        topic: newTopic,
-      });
-      setReschedulingSeries(null);
+      if (editTab === 'schedule') {
+        await rescheduleSeries({
+          seriesId: editingSeries.id,
+          newTutorId,
+          newTime,
+          student,
+          topic: editingSeries.topic,
+        });
+
+      } else if (editTab === 'duration') {
+        const newEnd = endDateFromWeeks(editingSeries.startDate, newTotalWeeks);
+
+        // Update series record
+        const { error: updateErr } = await supabase
+          .from('slake_recurring_series')
+          .update({ end_date: newEnd, total_weeks: newTotalWeeks })
+          .eq('id', editingSeries.id);
+        if (updateErr) throw updateErr;
+
+        // Delete future sessions beyond new end date
+        const today = toISODate(new Date());
+        const sessions = await getSeriesSessions(editingSeries.id);
+        const toDrop = sessions
+          .filter(r => {
+            const d = r.slake_sessions?.session_date ?? '';
+            return d >= today && d > newEnd;
+          })
+          .map(r => r.id);
+
+        if (toDrop.length > 0) {
+          const { error: dropErr } = await supabase
+            .from('slake_session_students')
+            .delete()
+            .in('id', toDrop);
+          if (dropErr) throw dropErr;
+        }
+
+        // If extending, book new sessions from old end+1 week through new end
+        if (newTotalWeeks > editingSeries.totalWeeks) {
+          const oldEnd = editingSeries.endDate;
+          const tutor = tutors.find(t => t.id === editingSeries.tutorId);
+          if (!tutor) throw new Error('Tutor not found');
+
+          const MAX_CAPACITY = 3;
+          let cursor = new Date(oldEnd + 'T00:00:00');
+          cursor.setDate(cursor.getDate() + 7);
+
+          while (toISODate(cursor) <= newEnd) {
+            const isoDate = toISODate(cursor);
+
+            const { data: existing } = await supabase
+              .from('slake_sessions')
+              .select('id, slake_session_students(id)')
+              .eq('session_date', isoDate)
+              .eq('tutor_id', editingSeries.tutorId)
+              .eq('time', editingSeries.time)
+              .maybeSingle();
+
+            let sessionId: string;
+            if (existing) {
+              if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) {
+                throw new Error(`Session is full on ${isoDate}`);
+              }
+              sessionId = existing.id;
+            } else {
+              const { data: created, error: createErr } = await supabase
+                .from('slake_sessions')
+                .insert({ session_date: isoDate, tutor_id: editingSeries.tutorId, time: editingSeries.time })
+                .select('id')
+                .single();
+              if (createErr) throw createErr;
+              sessionId = created.id;
+            }
+
+            const { error: enrollErr } = await supabase
+              .from('slake_session_students')
+              .insert({
+                session_id: sessionId,
+                student_id: student.id,
+                name: student.name,
+                topic: editingSeries.topic,
+                status: 'scheduled',
+                series_id: editingSeries.id,
+              });
+            if (enrollErr) throw enrollErr;
+
+            cursor.setDate(cursor.getDate() + 7);
+          }
+        }
+
+      } else if (editTab === 'day') {
+        await rescheduleSeries({
+          seriesId: editingSeries.id,
+          newTutorId: editingSeries.tutorId,
+          newTime: editingSeries.time,
+          student,
+          topic: editingSeries.topic,
+          overrideDayOfWeek: newDayOfWeek,
+        });
+      }
+
+      closeEdit();
       await load();
     } catch (e: any) {
-      setRescheduleError(e.message);
+      setEditError(e.message);
+      setConfirmStep(false);
     }
-    setRescheduling(false);
+    setEditing(false);
   };
 
   const filtered = statusFilter === 'all' ? series : series.filter(s => s.status === statusFilter);
-
   const counts = {
     all: series.length,
     active: series.filter(s => s.status === 'active').length,
@@ -182,12 +346,12 @@ const toggleExpand = async (id: string) => {
     cancelled: series.filter(s => s.status === 'cancelled').length,
   };
 
-  // For reschedule: get available time slots for the selected tutor on the series day
-  const availableBlocks = reschedulingSeries
-    ? getSessionsForDay(reschedulingSeries.dayOfWeek)
+  const availableBlocks = editingSeries
+    ? getSessionsForDay(editTab === 'day' ? newDayOfWeek : editingSeries.dayOfWeek)
     : [];
 
   const today = toISODate(new Date());
+  const newEndPreview = editingSeries ? endDateFromWeeks(editingSeries.startDate, newTotalWeeks) : '';
 
   return (
     <div className="min-h-screen" style={{ background: '#fafafa', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
@@ -207,7 +371,7 @@ const toggleExpand = async (id: string) => {
           </button>
         </div>
 
-        {/* Status filter tabs */}
+        {/* Status filter */}
         <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: '#f3f4f6' }}>
           {(['all', 'active', 'completed', 'cancelled'] as const).map(f => (
             <button key={f} onClick={() => setStatusFilter(f)}
@@ -248,15 +412,12 @@ const toggleExpand = async (id: string) => {
                 <div key={s.id} className="rounded-2xl overflow-hidden transition-all"
                   style={{ background: 'white', border: `1px solid ${s.status === 'active' ? '#fca5a5' : '#e5e7eb'}`, boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
 
-                  {/* Series row */}
                   <div className="flex items-center gap-4 px-5 py-4">
-                    {/* Icon */}
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                       style={{ background: s.status === 'active' ? '#fff5f5' : '#f9fafb', border: `1.5px solid ${s.status === 'active' ? '#fca5a5' : '#e5e7eb'}` }}>
                       <Repeat size={16} style={{ color: s.status === 'active' ? '#dc2626' : '#9ca3af' }} />
                     </div>
 
-                    {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-black" style={{ color: '#111827' }}>{s.studentName}</p>
@@ -282,14 +443,13 @@ const toggleExpand = async (id: string) => {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-2 shrink-0">
                       {s.status === 'active' && (
                         <>
-                          <button onClick={() => openReschedule(s)}
+                          <button onClick={() => openEdit(s)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
                             style={{ background: '#fff5f5', border: '1px solid #fca5a5', color: '#dc2626' }}>
-                            <Edit3 size={11} /> Reschedule
+                            <Edit3 size={11} /> Edit
                           </button>
                           <button onClick={() => setCancellingId(s.id)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
@@ -306,7 +466,7 @@ const toggleExpand = async (id: string) => {
                     </div>
                   </div>
 
-                  {/* Cancel confirm inline */}
+                  {/* Cancel confirm */}
                   {isCancelling && (
                     <div className="mx-5 mb-4 px-4 py-3 rounded-xl flex items-center justify-between gap-4"
                       style={{ background: '#fef2f2', border: '1px solid #fca5a5' }}>
@@ -331,7 +491,7 @@ const toggleExpand = async (id: string) => {
                     </div>
                   )}
 
-                  {/* Expanded sessions list */}
+                  {/* Expanded sessions */}
                   {isExpanded && (
                     <div style={{ borderTop: '1px solid #f3f4f6' }}>
                       {loadingExpanded ? (
@@ -381,90 +541,233 @@ const toggleExpand = async (id: string) => {
         )}
       </div>
 
-      {/* ── RESCHEDULE MODAL ── */}
-      {reschedulingSeries && (
+      {/* ── EDIT MODAL ── */}
+      {editingSeries && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
             style={{ border: '1px solid #fca5a5' }}>
-            {/* Header */}
+
+            {/* Modal header */}
             <div className="flex items-center justify-between px-5 py-4"
               style={{ background: '#dc2626', borderBottom: '1px solid #b91c1c' }}>
               <div>
-                <p className="text-sm font-black text-white">Reschedule Series</p>
-                <p className="text-[11px] text-red-200 mt-0.5">{reschedulingSeries.studentName} · {DAY_NAMES[reschedulingSeries.dayOfWeek]}s</p>
+                <p className="text-sm font-black text-white">Edit Series</p>
+                <p className="text-[11px] text-red-200 mt-0.5">
+                  {editingSeries.studentName} · {DAY_NAMES[editingSeries.dayOfWeek]}s · {editingSeries.totalWeeks}wk
+                </p>
               </div>
-              <button onClick={() => setReschedulingSeries(null)}
+              <button onClick={closeEdit}
                 className="w-8 h-8 flex items-center justify-center rounded-full"
                 style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
                 <X size={15} />
               </button>
             </div>
 
+            {/* Tab bar */}
+            <div className="flex border-b" style={{ borderColor: '#f3f4f6' }}>
+              {([
+                { key: 'schedule', label: 'Tutor & Time', icon: <User size={11} /> },
+                { key: 'duration', label: 'Duration',     icon: <Clock size={11} /> },
+                { key: 'day',      label: 'Day of Week',  icon: <Calendar size={11} /> },
+              ] as { key: EditTab; label: string; icon: React.ReactNode }[]).map(tab => (
+                <button key={tab.key}
+                  onClick={() => { setEditTab(tab.key); setConfirmStep(false); setEditError(null); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-3 text-[11px] font-bold transition-all"
+                  style={editTab === tab.key
+                    ? { borderBottom: '2px solid #dc2626', color: '#dc2626', background: '#fff5f5' }
+                    : { borderBottom: '2px solid transparent', color: '#9ca3af' }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+
             <div className="p-5 space-y-4">
-              <div className="px-3 py-2.5 rounded-xl text-xs"
-                style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
-                <strong>Note:</strong> Past sessions are untouched. Only future sessions will be rescheduled.
-              </div>
 
-              {/* Tutor select */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
-                  Tutor
-                </label>
-                <select value={newTutorId} onChange={e => setNewTutorId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm border-2 outline-none"
-                  style={{ border: '2px solid #fca5a5', color: '#111827' }}>
-                  {tutors.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Time select */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
-                  Time Slot
-                </label>
-                <select value={newTime} onChange={e => setNewTime(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm border-2 outline-none"
-                  style={{ border: '2px solid #fca5a5', color: '#111827' }}>
-                  {availableBlocks.map(b => (
-                    <option key={b.time} value={b.time}>{b.label} ({b.display})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Topic */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
-                  Topic
-                </label>
-                <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm border-2 outline-none"
-                  style={{ border: '2px solid #fca5a5', color: '#111827' }}
-                  placeholder="Session topic" />
-              </div>
-
-              {rescheduleError && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
-                  style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>
-                  <AlertTriangle size={12} /> {rescheduleError}
+              {/* ── CONFIRM STEP ── */}
+              {confirmStep ? (
+                <div className="space-y-4">
+                  <div className="px-4 py-4 rounded-xl"
+                    style={{ background: '#fef2f2', border: '1px solid #fca5a5' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertTriangle size={16} style={{ color: '#dc2626' }} />
+                      <p className="text-sm font-black" style={{ color: '#dc2626' }}>
+                        {sessionsToRemove} future session{sessionsToRemove !== 1 ? 's' : ''} will be cancelled
+                      </p>
+                    </div>
+                    <p className="text-xs leading-relaxed" style={{ color: '#6b7280' }}>
+                      {editTab === 'duration'
+                        ? `Shortening to ${newTotalWeeks} weeks (ending ${newEndPreview}) will remove ${sessionsToRemove} already-scheduled session${sessionsToRemove !== 1 ? 's' : ''}.`
+                        : `Moving to ${DAY_NAMES[newDayOfWeek]}s will cancel ${sessionsToRemove} future session${sessionsToRemove !== 1 ? 's' : ''} and recreate them on the new day.`
+                      }
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => setConfirmStep(false)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                      style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
+                      Go Back
+                    </button>
+                    <button onClick={commitEdit} disabled={editing}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white active:scale-95"
+                      style={{ background: editing ? '#9ca3af' : '#dc2626' }}>
+                      {editing ? 'Saving…' : 'Yes, Proceed'}
+                    </button>
+                  </div>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* ── SCHEDULE TAB ── */}
+                  {editTab === 'schedule' && (
+                    <>
+                      <div className="px-3 py-2.5 rounded-xl text-xs"
+                        style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
+                        <strong>Note:</strong> Past sessions are untouched. Only future sessions will be updated.
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>Tutor</label>
+                        <select value={newTutorId} onChange={e => setNewTutorId(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                          style={{ border: '2px solid #fca5a5', color: '#111827' }}>
+                          {tutors.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>Time Slot</label>
+                        <select value={newTime} onChange={e => setNewTime(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                          style={{ border: '2px solid #fca5a5', color: '#111827' }}>
+                          {availableBlocks.map(b => <option key={b.time} value={b.time}>{b.label} ({b.display})</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
 
-              <div className="flex gap-3 pt-1">
-                <button onClick={() => setReschedulingSeries(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                  style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
-                  Cancel
-                </button>
-                <button onClick={handleReschedule} disabled={rescheduling}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95"
-                  style={{ background: rescheduling ? '#9ca3af' : '#dc2626' }}>
-                  {rescheduling ? 'Rescheduling…' : 'Confirm Reschedule'}
-                </button>
-              </div>
+                  {/* ── DURATION TAB ── */}
+                  {editTab === 'duration' && (
+                    <>
+                      <div className="px-3 py-2.5 rounded-xl text-xs"
+                        style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
+                        <strong>Shortening</strong> removes sessions beyond the new end date.{' '}
+                        <strong>Extending</strong> books new sessions through the new end date.
+                      </div>
+
+                      {/* Week stepper */}
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#6b7280' }}>Total Weeks</label>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => setNewTotalWeeks(w => Math.max(1, w - 1))}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-black active:scale-95"
+                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>
+                            −
+                          </button>
+                          <div className="flex-1 text-center">
+                            <span className="text-3xl font-black" style={{ color: '#111827' }}>{newTotalWeeks}</span>
+                            <span className="text-sm ml-1.5" style={{ color: '#6b7280' }}>weeks</span>
+                          </div>
+                          <button onClick={() => setNewTotalWeeks(w => w + 1)}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-black active:scale-95"
+                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Preview */}
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl"
+                        style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                        <div className="text-center flex-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#9ca3af' }}>Start</p>
+                          <p className="text-xs font-bold" style={{ color: '#111827' }}>{editingSeries.startDate}</p>
+                        </div>
+                        <span style={{ color: '#d1d5db', fontSize: 18 }}>→</span>
+                        <div className="text-center flex-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#9ca3af' }}>New End</p>
+                          <p className="text-xs font-bold" style={{
+                            color: newEndPreview < editingSeries.endDate ? '#dc2626'
+                              : newEndPreview > editingSeries.endDate ? '#16a34a' : '#111827'
+                          }}>{newEndPreview}</p>
+                        </div>
+                        <div className="text-center flex-1">
+                          <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color: '#9ca3af' }}>Change</p>
+                          <p className="text-xs font-bold" style={{
+                            color: newTotalWeeks < editingSeries.totalWeeks ? '#dc2626'
+                              : newTotalWeeks > editingSeries.totalWeeks ? '#16a34a' : '#9ca3af'
+                          }}>
+                            {newTotalWeeks === editingSeries.totalWeeks ? '—'
+                              : `${newTotalWeeks > editingSeries.totalWeeks ? '+' : ''}${newTotalWeeks - editingSeries.totalWeeks}wk`}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── DAY TAB ── */}
+                  {editTab === 'day' && (
+                    <>
+                      <div className="px-3 py-2.5 rounded-xl text-xs"
+                        style={{ background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
+                        <strong>Note:</strong> Future sessions on the current day will be cancelled and recreated on the new day.
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#6b7280' }}>New Day of Week</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {([1,2,3,4,5,6,7] as const).map(d => (
+                            <button key={d} onClick={() => setNewDayOfWeek(d)}
+                              className="py-2 rounded-xl text-[11px] font-black active:scale-95"
+                              style={newDayOfWeek === d
+                                ? { background: '#dc2626', color: 'white', border: '2px solid #b91c1c' }
+                                : { background: '#f9fafb', color: '#6b7280', border: '1.5px solid #e5e7eb' }}>
+                              {DAY_NAMES[d].slice(0, 3)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
+                          Time on {DAY_NAMES[newDayOfWeek]}
+                        </label>
+                        <select value={newTime} onChange={e => setNewTime(e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                          style={{ border: '2px solid #fca5a5', color: '#111827' }}>
+                          {availableBlocks.map(b => <option key={b.time} value={b.time}>{b.label} ({b.display})</option>)}
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {editError && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+                      style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>
+                      <AlertTriangle size={12} /> {editError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={closeEdit}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                      style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleEditSubmit}
+                      disabled={
+                        editing
+                        || (editTab === 'duration' && newTotalWeeks === editingSeries.totalWeeks)
+                        || (editTab === 'day' && newDayOfWeek === editingSeries.dayOfWeek)
+                      }
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white active:scale-95"
+                      style={{
+                        background: (editing
+                          || (editTab === 'duration' && newTotalWeeks === editingSeries.totalWeeks)
+                          || (editTab === 'day' && newDayOfWeek === editingSeries.dayOfWeek))
+                          ? '#9ca3af' : '#dc2626'
+                      }}>
+                      {editing ? 'Saving…' : 'Save Changes'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

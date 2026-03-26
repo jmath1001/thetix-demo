@@ -479,16 +479,15 @@ export async function cancelSeries(seriesId: string): Promise<void> {
 
   const { data: futureSessions, error: fetchErr } = await supabase
     .from('slake_session_students')
-    .select(`id, slake_sessions!inner ( session_date )`) // Use !inner join
+    .select(`id, slake_sessions!inner ( session_date )`)
     .eq('series_id', seriesId)
 
   if (fetchErr) throw fetchErr
 
-  // CORRECTED: Safe access to joined session_date
   const futureRowIds = (futureSessions ?? [])
     .filter((r: any) => {
-        const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions;
-        return session?.session_date >= today;
+      const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
+      return session?.session_date >= today
     })
     .map((r: any) => r.id)
 
@@ -509,22 +508,56 @@ export async function cancelSeries(seriesId: string): Promise<void> {
   if (updateErr) throw updateErr
 }
 
+// JS day (0=Sun…6=Sat) → ISO day-of-week (1=Mon…7=Sun)
+function jsDayToIso(jsDay: number): number {
+  return jsDay === 0 ? 7 : jsDay
+}
+
+// Find the next occurrence of targetIsoDow on or after fromDateStr
+function nextOccurrenceOfDay(fromDateStr: string, targetIsoDow: number): string {
+  const from = new Date(fromDateStr + 'T00:00:00')
+  const fromDow = jsDayToIso(from.getDay())
+  let delta = targetIsoDow - fromDow
+  if (delta < 0) delta += 7
+  const result = new Date(from)
+  result.setDate(result.getDate() + delta)
+  return toISODate(result)
+}
+
 export async function rescheduleSeries({
   seriesId,
   newTutorId,
   newTime,
   student,
   topic,
+  overrideDayOfWeek,
 }: {
   seriesId: string
   newTutorId: string
   newTime: string
   student: Student
   topic: string
+  /** Provide to move the series to a different day of the week (1=Mon…7=Sun). */
+  overrideDayOfWeek?: number
 }): Promise<void> {
   const today = toISODate(new Date())
   const MAX_CAPACITY = 3
 
+  // Fetch the series record to know current day and end date
+  const { data: seriesRow, error: seriesErr } = await supabase
+    .from('slake_recurring_series')
+    .select('end_date, day_of_week')
+    .eq('id', seriesId)
+    .single()
+
+  if (seriesErr) throw seriesErr
+
+  const seriesEndDate: string = seriesRow.end_date
+  const currentDow: number   = seriesRow.day_of_week
+  const targetDow: number    = overrideDayOfWeek ?? currentDow
+  const isDayChange           = overrideDayOfWeek !== undefined && overrideDayOfWeek !== currentDow
+
+  // Cancel all future session_students
   const { data: futureSessions, error: fetchErr } = await supabase
     .from('slake_session_students')
     .select(`id, slake_sessions!inner ( id, session_date )`)
@@ -532,10 +565,9 @@ export async function rescheduleSeries({
 
   if (fetchErr) throw fetchErr
 
-  // CORRECTED: Map the rows while checking the joined date property correctly
   const futureRows = (futureSessions ?? []).filter((r: any) => {
-    const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions;
-    return session?.session_date >= today;
+    const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
+    return session?.session_date >= today
   })
 
   if (futureRows.length > 0) {
@@ -547,12 +579,32 @@ export async function rescheduleSeries({
     if (deleteErr) throw deleteErr
   }
 
-  for (const row of futureRows) {
-    // CORRECTED: Extract session_date safely
-    const session = Array.isArray(row.slake_sessions) ? row.slake_sessions[0] : row.slake_sessions;
-    const isoDate: string = session?.session_date;
-    if (!isoDate) continue
+  // Build target dates
+  let targetDates: string[]
 
+  if (isDayChange) {
+    // Recalculate all dates on the new day of week from today through series end
+    targetDates = []
+    let cursor = nextOccurrenceOfDay(today, targetDow)
+    while (cursor <= seriesEndDate) {
+      targetDates.push(cursor)
+      const next = new Date(cursor + 'T00:00:00')
+      next.setDate(next.getDate() + 7)
+      cursor = toISODate(next)
+    }
+  } else {
+    // Same day — reuse the original cancelled dates
+    targetDates = futureRows
+      .map((r: any) => {
+        const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
+        return session?.session_date as string
+      })
+      .filter(Boolean)
+      .sort()
+  }
+
+  // Recreate sessions on target dates
+  for (const isoDate of targetDates) {
     const { data: existing } = await supabase
       .from('slake_sessions')
       .select('id, slake_session_students(id)')
@@ -592,9 +644,13 @@ export async function rescheduleSeries({
     if (enrollErr) throw enrollErr
   }
 
+  // Update the series record
+  const seriesUpdate: Record<string, any> = { tutor_id: newTutorId, time: newTime, topic }
+  if (isDayChange) seriesUpdate.day_of_week = targetDow
+
   const { error: updateErr } = await supabase
     .from('slake_recurring_series')
-    .update({ tutor_id: newTutorId, time: newTime, topic })
+    .update(seriesUpdate)
     .eq('id', seriesId)
 
   if (updateErr) throw updateErr
@@ -612,7 +668,7 @@ export async function markCompletedSeries(): Promise<void> {
   if (error) throw error
 }
 
-// ── Added Confirmation Helper ────────────────────────────────────────────────
+// ── Confirmation helper ───────────────────────────────────────────────────────
 
 export async function updateConfirmationStatus({
   rowId,
