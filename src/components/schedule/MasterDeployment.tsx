@@ -39,10 +39,21 @@ export default function MasterDeployment() {
   const [todayView, setTodayView] = useState(true);
   const [modalTab, setModalTab] = useState<'session' | 'notes'>('session');
 
-  // Lock page scroll when in today view (fixed layout), restore for week view
+  // Lock page scroll when in today view (fixed layout), restore for week view.
+  // Also pin body background to #fafafa so no dark-mode black shows through
+  // behind the fixed TodayView container.
   useEffect(() => {
-    document.body.style.overflow = todayView ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
+    if (todayView) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.background = '#fafafa';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.background = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.background = '';
+    };
   }, [todayView]);
 
   const tutorPaletteMap = useMemo(() => {
