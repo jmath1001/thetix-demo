@@ -138,6 +138,9 @@ export default function AnalyticsPage() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [weekRange, setWeekRange] = useState<4 | 8 | 12>(8);
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearResult, setClearResult] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -156,6 +159,23 @@ export default function AnalyticsPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  const clearBookings = async () => {
+    setClearing(true);
+    setClearResult(null);
+    try {
+      const { error: e1 } = await supabase.from('slake_session_students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (e1) throw e1;
+      const { error: e2 } = await supabase.from('slake_sessions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (e2) throw e2;
+      setClearResult('All bookings cleared.');
+      setClearConfirm(false);
+      await fetchData();
+    } catch (err: any) {
+      setClearResult('Error: ' + (err.message ?? 'Unknown error'));
+    }
+    setClearing(false);
+  };
 
   const today = toISODate(getCentralTimeNow());
   const currentWeek = toISODate(getWeekStart(getCentralTimeNow()));
@@ -502,6 +522,50 @@ export default function AnalyticsPage() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* ── Danger zone ── */}
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1.5px solid #fecaca' }}>
+          <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #fef2f2' }}>
+            <div>
+              <p className="text-sm font-black text-[#dc2626]">Danger Zone</p>
+              <p className="text-[10px] text-[#94a3b8] mt-0.5">Clear all bookings — use before demo or fresh pilot start</p>
+            </div>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            {clearResult && (
+              <div className="px-4 py-2.5 rounded-xl text-xs font-semibold"
+                style={{ background: clearResult.startsWith('Error') ? '#fef2f2' : '#f0fdf4', color: clearResult.startsWith('Error') ? '#dc2626' : '#16a34a', border: `1px solid ${clearResult.startsWith('Error') ? '#fecaca' : '#bbf7d0'}` }}>
+                {clearResult}
+              </div>
+            )}
+            {!clearConfirm ? (
+              <button onClick={() => { setClearConfirm(true); setClearResult(null); }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#dc2626' }}>
+                Clear All Bookings
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div className="px-4 py-3 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <p className="text-xs font-black text-[#dc2626] mb-1">Are you sure?</p>
+                  <p className="text-[11px] text-[#64748b]">This deletes all session bookings and session records. Tutor availability, students, and settings are untouched. This cannot be undone.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setClearConfirm(false)}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-bold"
+                    style={{ background: '#f1f5f9', color: '#64748b' }}>
+                    Cancel
+                  </button>
+                  <button onClick={clearBookings} disabled={clearing}
+                    className="flex-1 py-2.5 rounded-xl text-xs font-black text-white disabled:opacity-50 transition-all"
+                    style={{ background: '#dc2626' }}>
+                    {clearing ? 'Clearing…' : 'Yes, Clear Everything'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <p className="text-[10px] text-[#cbd5e1] text-center pb-4">
