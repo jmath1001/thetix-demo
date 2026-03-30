@@ -15,7 +15,7 @@ import {
 import { getSessionsForDay } from '@/components/constants';
 import {
   Repeat, ChevronDown, ChevronUp, X, AlertTriangle,
-  RefreshCw, Calendar, User, BookOpen, Edit3, Clock,
+  RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil,
 } from 'lucide-react';
 
 const DAY_NAMES: Record<number, string> = {
@@ -28,6 +28,10 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; dot: string }> =
   completed: { bg: '#f0fdf4', text: '#16a34a', dot: '#16a34a' },
   cancelled: { bg: '#f9fafb', text: '#6b7280', dot: '#9ca3af' },
 };
+
+const MATH_TOPICS = ['Algebra', 'Geometry', 'Pre-Calculus', 'Calculus', 'Statistics', 'SAT Math', 'ACT Math', 'Math'];
+const ENG_TOPICS  = ['Reading', 'Writing', 'Grammar', 'Essay', 'SAT English', 'ACT English', 'English'];
+const ALL_TOPICS  = [...MATH_TOPICS, ...ENG_TOPICS, 'Other'];
 
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS_STYLES[status] ?? STATUS_STYLES.cancelled;
@@ -44,10 +48,27 @@ type SessionRow = {
   id: string;
   status: string;
   notes: string | null;
+  topic: string | null;
+  tutorId: string | null;
   slake_sessions: { id: string; session_date: string; time: string; tutor_id: string } | null;
 };
 
 type EditTab = 'schedule' | 'duration' | 'day';
+
+// ─── Single-session edit state ────────────────────────────────────────────────
+type SingleSessionEdit = {
+  row: SessionRow;
+  series: RecurringSeries;
+  // form fields
+  newDate: string;
+  newTime: string;
+  newTutorId: string;
+  newTopic: string;
+  // ui
+  saving: boolean;
+  error: string | null;
+  confirmCancel: boolean;
+};
 
 function addWeeks(dateStr: string, weeks: number): string {
   const d = new Date(dateStr + 'T00:00:00');
@@ -57,6 +78,12 @@ function addWeeks(dateStr: string, weeks: number): string {
 
 function endDateFromWeeks(startDate: string, totalWeeks: number): string {
   return addWeeks(startDate, totalWeeks - 1);
+}
+
+// Derive day-of-week (1=Mon…7=Sun) from ISO date string
+function dowFromIso(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.getDay() === 0 ? 7 : d.getDay();
 }
 
 export default function RecurringManager() {
@@ -73,25 +100,20 @@ export default function RecurringManager() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
-  // Edit modal
+  // Series edit modal
   const [editingSeries, setEditingSeries] = useState<RecurringSeries | null>(null);
   const [editTab, setEditTab] = useState<EditTab>('schedule');
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-
-  // Schedule tab
   const [newTutorId, setNewTutorId] = useState('');
   const [newTime, setNewTime] = useState('');
-
-  // Duration tab
   const [newTotalWeeks, setNewTotalWeeks] = useState(0);
-
-  // Day tab
   const [newDayOfWeek, setNewDayOfWeek] = useState(0);
-
-  // Confirm-deletion step (duration shortening or day change)
   const [confirmStep, setConfirmStep] = useState(false);
   const [sessionsToRemove, setSessionsToRemove] = useState(0);
+
+  // ── Single-session edit modal ───────────────────────────────────────────────
+  const [singleEdit, setSingleEdit] = useState<SingleSessionEdit | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
 
@@ -131,13 +153,29 @@ export default function RecurringManager() {
     setLoadingExpanded(true);
     try {
       const data = await fetchSeriesSessions(id);
-      setExpandedSessions((data as any[]).map((row) => ({
-        id: row.id, status: row.status, notes: row.notes,
-        slake_sessions: Array.isArray(row.slake_sessions)
-          ? row.slake_sessions[0] || null : row.slake_sessions || null,
-      })));
+      setExpandedSessions(normaliseRows(data));
     } catch (e) { console.error('Error fetching sessions:', e); }
     setLoadingExpanded(false);
+  };
+
+  // Normalise raw fetchSeriesSessions rows into our SessionRow shape
+  const normaliseRows = (data: any[]): SessionRow[] =>
+    data.map((row) => ({
+      id: row.id,
+      status: row.status,
+      notes: row.notes,
+      topic: row.topic ?? null,
+      tutorId: row.slake_sessions
+        ? (Array.isArray(row.slake_sessions) ? row.slake_sessions[0]?.tutor_id : row.slake_sessions?.tutor_id) ?? null
+        : null,
+      slake_sessions: Array.isArray(row.slake_sessions)
+        ? row.slake_sessions[0] || null
+        : row.slake_sessions || null,
+    }));
+
+  const reloadExpanded = async (seriesId: string) => {
+    const data = await fetchSeriesSessions(seriesId);
+    setExpandedSessions(normaliseRows(data));
   };
 
   const handleCancel = async (id: string) => {
@@ -150,6 +188,8 @@ export default function RecurringManager() {
     } catch (e: any) { alert(e.message); }
     setCancelling(false);
   };
+
+  // ── Series edit helpers (unchanged logic) ────────────────────────────────────
 
   const openEdit = (s: RecurringSeries) => {
     setEditingSeries(s);
@@ -164,21 +204,12 @@ export default function RecurringManager() {
     setEditing(false);
   };
 
-  const closeEdit = () => {
-    setEditingSeries(null);
-    setConfirmStep(false);
-    setEditError(null);
-  };
+  const closeEdit = () => { setEditingSeries(null); setConfirmStep(false); setEditError(null); };
 
-  // Fetch sessions for a series (uses cached expandedSessions if already loaded)
   const getSeriesSessions = async (seriesId: string): Promise<SessionRow[]> => {
     if (expandedId === seriesId) return expandedSessions;
     const data = await fetchSeriesSessions(seriesId);
-    return (data as any[]).map((row) => ({
-      id: row.id, status: row.status, notes: row.notes,
-      slake_sessions: Array.isArray(row.slake_sessions)
-        ? row.slake_sessions[0] || null : row.slake_sessions || null,
-    }));
+    return normaliseRows(data);
   };
 
   const handleEditSubmit = async () => {
@@ -189,18 +220,13 @@ export default function RecurringManager() {
     if (editTab === 'duration') {
       const newEnd = endDateFromWeeks(editingSeries.startDate, newTotalWeeks);
       if (newTotalWeeks < editingSeries.totalWeeks) {
-        // Count future sessions that would be cut
         try {
           const sessions = await getSeriesSessions(editingSeries.id);
           const dropping = sessions.filter(r => {
             const d = r.slake_sessions?.session_date ?? '';
             return d >= today && d > newEnd;
           }).length;
-          if (dropping > 0) {
-            setSessionsToRemove(dropping);
-            setConfirmStep(true);
-            return;
-          }
+          if (dropping > 0) { setSessionsToRemove(dropping); setConfirmStep(true); return; }
         } catch {}
       }
     }
@@ -209,11 +235,7 @@ export default function RecurringManager() {
       try {
         const sessions = await getSeriesSessions(editingSeries.id);
         const future = sessions.filter(r => (r.slake_sessions?.session_date ?? '') >= today).length;
-        if (future > 0) {
-          setSessionsToRemove(future);
-          setConfirmStep(true);
-          return;
-        }
+        if (future > 0) { setSessionsToRemove(future); setConfirmStep(true); return; }
       } catch {}
     }
 
@@ -229,114 +251,177 @@ export default function RecurringManager() {
 
     try {
       if (editTab === 'schedule') {
-        await rescheduleSeries({
-          seriesId: editingSeries.id,
-          newTutorId,
-          newTime,
-          student,
-          topic: editingSeries.topic,
-        });
-
+        await rescheduleSeries({ seriesId: editingSeries.id, newTutorId, newTime, student, topic: editingSeries.topic });
       } else if (editTab === 'duration') {
         const newEnd = endDateFromWeeks(editingSeries.startDate, newTotalWeeks);
-
-        // Update series record
         const { error: updateErr } = await supabase
           .from('slake_recurring_series')
           .update({ end_date: newEnd, total_weeks: newTotalWeeks })
           .eq('id', editingSeries.id);
         if (updateErr) throw updateErr;
 
-        // Delete future sessions beyond new end date
         const today = toISODate(new Date());
         const sessions = await getSeriesSessions(editingSeries.id);
         const toDrop = sessions
-          .filter(r => {
-            const d = r.slake_sessions?.session_date ?? '';
-            return d >= today && d > newEnd;
-          })
+          .filter(r => { const d = r.slake_sessions?.session_date ?? ''; return d >= today && d > newEnd; })
           .map(r => r.id);
-
         if (toDrop.length > 0) {
-          const { error: dropErr } = await supabase
-            .from('slake_session_students')
-            .delete()
-            .in('id', toDrop);
+          const { error: dropErr } = await supabase.from('slake_session_students').delete().in('id', toDrop);
           if (dropErr) throw dropErr;
         }
 
-        // If extending, book new sessions from old end+1 week through new end
         if (newTotalWeeks > editingSeries.totalWeeks) {
           const oldEnd = editingSeries.endDate;
           const tutor = tutors.find(t => t.id === editingSeries.tutorId);
           if (!tutor) throw new Error('Tutor not found');
-
           const MAX_CAPACITY = 3;
           let cursor = new Date(oldEnd + 'T00:00:00');
           cursor.setDate(cursor.getDate() + 7);
-
           while (toISODate(cursor) <= newEnd) {
             const isoDate = toISODate(cursor);
-
             const { data: existing } = await supabase
-              .from('slake_sessions')
-              .select('id, slake_session_students(id)')
-              .eq('session_date', isoDate)
-              .eq('tutor_id', editingSeries.tutorId)
-              .eq('time', editingSeries.time)
+              .from('slake_sessions').select('id, slake_session_students(id)')
+              .eq('session_date', isoDate).eq('tutor_id', editingSeries.tutorId).eq('time', editingSeries.time)
               .maybeSingle();
-
             let sessionId: string;
             if (existing) {
-              if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) {
-                throw new Error(`Session is full on ${isoDate}`);
-              }
+              if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) throw new Error(`Session is full on ${isoDate}`);
               sessionId = existing.id;
             } else {
               const { data: created, error: createErr } = await supabase
-                .from('slake_sessions')
-                .insert({ session_date: isoDate, tutor_id: editingSeries.tutorId, time: editingSeries.time })
-                .select('id')
-                .single();
+                .from('slake_sessions').insert({ session_date: isoDate, tutor_id: editingSeries.tutorId, time: editingSeries.time })
+                .select('id').single();
               if (createErr) throw createErr;
               sessionId = created.id;
             }
-
-            const { error: enrollErr } = await supabase
-              .from('slake_session_students')
-              .insert({
-                session_id: sessionId,
-                student_id: student.id,
-                name: student.name,
-                topic: editingSeries.topic,
-                status: 'scheduled',
-                series_id: editingSeries.id,
-              });
+            const { error: enrollErr } = await supabase.from('slake_session_students').insert({
+              session_id: sessionId, student_id: student.id, name: student.name,
+              topic: editingSeries.topic, status: 'scheduled', series_id: editingSeries.id,
+            });
             if (enrollErr) throw enrollErr;
-
             cursor.setDate(cursor.getDate() + 7);
           }
         }
-
       } else if (editTab === 'day') {
         await rescheduleSeries({
-          seriesId: editingSeries.id,
-          newTutorId: editingSeries.tutorId,
-          newTime: editingSeries.time,
-          student,
-          topic: editingSeries.topic,
-          overrideDayOfWeek: newDayOfWeek,
+          seriesId: editingSeries.id, newTutorId: editingSeries.tutorId, newTime: editingSeries.time,
+          student, topic: editingSeries.topic, overrideDayOfWeek: newDayOfWeek,
         });
       }
-
       closeEdit();
       await load();
-    } catch (e: any) {
-      setEditError(e.message);
-      setConfirmStep(false);
-    }
+    } catch (e: any) { setEditError(e.message); setConfirmStep(false); }
     setEditing(false);
   };
+
+  // ── Single-session edit ───────────────────────────────────────────────────────
+
+  const openSingleEdit = (row: SessionRow, s: RecurringSeries) => {
+    const date = row.slake_sessions?.session_date ?? '';
+    const time = row.slake_sessions?.time ?? s.time;
+    const tutorId = row.slake_sessions?.tutor_id ?? s.tutorId;
+    setSingleEdit({
+      row,
+      series: s,
+      newDate: date,
+      newTime: time,
+      newTutorId: tutorId,
+      newTopic: row.topic ?? s.topic,
+      saving: false,
+      error: null,
+      confirmCancel: false,
+    });
+  };
+
+  const closeSingleEdit = () => setSingleEdit(null);
+
+  const patchSingle = (patch: Partial<SingleSessionEdit>) =>
+    setSingleEdit(prev => prev ? { ...prev, ...patch } : prev);
+
+  // Blocks available for the selected date in single edit
+  const singleEditBlocks = singleEdit
+    ? getSessionsForDay(dowFromIso(singleEdit.newDate))
+    : [];
+
+  const handleSingleSave = async () => {
+    if (!singleEdit) return;
+    patchSingle({ saving: true, error: null });
+
+    const { row, series: s, newDate, newTime, newTutorId: nTutor, newTopic } = singleEdit;
+    const oldSessionId = row.slake_sessions?.id;
+
+    try {
+      // 1. Remove student from the old session slot
+      const { error: removeErr } = await supabase
+        .from('slake_session_students')
+        .update({ status: 'cancelled' })   // soft-cancel the old slot row
+        .eq('id', row.id);
+      if (removeErr) throw removeErr;
+
+      // 2. Find or create the new session slot
+      const { data: existing } = await supabase
+        .from('slake_sessions')
+        .select('id, slake_session_students(id)')
+        .eq('session_date', newDate)
+        .eq('tutor_id', nTutor)
+        .eq('time', newTime)
+        .maybeSingle();
+
+      const MAX_CAPACITY = 3;
+      let newSessionId: string;
+
+      if (existing) {
+        const occupants = existing.slake_session_students?.length ?? 0;
+        if (occupants >= MAX_CAPACITY) throw new Error(`That slot is already full on ${newDate}`);
+        newSessionId = existing.id;
+      } else {
+        const { data: created, error: createErr } = await supabase
+          .from('slake_sessions')
+          .insert({ session_date: newDate, tutor_id: nTutor, time: newTime })
+          .select('id')
+          .single();
+        if (createErr) throw createErr;
+        newSessionId = created.id;
+      }
+
+      // 3. Re-insert the student into the new slot, keeping series_id
+      const student = students.find(st => st.id === s.studentId);
+      const { error: insertErr } = await supabase
+        .from('slake_session_students')
+        .insert({
+          session_id: newSessionId,
+          student_id: s.studentId,
+          name: student?.name ?? s.studentName,
+          topic: newTopic,
+          status: 'scheduled',
+          series_id: s.id,   // ← keeps it linked to the series
+        });
+      if (insertErr) throw insertErr;
+
+      closeSingleEdit();
+      await reloadExpanded(s.id);
+    } catch (e: any) {
+      patchSingle({ saving: false, error: e.message });
+    }
+  };
+
+  const handleSingleCancel = async () => {
+    if (!singleEdit) return;
+    patchSingle({ saving: true, error: null });
+    try {
+      const { error: err } = await supabase
+        .from('slake_session_students')
+        .update({ status: 'cancelled' })
+        .eq('id', singleEdit.row.id);
+      if (err) throw err;
+      closeSingleEdit();
+      await reloadExpanded(singleEdit.series.id);
+    } catch (e: any) {
+      patchSingle({ saving: false, error: e.message });
+    }
+  };
+
+  // ── Filter / counts ───────────────────────────────────────────────────────────
 
   const filtered = statusFilter === 'all' ? series : series.filter(s => s.status === statusFilter);
   const counts = {
@@ -352,6 +437,10 @@ export default function RecurringManager() {
 
   const today = toISODate(new Date());
   const newEndPreview = editingSeries ? endDateFromWeeks(editingSeries.startDate, newTotalWeeks) : '';
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen" style={{ background: '#fafafa', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
@@ -404,14 +493,15 @@ export default function RecurringManager() {
         ) : (
           <div className="space-y-3">
             {filtered.map(s => {
-              const isExpanded = expandedId === s.id;
+              const isExpanded  = expandedId === s.id;
               const isCancelling = cancellingId === s.id;
-              const isPast = s.endDate < today;
+              const isPast      = s.endDate < today;
 
               return (
                 <div key={s.id} className="rounded-2xl overflow-hidden transition-all"
                   style={{ background: 'white', border: `1px solid ${s.status === 'active' ? '#fca5a5' : '#e5e7eb'}`, boxShadow: '0 1px 6px rgba(0,0,0,0.05)' }}>
 
+                  {/* Series row */}
                   <div className="flex items-center gap-4 px-5 py-4">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                       style={{ background: s.status === 'active' ? '#fff5f5' : '#f9fafb', border: `1.5px solid ${s.status === 'active' ? '#fca5a5' : '#e5e7eb'}` }}>
@@ -449,7 +539,7 @@ export default function RecurringManager() {
                           <button onClick={() => openEdit(s)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
                             style={{ background: '#fff5f5', border: '1px solid #fca5a5', color: '#dc2626' }}>
-                            <Edit3 size={11} /> Edit
+                            <Edit3 size={11} /> Edit Series
                           </button>
                           <button onClick={() => setCancellingId(s.id)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
@@ -491,7 +581,7 @@ export default function RecurringManager() {
                     </div>
                   )}
 
-                  {/* Expanded sessions */}
+                  {/* ── Expanded session list ── */}
                   {isExpanded && (
                     <div style={{ borderTop: '1px solid #f3f4f6' }}>
                       {loadingExpanded ? (
@@ -512,20 +602,37 @@ export default function RecurringManager() {
                               .map(row => {
                                 const date = row.slake_sessions?.session_date ?? '';
                                 const isPastSession = date < today;
+                                const isCancelled = row.status === 'cancelled';
                                 const statusColor = row.status === 'present' ? '#16a34a'
                                   : row.status === 'no-show' ? '#dc2626'
+                                  : isCancelled ? '#9ca3af'
                                   : isPastSession ? '#9ca3af' : '#dc2626';
                                 const statusBg = row.status === 'present' ? '#f0fdf4'
                                   : row.status === 'no-show' ? '#fef2f2'
-                                  : isPastSession ? '#f9fafb' : '#fff5f5';
+                                  : isCancelled || isPastSession ? '#f9fafb' : '#fff5f5';
+
+                                // Only allow editing future, non-cancelled sessions
+                                const canEdit = s.status === 'active' && !isCancelled && date >= today;
+
                                 return (
-                                  <div key={row.id} className="px-3 py-2.5 rounded-xl"
+                                  <div key={row.id} className="px-3 py-2.5 rounded-xl relative group"
                                     style={{ background: statusBg, border: `1px solid ${statusColor}22` }}>
                                     <p className="text-[11px] font-bold" style={{ color: '#111827' }}>{date}</p>
                                     <div className="flex items-center gap-1 mt-0.5">
                                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: statusColor }} />
                                       <span className="text-[10px] font-semibold capitalize" style={{ color: statusColor }}>{row.status}</span>
                                     </div>
+                                    {/* Edit button — appears on hover for eligible sessions */}
+                                    {canEdit && (
+                                      <button
+                                        onClick={() => openSingleEdit(row, s)}
+                                        className="absolute top-1.5 right-1.5 w-5 h-5 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                        style={{ background: 'white', border: '1px solid #e5e7eb', color: '#6b7280' }}
+                                        title="Edit this session"
+                                      >
+                                        <Pencil size={9} />
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -541,14 +648,15 @@ export default function RecurringManager() {
         )}
       </div>
 
-      {/* ── EDIT MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          SERIES EDIT MODAL (unchanged)
+      ══════════════════════════════════════════════════════════════════════ */}
       {editingSeries && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl"
             style={{ border: '1px solid #fca5a5' }}>
 
-            {/* Modal header */}
             <div className="flex items-center justify-between px-5 py-4"
               style={{ background: '#dc2626', borderBottom: '1px solid #b91c1c' }}>
               <div>
@@ -564,7 +672,6 @@ export default function RecurringManager() {
               </button>
             </div>
 
-            {/* Tab bar */}
             <div className="flex border-b" style={{ borderColor: '#f3f4f6' }}>
               {([
                 { key: 'schedule', label: 'Tutor & Time', icon: <User size={11} /> },
@@ -583,12 +690,9 @@ export default function RecurringManager() {
             </div>
 
             <div className="p-5 space-y-4">
-
-              {/* ── CONFIRM STEP ── */}
               {confirmStep ? (
                 <div className="space-y-4">
-                  <div className="px-4 py-4 rounded-xl"
-                    style={{ background: '#fef2f2', border: '1px solid #fca5a5' }}>
+                  <div className="px-4 py-4 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fca5a5' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle size={16} style={{ color: '#dc2626' }} />
                       <p className="text-sm font-black" style={{ color: '#dc2626' }}>
@@ -598,8 +702,7 @@ export default function RecurringManager() {
                     <p className="text-xs leading-relaxed" style={{ color: '#6b7280' }}>
                       {editTab === 'duration'
                         ? `Shortening to ${newTotalWeeks} weeks (ending ${newEndPreview}) will remove ${sessionsToRemove} already-scheduled session${sessionsToRemove !== 1 ? 's' : ''}.`
-                        : `Moving to ${DAY_NAMES[newDayOfWeek]}s will cancel ${sessionsToRemove} future session${sessionsToRemove !== 1 ? 's' : ''} and recreate them on the new day.`
-                      }
+                        : `Moving to ${DAY_NAMES[newDayOfWeek]}s will cancel ${sessionsToRemove} future session${sessionsToRemove !== 1 ? 's' : ''} and recreate them on the new day.`}
                     </p>
                   </div>
                   <div className="flex gap-3">
@@ -617,7 +720,6 @@ export default function RecurringManager() {
                 </div>
               ) : (
                 <>
-                  {/* ── SCHEDULE TAB ── */}
                   {editTab === 'schedule' && (
                     <>
                       <div className="px-3 py-2.5 rounded-xl text-xs"
@@ -643,7 +745,6 @@ export default function RecurringManager() {
                     </>
                   )}
 
-                  {/* ── DURATION TAB ── */}
                   {editTab === 'duration' && (
                     <>
                       <div className="px-3 py-2.5 rounded-xl text-xs"
@@ -651,29 +752,21 @@ export default function RecurringManager() {
                         <strong>Shortening</strong> removes sessions beyond the new end date.{' '}
                         <strong>Extending</strong> books new sessions through the new end date.
                       </div>
-
-                      {/* Week stepper */}
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#6b7280' }}>Total Weeks</label>
                         <div className="flex items-center gap-3">
                           <button onClick={() => setNewTotalWeeks(w => Math.max(1, w - 1))}
                             className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-black active:scale-95"
-                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>
-                            −
-                          </button>
+                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>−</button>
                           <div className="flex-1 text-center">
                             <span className="text-3xl font-black" style={{ color: '#111827' }}>{newTotalWeeks}</span>
                             <span className="text-sm ml-1.5" style={{ color: '#6b7280' }}>weeks</span>
                           </div>
                           <button onClick={() => setNewTotalWeeks(w => w + 1)}
                             className="w-9 h-9 rounded-xl flex items-center justify-center text-lg font-black active:scale-95"
-                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>
-                            +
-                          </button>
+                            style={{ background: '#fff5f5', border: '1.5px solid #fca5a5', color: '#dc2626' }}>+</button>
                         </div>
                       </div>
-
-                      {/* Preview */}
                       <div className="flex items-center justify-between px-4 py-3 rounded-xl"
                         style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
                         <div className="text-center flex-1">
@@ -702,7 +795,6 @@ export default function RecurringManager() {
                     </>
                   )}
 
-                  {/* ── DAY TAB ── */}
                   {editTab === 'day' && (
                     <>
                       <div className="px-3 py-2.5 rounded-xl text-xs"
@@ -749,13 +841,10 @@ export default function RecurringManager() {
                       style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
                       Cancel
                     </button>
-                    <button
-                      onClick={handleEditSubmit}
-                      disabled={
-                        editing
+                    <button onClick={handleEditSubmit}
+                      disabled={editing
                         || (editTab === 'duration' && newTotalWeeks === editingSeries.totalWeeks)
-                        || (editTab === 'day' && newDayOfWeek === editingSeries.dayOfWeek)
-                      }
+                        || (editTab === 'day' && newDayOfWeek === editingSeries.dayOfWeek)}
                       className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white active:scale-95"
                       style={{
                         background: (editing
@@ -765,6 +854,170 @@ export default function RecurringManager() {
                       }}>
                       {editing ? 'Saving…' : 'Save Changes'}
                     </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          SINGLE SESSION EDIT MODAL
+      ══════════════════════════════════════════════════════════════════════ */}
+      {singleEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl"
+            style={{ border: '1px solid #e5e7eb' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4"
+              style={{ background: '#1f2937', borderBottom: '1px solid #111827' }}>
+              <div>
+                <p className="text-sm font-black text-white">Edit Single Session</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {singleEdit.series.studentName} · {singleEdit.row.slake_sessions?.session_date}
+                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold"
+                    style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
+                    Series stays intact
+                  </span>
+                </p>
+              </div>
+              <button onClick={closeSingleEdit}
+                className="w-8 h-8 flex items-center justify-center rounded-full"
+                style={{ background: 'rgba(255,255,255,0.1)', color: 'white' }}>
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+
+              {/* Cancel-this-session confirm */}
+              {singleEdit.confirmCancel ? (
+                <div className="space-y-4">
+                  <div className="px-4 py-4 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fca5a5' }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <AlertTriangle size={14} style={{ color: '#dc2626' }} />
+                      <p className="text-sm font-black" style={{ color: '#dc2626' }}>Cancel this session?</p>
+                    </div>
+                    <p className="text-xs" style={{ color: '#6b7280' }}>
+                      Only the <strong>{singleEdit.row.slake_sessions?.session_date}</strong> occurrence will be cancelled.
+                      The rest of the series is unaffected.
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => patchSingle({ confirmCancel: false })}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                      style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
+                      Go Back
+                    </button>
+                    <button onClick={handleSingleCancel} disabled={singleEdit.saving}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white"
+                      style={{ background: singleEdit.saving ? '#9ca3af' : '#dc2626' }}>
+                      {singleEdit.saving ? 'Cancelling…' : 'Yes, Cancel It'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Date */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={singleEdit.newDate}
+                      onChange={e => {
+                        // when date changes, reset time to first available block for that day
+                        const dow = dowFromIso(e.target.value);
+                        const blocks = getSessionsForDay(dow);
+                        patchSingle({
+                          newDate: e.target.value,
+                          newTime: blocks[0]?.time ?? singleEdit.newTime,
+                        });
+                      }}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                      style={{ border: '2px solid #e5e7eb', color: '#111827' }}
+                    />
+                  </div>
+
+                  {/* Time */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
+                      Time Slot
+                    </label>
+                    <select
+                      value={singleEdit.newTime}
+                      onChange={e => patchSingle({ newTime: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                      style={{ border: '2px solid #e5e7eb', color: '#111827' }}>
+                      {singleEditBlocks.map(b => (
+                        <option key={b.time} value={b.time}>{b.label} ({b.display})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Tutor */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
+                      Tutor
+                    </label>
+                    <select
+                      value={singleEdit.newTutorId}
+                      onChange={e => patchSingle({ newTutorId: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                      style={{ border: '2px solid #e5e7eb', color: '#111827' }}>
+                      {tutors.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Topic */}
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5" style={{ color: '#6b7280' }}>
+                      Topic
+                    </label>
+                    <select
+                      value={singleEdit.newTopic}
+                      onChange={e => patchSingle({ newTopic: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                      style={{ border: '2px solid #e5e7eb', color: '#111827' }}>
+                      {ALL_TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Inline error */}
+                  {singleEdit.error && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+                      style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>
+                      <AlertTriangle size={12} /> {singleEdit.error}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-1">
+                    {/* Cancel this session — destructive, kept visually separate */}
+                    <button
+                      onClick={() => patchSingle({ confirmCancel: true })}
+                      className="px-3 py-2.5 rounded-xl text-[11px] font-bold transition-all"
+                      style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>
+                      Cancel Session
+                    </button>
+                    <div className="flex gap-2 flex-1">
+                      <button onClick={closeSingleEdit}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                        style={{ background: '#f9fafb', border: '1px solid #e5e7eb', color: '#6b7280' }}>
+                        Discard
+                      </button>
+                      <button
+                        onClick={handleSingleSave}
+                        disabled={singleEdit.saving}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white active:scale-95"
+                        style={{ background: singleEdit.saving ? '#9ca3af' : '#1f2937' }}>
+                        {singleEdit.saving ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

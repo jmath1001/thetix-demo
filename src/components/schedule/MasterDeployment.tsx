@@ -25,7 +25,11 @@ import { WeekView } from './WeekView';
 import { AttendanceModal } from './AttendanceModal';
 
 export default function MasterDeployment() {
+  // todayDate drives TodayView's date picker; weekStart is always derived from
+  // it so useScheduleData always fetches the right week's sessions.
+  const [todayDate, setTodayDate] = useState<Date>(() => getCentralTimeNow());
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
+
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const { tutors, students, sessions, timeOff, loading, error, refetch } = useScheduleData(weekStart);
 
@@ -38,6 +42,13 @@ export default function MasterDeployment() {
   const [selectedTutorFilter, setSelectedTutorFilter] = useState<string | null>(null);
   const [todayView, setTodayView] = useState(true);
   const [modalTab, setModalTab] = useState<'session' | 'notes'>('session');
+
+  // When TodayView's date picker changes, keep weekStart in sync so the
+  // data hook fetches sessions for the correct week.
+  const handleTodayDateChange = useCallback((date: Date) => {
+    setTodayDate(date);
+    setWeekStart(getWeekStart(date));
+  }, []);
 
   // Lock page scroll when in today view (fixed layout), restore for week view.
   // Also pin body background to #fafafa so no dark-mode black shows through
@@ -64,7 +75,11 @@ export default function MasterDeployment() {
 
   const goToPrevWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() - 7); return d; });
   const goToNextWeek = () => setWeekStart(prev => { const d = new Date(prev); d.setDate(d.getDate() + 7); return d; });
-  const goToThisWeek = () => setWeekStart(getWeekStart(new Date()));
+  const goToThisWeek = () => {
+    const now = getCentralTimeNow();
+    setTodayDate(now);
+    setWeekStart(getWeekStart(now));
+  };
   const isCurrentWeek = toISODate(weekStart) === toISODate(getWeekStart(new Date()));
 
   const activeDates = useMemo(() =>
@@ -173,32 +188,33 @@ export default function MasterDeployment() {
         onOpenEnrollModal={() => setIsEnrollModalOpen(true)}
       />
 
-
-{todayView && (
-  <TodayView
-    tutors={tutors}
-    sessions={sessions}
-    timeOff={timeOff}
-    students={students}
-    selectedTutorFilter={selectedTutorFilter}
-    tutorPaletteMap={tutorPaletteMap}
-    setSelectedSessionWithNotes={setSelectedSessionWithNotes}
-    handleGridSlotClick={handleGridSlotClick}
-    refetch={refetch}
-    onInlineBook={async ({ tutorId, date, time, student, topic }) => {
-      await bookStudent({
-        tutorId,
-        date,
-        time,
-        student,
-        topic,
-        notes: '',
-        recurring: false,
-        recurringWeeks: 1,
-      });
-    }}
-  />
-)}
+      {todayView && (
+        <TodayView
+          tutors={tutors}
+          sessions={sessions}
+          timeOff={timeOff}
+          students={students}
+          selectedTutorFilter={selectedTutorFilter}
+          tutorPaletteMap={tutorPaletteMap}
+          setSelectedSessionWithNotes={setSelectedSessionWithNotes}
+          handleGridSlotClick={handleGridSlotClick}
+          refetch={refetch}
+          selectedDate={todayDate}
+          onDateChange={handleTodayDateChange}
+          onInlineBook={async ({ tutorId, date, time, student, topic }) => {
+            await bookStudent({
+              tutorId,
+              date,
+              time,
+              student,
+              topic,
+              notes: '',
+              recurring: false,
+              recurringWeeks: 1,
+            });
+          }}
+        />
+      )}
 
       {!todayView && (
         <WeekView
@@ -206,11 +222,24 @@ export default function MasterDeployment() {
           tutors={tutors}
           sessions={sessions}
           timeOff={timeOff}
+          students={students}
           selectedTutorFilter={selectedTutorFilter}
           tutorPaletteMap={tutorPaletteMap}
           setSelectedSessionWithNotes={setSelectedSessionWithNotes}
           handleGridSlotClick={handleGridSlotClick}
           refetch={refetch}
+          onInlineBook={async ({ tutorId, date, time, student, topic }) => {
+            await bookStudent({
+              tutorId,
+              date,
+              time,
+              student,
+              topic,
+              notes: '',
+              recurring: false,
+              recurringWeeks: 1,
+            });
+          }}
         />
       )}
 

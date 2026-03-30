@@ -1,5 +1,5 @@
 "use client"
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2 } from 'lucide-react';
 import { updateAttendance, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
@@ -51,6 +51,9 @@ interface TodayViewProps {
     topic: string;
   }) => Promise<void>;
   refetch: () => void;
+  /** Controlled date — owned by MasterDeployment so weekStart stays in sync */
+  selectedDate: Date;
+  onDateChange: (date: Date) => void;
 }
 
 export function TodayView({
@@ -64,8 +67,9 @@ export function TodayView({
   handleGridSlotClick,
   onInlineBook,
   refetch,
+  selectedDate,
+  onDateChange,
 }: TodayViewProps) {
-  const [selectedDate, setSelectedDate] = useState(new Date());
 
   // one InlineForm per slot key
   const [forms, setForms]               = useState<Record<string, InlineForm>>({});
@@ -157,7 +161,7 @@ export function TodayView({
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.value) {
-      setSelectedDate(new Date(e.target.value + 'T00:00:00'));
+      onDateChange(new Date(e.target.value + 'T00:00:00'));
       setForms({});
       setOpenDropdown(null);
     }
@@ -618,6 +622,126 @@ export function TodayView({
                   );
                 })}
               </div>
+
+              {/* ── Mobile bottom-sheet for inline booking ── */}
+              {(() => {
+                // Find any open form that belongs to a mobile slot
+                const openKey = Object.keys(forms).find(k => forms[k]);
+                if (!openKey) return null;
+                const [tutorId, , blockTime] = openKey.split('|');
+                const tutor = todayTutors.find(t => t.id === tutorId);
+                const block = daySessions.find(b => b.time === blockTime);
+                if (!tutor || !block) return null;
+                const form = forms[openKey];
+                const hints = getSuggestions(openKey);
+                const canSave = !!form.student && !!form.topic && !form.saving;
+                const topics = topicsFor(tutor);
+                return (
+                  <div className="md:hidden fixed inset-0 z-50 flex flex-col justify-end"
+                    style={{ background: 'rgba(0,0,0,0.4)' }}
+                    onMouseDown={e => { if (e.target === e.currentTarget) closeForm(openKey); }}>
+                    <div className="rounded-t-2xl overflow-hidden"
+                      style={{ background: 'white', boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' }}>
+                      {/* Handle */}
+                      <div className="flex justify-center pt-3 pb-1">
+                        <div className="w-10 h-1 rounded-full" style={{ background: '#e5e7eb' }} />
+                      </div>
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-4 pb-3 pt-1">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest" style={{ color: '#6366f1' }}>Quick Add</p>
+                          <p className="text-[11px] font-semibold mt-0.5" style={{ color: '#6b7280' }}>
+                            {tutor.name} · {block.label} ({block.display})
+                          </p>
+                        </div>
+                        <button onClick={() => closeForm(openKey)}
+                          className="w-8 h-8 flex items-center justify-center rounded-full"
+                          style={{ background: '#f3f4f6', color: '#6b7280' }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                      {/* Form body */}
+                      <div className="px-4 pb-6 space-y-3" data-inline-form>
+                        {/* Student input */}
+                        <div className="relative" data-inline-form>
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder="Student name…"
+                            value={form.student ? form.student.name : form.query}
+                            onChange={e => {
+                              patchForm(openKey, { query: e.target.value, student: null });
+                              setOpenDropdown(openKey);
+                            }}
+                            onFocus={() => setOpenDropdown(openKey)}
+                            className="w-full text-sm font-semibold rounded-xl px-4 py-3 outline-none"
+                            style={{ background: '#f3f4f6', border: '1.5px solid #e5e7eb', color: '#111827' }}
+                          />
+                          {form.student && (
+                            <button
+                              onMouseDown={e => { e.preventDefault(); patchForm(openKey, { student: null, query: '' }); }}
+                              className="absolute right-3 top-1/2 -translate-y-1/2"
+                              style={{ color: '#9ca3af' }}>
+                              <X size={14} />
+                            </button>
+                          )}
+                          {/* Suggestions — render above the input on mobile */}
+                          {openDropdown === openKey && hints.length > 0 && !form.student && (
+                            <div
+                              data-inline-form
+                              className="absolute left-0 right-0 rounded-xl overflow-hidden"
+                              style={{ bottom: 'calc(100% + 4px)', background: 'white', border: '1px solid #e5e7eb', boxShadow: '0 -4px 16px rgba(0,0,0,0.1)' }}>
+                              {hints.map(s => (
+                                <button
+                                  key={s.id}
+                                  className="w-full text-left px-4 py-3 text-sm font-semibold transition-colors"
+                                  style={{ color: '#111827', borderBottom: '1px solid #f3f4f6' }}
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    const allTopics = [...MATH_TOPICS, ...ENG_TOPICS];
+                                    const autoTopic = s.subject
+                                      ? (allTopics.find(t => t.toLowerCase() === s.subject?.toLowerCase()) ?? form.topic)
+                                      : form.topic;
+                                    patchForm(openKey, { student: s, query: s.name, topic: autoTopic });
+                                    setOpenDropdown(null);
+                                  }}>
+                                  <span>{s.name}</span>
+                                  {s.grade && <span className="ml-2 text-xs font-normal" style={{ color: '#9ca3af' }}>Gr.{s.grade}</span>}
+                                  {s.subject && <span className="ml-2 text-xs font-normal" style={{ color: '#a5b4fc' }}>{s.subject}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Topic */}
+                        <select
+                          value={form.topic}
+                          onChange={e => patchForm(openKey, { topic: e.target.value })}
+                          className="w-full text-sm font-semibold rounded-xl px-4 py-3 outline-none"
+                          style={{ background: '#f3f4f6', border: '1.5px solid #e5e7eb', color: '#374151' }}>
+                          {topics.map(t => <option key={t} value={t}>{t}</option>)}
+                          <option value="Other">Other</option>
+                        </select>
+                        {/* Error */}
+                        {form.error && (
+                          <p className="text-xs font-semibold" style={{ color: '#dc2626' }}>{form.error}</p>
+                        )}
+                        {/* Book button */}
+                        <button
+                          onClick={() => handleSave(openKey, tutor, block)}
+                          disabled={!canSave}
+                          className="w-full py-3.5 rounded-xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+                          style={{
+                            background: canSave ? '#6366f1' : '#e5e7eb',
+                            color: canSave ? 'white' : '#9ca3af',
+                          }}>
+                          {form.saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Book Student'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* ── PENDING PANEL ── */}
