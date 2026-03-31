@@ -315,19 +315,22 @@ export async function bookStudent({
     d.setDate(d.getDate() + w * 7)
     const isoDate = toISODate(d)
 
-    const { data: sessionAtTime } = await supabase
+    // ── Double-booking check: student can't be in two sessions at the same time ──
+    // Check across ALL tutors, not just the one being booked
+    const { data: sessionsAtTime } = await supabase
       .from('slake_sessions')
       .select('id')
       .eq('session_date', isoDate)
       .eq('time', time)
-      .maybeSingle()
 
-    if (sessionAtTime) {
+    if (sessionsAtTime && sessionsAtTime.length > 0) {
+      const sessionIds = sessionsAtTime.map((s: any) => s.id)
       const { data: alreadyBooked } = await supabase
         .from('slake_session_students')
         .select('id')
-        .eq('session_id', sessionAtTime.id)
+        .in('session_id', sessionIds)
         .eq('student_id', student.id)
+        .neq('status', 'cancelled')
         .maybeSingle()
 
       if (alreadyBooked) {
@@ -537,13 +540,11 @@ export async function rescheduleSeries({
   newTime: string
   student: Student
   topic: string
-  /** Provide to move the series to a different day of the week (1=Mon…7=Sun). */
   overrideDayOfWeek?: number
 }): Promise<void> {
   const today = toISODate(new Date())
   const MAX_CAPACITY = 3
 
-  // Fetch the series record to know current day and end date
   const { data: seriesRow, error: seriesErr } = await supabase
     .from('slake_recurring_series')
     .select('end_date, day_of_week')
@@ -557,7 +558,6 @@ export async function rescheduleSeries({
   const targetDow: number    = overrideDayOfWeek ?? currentDow
   const isDayChange           = overrideDayOfWeek !== undefined && overrideDayOfWeek !== currentDow
 
-  // Cancel all future session_students
   const { data: futureSessions, error: fetchErr } = await supabase
     .from('slake_session_students')
     .select(`id, slake_sessions!inner ( id, session_date )`)
@@ -579,11 +579,9 @@ export async function rescheduleSeries({
     if (deleteErr) throw deleteErr
   }
 
-  // Build target dates
   let targetDates: string[]
 
   if (isDayChange) {
-    // Recalculate all dates on the new day of week from today through series end
     targetDates = []
     let cursor = nextOccurrenceOfDay(today, targetDow)
     while (cursor <= seriesEndDate) {
@@ -593,7 +591,6 @@ export async function rescheduleSeries({
       cursor = toISODate(next)
     }
   } else {
-    // Same day — reuse the original cancelled dates
     targetDates = futureRows
       .map((r: any) => {
         const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
@@ -603,7 +600,6 @@ export async function rescheduleSeries({
       .sort()
   }
 
-  // Recreate sessions on target dates
   for (const isoDate of targetDates) {
     const { data: existing } = await supabase
       .from('slake_sessions')
@@ -644,7 +640,6 @@ export async function rescheduleSeries({
     if (enrollErr) throw enrollErr
   }
 
-  // Update the series record
   const seriesUpdate: Record<string, any> = { tutor_id: newTutorId, time: newTime, topic }
   if (isDayChange) seriesUpdate.day_of_week = targetDow
 

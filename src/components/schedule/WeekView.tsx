@@ -9,11 +9,9 @@ import { ACTIVE_DAYS, DAY_NAMES, TUTOR_PALETTES } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
 
-// ─── Topic options ────────────────────────────────────────────────────────────
 const MATH_TOPICS = ['Algebra', 'Geometry', 'Pre-Calculus', 'Calculus', 'Statistics', 'SAT Math', 'ACT Math', 'Math'];
 const ENG_TOPICS  = ['Reading', 'Writing', 'Grammar', 'Essay', 'SAT English', 'ACT English', 'English'];
 
-// ─── Inline form state ────────────────────────────────────────────────────────
 interface InlineForm {
   query: string;
   student: any | null;
@@ -32,7 +30,6 @@ const emptyForm = (tutor: Tutor): InlineForm => ({
 
 const slotKey = (tutorId: string, date: string, time: string) => `${tutorId}|${date}|${time}`;
 
-// ─── Props ────────────────────────────────────────────────────────────────────
 interface WeekViewProps {
   activeDates: Date[];
   tutors: Tutor[];
@@ -69,8 +66,6 @@ export function WeekView({
   const [forms, setForms]               = useState<Record<string, InlineForm>>({});
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  // ── form helpers ──────────────────────────────────────────────────────────
-
   const openForm = (tutor: Tutor, date: string, time: string) => {
     const key = slotKey(tutor.id, date, time);
     setForms(p => ({ ...p, [key]: emptyForm(tutor) }));
@@ -100,16 +95,14 @@ export function WeekView({
     patchForm(key, { saving: true, error: null });
     try {
       await onInlineBook({ tutorId: tutor.id, date, time: block.time, student: form.student, topic: form.topic });
-      
       closeForm(key);
-      logEvent('session_booked', { studentName: form.student.name, date, recurring: false });
+      logEvent('session_booked', { studentName: form.student.name, date, recurring: false, source: 'inline_week' });
       refetch();
     } catch (err: any) {
       patchForm(key, { saving: false, error: err?.message || 'Booking failed — please try again.' });
     }
   };
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!(e.target as Element).closest('[data-inline-form]')) setOpenDropdown(null);
@@ -117,8 +110,6 @@ export function WeekView({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
-  // ── inline form renderer ──────────────────────────────────────────────────
 
   const renderInlineForm = (tutor: Tutor, date: string, block: any, palette: any) => {
     const key   = slotKey(tutor.id, date, block.time);
@@ -129,37 +120,27 @@ export function WeekView({
     const topics  = topicsFor(tutor);
 
     return (
-      <div
-        data-inline-form
-        className="flex flex-col gap-2 p-2.5 rounded-xl"
-        style={{ background: 'white', border: '1.5px solid #6366f1', boxShadow: '0 2px 14px rgba(99,102,241,0.13)', minHeight: 110 }}
-      >
-        {/* header */}
+      <div data-inline-form className="flex flex-col gap-2 p-2.5 rounded-xl"
+        style={{ background: 'white', border: '1.5px solid #6366f1', boxShadow: '0 2px 14px rgba(99,102,241,0.13)', minHeight: 110 }}>
         <div className="flex items-center justify-between">
           <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#6366f1' }}>Quick Add</span>
           <button onClick={() => closeForm(key)} className="w-4 h-4 flex items-center justify-center rounded hover:bg-gray-100" style={{ color: '#9ca3af' }}>
             <X size={10} />
           </button>
         </div>
-
-        {/* student input */}
         <div className="relative" data-inline-form>
-          <input
-            autoFocus
-            type="text"
-            placeholder="Student name…"
+          <input autoFocus type="text" placeholder="Student name…"
             value={form.student ? form.student.name : form.query}
             onChange={e => { patchForm(key, { query: e.target.value, student: null }); setOpenDropdown(key); }}
             onFocus={() => setOpenDropdown(key)}
             className="w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none"
-            style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#111827' }}
-          />
+            style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#111827' }} />
           {form.student && (
-            <button onMouseDown={e => { e.preventDefault(); patchForm(key, { student: null, query: '' }); }} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: '#9ca3af' }}>
+            <button onMouseDown={e => { e.preventDefault(); patchForm(key, { student: null, query: '' }); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: '#9ca3af' }}>
               <X size={9} />
             </button>
           )}
-          {/* suggestions */}
           {openDropdown === key && hints.length > 0 && !form.student && (
             <div data-inline-form className="absolute z-50 left-0 right-0 rounded-lg overflow-hidden"
               style={{ top: 'calc(100% + 3px)', background: 'white', border: '1px solid #e5e7eb', boxShadow: '0 6px 20px rgba(0,0,0,0.12)' }}>
@@ -171,9 +152,7 @@ export function WeekView({
                   onMouseDown={e => {
                     e.preventDefault();
                     const allTopics = [...MATH_TOPICS, ...ENG_TOPICS];
-                    const autoTopic = s.subject
-                      ? (allTopics.find(t => t.toLowerCase() === s.subject?.toLowerCase()) ?? form.topic)
-                      : form.topic;
+                    const autoTopic = s.subject ? (allTopics.find(t => t.toLowerCase() === s.subject?.toLowerCase()) ?? form.topic) : form.topic;
                     patchForm(key, { student: s, query: s.name, topic: autoTopic });
                     setOpenDropdown(null);
                   }}>
@@ -185,17 +164,13 @@ export function WeekView({
             </div>
           )}
         </div>
-
-        {/* topic */}
         <select value={form.topic} onChange={e => patchForm(key, { topic: e.target.value })}
           className="w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none"
           style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#374151' }}>
           {topics.map(t => <option key={t} value={t}>{t}</option>)}
           <option value="Other">Other</option>
         </select>
-
         {form.error && <p className="text-[9px] font-semibold" style={{ color: '#dc2626' }}>{form.error}</p>}
-
         <button onClick={() => handleSave(key, tutor, date, block)} disabled={!canSave}
           className="w-full py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
           style={{ background: canSave ? '#6366f1' : '#e5e7eb', color: canSave ? 'white' : '#9ca3af', cursor: canSave ? 'pointer' : 'not-allowed' }}>
@@ -205,14 +180,12 @@ export function WeekView({
     );
   };
 
-  // ── available slot / add-more wrappers ────────────────────────────────────
-
   const renderAvailableSlot = (tutor: Tutor, date: string, block: any, palette: any) => {
     const key = slotKey(tutor.id, date, block.time);
     if (forms[key]) return renderInlineForm(tutor, date, block, palette);
     return (
       <div onClick={() => openForm(tutor, date, block.time)}
-        className="w-full h-full min-h-[110px] rounded-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
+        className="w-full h-full min-h-[100px] rounded-xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all"
         style={{ background: '#eaf7ef', border: '2px dashed #86efac' }}
         onMouseEnter={e => { e.currentTarget.style.background = '#d4f2e3'; e.currentTarget.style.borderColor = '#4ade80'; }}
         onMouseLeave={e => { e.currentTarget.style.background = '#eaf7ef'; e.currentTarget.style.borderColor = '#86efac'; }}>
@@ -227,7 +200,7 @@ export function WeekView({
     if (forms[key]) return renderInlineForm(tutor, date, block, palette);
     return (
       <button onClick={() => openForm(tutor, date, block.time)}
-        className="mt-auto py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all w-full"
+        className="mt-auto py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all w-full"
         style={{ background: 'transparent', border: '1.5px dashed #d1d5db', color: '#9ca3af' }}
         onMouseEnter={e => { e.currentTarget.style.background = '#1f2937'; e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = '#1f2937'; }}
         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.borderColor = '#d1d5db'; }}>
@@ -236,19 +209,15 @@ export function WeekView({
     );
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Render
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <div className="max-w-[1600px] mx-auto p-3 md:p-6 space-y-10 md:space-y-14">
       {activeDates.map((date) => {
-        const isoDate  = toISODate(date);
-        const dow      = dayOfWeek(isoDate);
-        const dayIdx   = ACTIVE_DAYS.indexOf(dow);
-        const dayLabel = DAY_NAMES[dayIdx];
+        const isoDate   = toISODate(date);
+        const dow       = dayOfWeek(isoDate);
+        const dayIdx    = ACTIVE_DAYS.indexOf(dow);
+        const dayLabel  = DAY_NAMES[dayIdx];
         const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const isToday  = isoDate === toISODate(new Date());
+        const isToday   = isoDate === toISODate(new Date());
         const activeTutors = tutors.filter(t =>
           t.availability.includes(dow) &&
           (selectedTutorFilter === null || t.id === selectedTutorFilter)
@@ -257,7 +226,6 @@ export function WeekView({
 
         return (
           <div key={isoDate} className="space-y-3 md:space-y-4">
-            {/* Day header */}
             <div className="flex items-center gap-3 md:gap-4 px-1">
               <div className="flex items-baseline gap-3">
                 <h2 className="text-3xl md:text-4xl font-bold tracking-tight leading-none"
@@ -294,8 +262,8 @@ export function WeekView({
                             Instructor
                           </th>
                           {daySessions.map(block => (
-                            <th key={block.id} className="px-3 py-2 text-center"
-                              style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 160, position: 'sticky', top: 0, background: '#1f2937', zIndex: 3 }}>
+                            <th key={block.id} className="px-4 py-2 text-center"
+                              style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 200, position: 'sticky', top: 0, background: '#1f2937', zIndex: 3 }}>
                               <div className="text-sm font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.9)' }}>{block.label}</div>
                               <div className="text-xs font-semibold mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>{block.display}</div>
                             </th>
@@ -334,23 +302,23 @@ export function WeekView({
                                 const timeOffNote = isOnTimeOff ? timeOff.find(t => t.tutorId === tutor.id && t.date === isoDate)?.note : null;
 
                                 return (
-                                  <td key={block.id} className="p-1.5 align-top"
-                                    style={{ background: isOutside ? 'repeating-linear-gradient(45deg,#e9ebee,#e9ebee 4px,#dfe2e6 4px,#dfe2e6 8px)' : '#f3f4f6', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }}>
-                                    <div className="flex flex-col gap-1 h-full min-h-[110px]">
+                                  <td key={block.id} className="p-2 align-top"
+                                    style={{ background: isOutside ? 'repeating-linear-gradient(45deg,#e9ebee,#e9ebee 4px,#dfe2e6 4px,#dfe2e6 8px)' : '#f3f4f6', borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb', minWidth: 200 }}>
+                                    <div className="flex flex-col gap-1.5 h-full min-h-[100px]">
 
-                                      {/* Booked students */}
+                                      {/* Booked students — same card style as TodayView */}
                                       {hasStudents && !isOnTimeOff && session!.students.map((student: any) => (
                                         <div key={student.rowId || student.id}
-                                          className="p-2 rounded-lg transition-all hover:shadow-md cursor-pointer"
+                                          className="p-2.5 rounded-xl cursor-pointer transition-all hover:shadow-md"
                                           style={
                                             student.status === 'no-show'  ? { background: 'transparent', border: '1.5px solid #d1d5db', opacity: 0.45 }
                                             : student.status === 'present' ? { background: '#edfaf3',     border: '1.5px solid #6ee7b7' }
                                             :                               { background: palette.bg,      border: `1.5px solid ${palette.border}` }
                                           }
                                           onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block })}>
-                                          <div className="flex justify-between items-start mb-0.5">
-                                            <p className="text-xs font-bold leading-tight" style={{ color: '#111827' }}>{student.name}</p>
-                                            <div className="flex items-center gap-1">
+                                          <div className="flex justify-between items-start mb-1">
+                                            <p className="text-sm font-bold leading-tight" style={{ color: '#111827' }}>{student.name}</p>
+                                            <div className="flex items-center gap-1 shrink-0 ml-1">
                                               {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>✓</span>}
                                               {student.confirmationStatus === 'cancelled'            && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
                                               {student.confirmationStatus === 'reschedule_requested' && <span style={{ color: '#6d28d9', fontSize: 10 }}>↗</span>}
@@ -362,11 +330,11 @@ export function WeekView({
                                                   logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' });
                                                   refetch();
                                                 }}
-                                                className="shrink-0 w-4 h-4 rounded flex items-center justify-center transition-all"
+                                                className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all"
                                                 style={student.status === 'present'
                                                   ? { background: '#059669', border: '1.5px solid #059669' }
                                                   : { background: 'white', border: '1.5px solid #d1d5db' }}>
-                                                {student.status === 'present' && <Check size={9} strokeWidth={3} color="white" />}
+                                                {student.status === 'present' && <Check size={11} strokeWidth={3} color="white" />}
                                               </button>
                                             </div>
                                           </div>
@@ -376,16 +344,15 @@ export function WeekView({
                                               <span className="text-[8px] font-black px-1 py-0.5 rounded" style={{ background: '#ede9fe', color: '#7c3aed', letterSpacing: '0.02em' }}>↺ REC</span>
                                             )}
                                           </div>
-                                          {student.grade && <p className="text-[9px] font-medium mt-0.5" style={{ color: '#9ca3af' }}>Grade {student.grade}</p>}
-                                          {student.notes && <p className="text-[9px] mt-1 italic truncate" style={{ color: '#9ca3af' }}>📝 {student.notes}</p>}
+                                          {student.grade && <p className="text-[10px] mt-0.5" style={{ color: '#9ca3af' }}>Grade {student.grade}</p>}
+                                          {student.notes && <p className="text-[10px] mt-1 italic truncate" style={{ color: '#9ca3af' }}>📝 {student.notes}</p>}
                                         </div>
                                       ))}
 
-                                      {/* Add-more / available / blocked */}
                                       {hasStudents && !isOnTimeOff && !isFull && renderAddMore(tutor, isoDate, block, session, palette)}
                                       {isAvail && renderAvailableSlot(tutor, isoDate, block, palette)}
                                       {isOutside && (
-                                        <div className="w-full h-full min-h-[110px] rounded-lg flex flex-col items-center justify-center gap-1"
+                                        <div className="w-full h-full min-h-[100px] rounded-xl flex flex-col items-center justify-center gap-1"
                                           style={{ background: 'repeating-linear-gradient(45deg,#e9ebee,#e9ebee 4px,#dfe2e6 4px,#dfe2e6 8px)' }}>
                                           {isOnTimeOff ? (
                                             <>
@@ -452,6 +419,7 @@ export function WeekView({
                                                 e.stopPropagation();
                                                 const next = student.status === 'present' ? 'scheduled' : 'present';
                                                 await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
+                                                logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' });
                                                 refetch();
                                               }}
                                               className="shrink-0 w-3 h-3 rounded flex items-center justify-center"
