@@ -73,15 +73,6 @@ export function CommandBar({ sessions = [], students = [], tutors = [], allAvail
       })),
     }))
 
-    // Build a mapping from studentId -> sessions they're in (helps the model answer who is booked where)
-    const studentSessionMap: Record<string, Array<any>> = {}
-    compactSessions.forEach(sess => {
-      (sess.students || []).forEach((st: any) => {
-        if (!studentSessionMap[st.id]) studentSessionMap[st.id] = []
-        studentSessionMap[st.id].push({ sessionId: sess.id, date: sess.date, time: sess.time, tutorId: sess.tutorId, tutorName: sess.tutorName })
-      })
-    })
-
     const weekStartIso = weekStart ?? toISODate(new Date())
     const nextWeekStartIso = nextWeekStart ?? (() => { const d = new Date(); d.setDate(new Date().getDate() + 7); return toISODate(d) })()
 
@@ -103,7 +94,6 @@ export function CommandBar({ sessions = [], students = [], tutors = [], allAvail
       nextWeekEnd: nextWeekEndIso,
       upcomingSessionsThisWeek: upcomingThisWeek,
       upcomingSessionsNextWeek: upcomingNextWeek,
-      studentSessionMap,
       availableSeats: allAvailableSeats.map(s => ({
         tutor: { name: s.tutor.name, subjects: s.tutor.subjects, id: s.tutor.id },
         dayName: s.dayName,
@@ -169,9 +159,37 @@ export function CommandBar({ sessions = [], students = [], tutors = [], allAvail
     : []
 
   const showDropdown = !!(result || loading || (isFocused && !query));
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickAway(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setResult(null)
+        setIsFocused(false)
+      }
+    }
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickAway)
+      return () => document.removeEventListener('mousedown', handleClickAway)
+    }
+  }, [showDropdown])
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: '550px' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: '550px' }}>
+      {/* Click-away Overlay */}
+      {showDropdown && (
+        <div 
+          onClick={() => { setResult(null); setIsFocused(false) }}
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            zIndex: 999 
+          }} 
+        />
+      )}
       {/* Search Input Bar */}
       <div 
         style={{ 
@@ -246,7 +264,7 @@ export function CommandBar({ sessions = [], students = [], tutors = [], allAvail
             flexDirection: 'column'
           }}
         >
-          <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, paddingRight: 6 }}>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
             {/* Suggestion View */}
             {isFocused && !query && !result && !loading && (
               <div style={{ padding: '20px' }}>
@@ -275,38 +293,51 @@ export function CommandBar({ sessions = [], students = [], tutors = [], allAvail
               </div>
             )}
 
-            {/* List Results (vertical, compact cards) */}
+            {/* List Results */}
             {result?.type === 'list' && (
-              <div style={{ padding: '18px 20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#5b6bff', textTransform: 'uppercase', marginBottom: 10 }}>{result.title}</div>
+              <div style={{ padding: '20px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', marginBottom: '14px', letterSpacing: '0.05em', opacity: 0.8 }}>{result.title}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {result.items.map((item, i) => {
+                    // Try to match to a student
                     const matches = students.filter(s => item.toLowerCase().includes(s.name.toLowerCase()))
-                    const primaryMatch = matches.length === 1 ? matches[0] : null
-                    if (primaryMatch) {
+                    const student = matches.length === 1 ? matches[0] : null
+                    
+                    if (student) {
                       return (
-                        <div key={i} style={{ padding: 12, background: '#fff', border: '1px solid rgba(15,23,42,0.04)', borderRadius: 10, boxShadow: '0 6px 18px rgba(12,20,32,0.03)', display: 'flex', gap: 12, alignItems: 'center' }}>
-                          <div style={{ width: 44, height: 44, borderRadius: 8, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#3b82f6', fontSize: 13 }}>{primaryMatch.name.charAt(0)}</div>
+                        <div key={i} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s', display: 'flex', gap: 12, alignItems: 'flex-start' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#f0f4f9'; e.currentTarget.style.borderColor = '#d0dce8' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 6, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#4338ca', fontSize: 11, flexShrink: 0 }}>
+                            {student.name.charAt(0).toUpperCase()}
+                          </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{primaryMatch.name}</div>
-                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{primaryMatch.subject ?? ''} · Grade {primaryMatch.grade ?? 'N/A'}</div>
-                            <div style={{ marginTop: 8, display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: '#334155' }}>
-                              {primaryMatch.email && <div><strong style={{ fontWeight: 700, color: '#0f172a' }}>Email:</strong> <span style={{ color: '#64748b' }}>{primaryMatch.email}</span></div>}
-                              {primaryMatch.phone && <div><strong style={{ fontWeight: 700, color: '#0f172a' }}>Phone:</strong> <span style={{ color: '#64748b' }}>{primaryMatch.phone}</span></div>}
-                              {primaryMatch.parent_phone && <div><strong style={{ fontWeight: 700, color: '#0f172a' }}>Parent:</strong> <span style={{ color: '#64748b' }}>{primaryMatch.parent_phone}</span></div>}
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b' }}>{student.name}</div>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {student.subject && <span>{student.subject}</span>}
+                              {student.grade && <span>Grade {student.grade}</span>}
+                              {student.hoursLeft !== undefined && <span>{student.hoursLeft}h left</span>}
+                              {student.parent_phone && <span>{student.parent_phone}</span>}
                             </div>
                           </div>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            <button onClick={() => { setResult(null); setQuery(''); onBookingAction({ studentId: primaryMatch.id }) }} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: '#0f172a', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Book</button>
-                          </div>
+                          <button onClick={() => { setResult(null); setQuery(''); onBookingAction({ studentId: student.id }) }} 
+                            style={{ padding: '6px 10px', borderRadius: 6, border: 'none', background: '#4338ca', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: 11, flexShrink: 0 }}>
+                            Book
+                          </button>
                         </div>
                       )
                     }
 
+                    // Generic item fallback
                     return (
-                      <div key={i} style={{ padding: 12, background: '#fff', border: '1px solid rgba(15,23,42,0.04)', borderRadius: 10, fontSize: 13, color: '#0f172a' }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{item}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>{result.title}</div>
+                      <div key={i} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 6, background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#4338ca', fontSize: 11, flexShrink: 0 }}>
+                          {item.charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item}</div>
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{result.title}</div>
+                        </div>
                       </div>
                     )
                   })}
