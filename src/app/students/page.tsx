@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Plus, Trash2, GraduationCap, Loader2, Save, X, Search, ChevronDown, ChevronUp, CalendarDays, PlusCircle, Mail, Phone, ExternalLink, Clock, BarChart2, TrendingDown, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, GraduationCap, Loader2, Save, X, Search, ChevronDown, ChevronUp, ExternalLink, BarChart2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { BookingForm, BookingToast } from '@/components/BookingForm';
 import {
@@ -8,6 +8,13 @@ import {
 } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
 import { logEvent } from '@/lib/analytics';
+
+// ── Table names ───────────────────────────────────────────────────────────────
+const p       = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
+const TUTORS   = `${p}_tutors`
+const STUDENTS = `${p}_students`
+const SESSIONS = `${p}_sessions`
+const SS       = `${p}_session_students`
 
 const EMPTY_FORM = { name: '', grade: '', email: '', phone: '', parent_name: '', parent_email: '', parent_phone: '' };
 const ACTIVE_DAYS = [1, 2, 3, 4, 6];
@@ -35,7 +42,6 @@ function avatarColor(name: string) {
   return AVATAR_PALETTE[name.charCodeAt(0) % AVATAR_PALETTE.length];
 }
 
-// ── Mini bar ─────────────────────────────────────────────────────────────────
 function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
@@ -45,11 +51,8 @@ function MiniBar({ value, max, color }: { value: number; max: number; color: str
   );
 }
 
-// ── Session timeline ──────────────────────────────────────────────────────────
-// Instead of a list, render a compact visual timeline of past sessions
 function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] }) {
-  const today = toISODate(getCentralTimeNow());
-  const past = sessions.filter(s => s.isPast).slice(0, 16); // cap for display
+  const past = sessions.filter(s => s.isPast).slice(0, 16);
   const upcoming = sessions.filter(s => !s.isPast);
 
   if (sessions.length === 0) return (
@@ -58,8 +61,7 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
     </div>
   );
 
-  const statusDot = (status: string, isPast: boolean) => {
-    if (!isPast) return { bg: '#e2e8f0', title: 'Upcoming' };
+  const statusDot = (status: string) => {
     if (status === 'present' || status === 'confirmed') return { bg: '#16a34a', title: 'Present' };
     if (status === 'no-show') return { bg: '#dc2626', title: 'No-show' };
     return { bg: '#f59e0b', title: 'Unmarked' };
@@ -67,12 +69,9 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
 
   return (
     <div className="space-y-4">
-      {/* Upcoming — compact single cards */}
       {upcoming.length > 0 && (
         <div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-[#dc2626] mb-2">
-            Upcoming · {upcoming.length}
-          </p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-[#dc2626] mb-2">Upcoming · {upcoming.length}</p>
           <div className="space-y-1.5">
             {upcoming.map((s, i) => {
               const d = new Date(s.date + 'T00:00:00');
@@ -80,9 +79,7 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
                 <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-xl"
                   style={{ background: '#fafafa', border: '1px solid #f1f5f9' }}>
                   <div className="text-center shrink-0 w-8">
-                    <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">
-                      {d.toLocaleDateString('en-US', { month: 'short' })}
-                    </p>
+                    <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
                     <p className="text-sm font-black text-[#1e293b] leading-tight">{d.getDate()}</p>
                   </div>
                   <div className="flex-1 min-w-0">
@@ -90,9 +87,7 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
                     <p className="text-[10px] text-[#94a3b8] truncate">{s.tutorName} · {s.blockLabel}</p>
                   </div>
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                    style={{ background: '#f0fdf4', color: '#16a34a' }}>
-                    Scheduled
-                  </span>
+                    style={{ background: '#f0fdf4', color: '#16a34a' }}>Scheduled</span>
                 </div>
               );
             })}
@@ -100,27 +95,22 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
         </div>
       )}
 
-      {/* Past — dot timeline */}
       {past.length > 0 && (
         <div>
-          <p className="text-[9px] font-black uppercase tracking-widest text-[#94a3b8] mb-3">
-            History · {past.length} sessions
-          </p>
-          {/* Dot grid — most recent first, 8 per row */}
+          <p className="text-[9px] font-black uppercase tracking-widest text-[#94a3b8] mb-3">History · {past.length} sessions</p>
           <div className="flex flex-wrap gap-1.5 mb-3">
             {past.map((s, i) => {
-              const dot = statusDot(s.status, true);
+              const dot = statusDot(s.status);
               const d = new Date(s.date + 'T00:00:00');
               return (
-                <div key={i} title={`${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${s.topic} · ${dot.title}`}
-                  className="w-5 h-5 rounded-full flex items-center justify-center cursor-default transition-transform hover:scale-125"
-                  style={{ background: dot.bg }}>
-                </div>
+                <div key={i}
+                  title={`${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${s.topic} · ${dot.title}`}
+                  className="w-5 h-5 rounded-full cursor-default transition-transform hover:scale-125"
+                  style={{ background: dot.bg }} />
               );
             })}
           </div>
-          {/* Legend */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mb-3">
             {[['#16a34a','Present'],['#dc2626','No-show'],['#f59e0b','Unmarked']].map(([c,l]) => (
               <div key={l} className="flex items-center gap-1">
                 <div className="w-2.5 h-2.5 rounded-full" style={{ background: c }}/>
@@ -128,9 +118,7 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
               </div>
             ))}
           </div>
-
-          {/* Last 4 sessions detail */}
-          <div className="mt-3 space-y-1">
+          <div className="space-y-1">
             <p className="text-[9px] font-black uppercase tracking-widest text-[#94a3b8] mb-1.5">Recent</p>
             {past.slice(0, 4).map((s, i) => {
               const d = new Date(s.date + 'T00:00:00');
@@ -139,9 +127,7 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
                 <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-xl"
                   style={{ background: '#fafafa', border: '1px solid #f1f5f9' }}>
                   <div className="text-center shrink-0 w-8">
-                    <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">
-                      {d.toLocaleDateString('en-US', { month: 'short' })}
-                    </p>
+                    <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
                     <p className="text-sm font-black text-[#94a3b8] leading-tight">{d.getDate()}</p>
                   </div>
                   <div className="flex-1 min-w-0">
@@ -149,16 +135,12 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
                     <p className="text-[10px] text-[#94a3b8] truncate">{s.tutorName}</p>
                   </div>
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                    style={{ background: meta.bg, color: meta.text }}>
-                    {meta.label}
-                  </span>
+                    style={{ background: meta.bg, color: meta.text }}>{meta.label}</span>
                 </div>
               );
             })}
             {past.length > 4 && (
-              <p className="text-[10px] text-[#94a3b8] text-center pt-1">
-                +{past.length - 4} more sessions
-              </p>
+              <p className="text-[10px] text-[#94a3b8] text-center pt-1">+{past.length - 4} more sessions</p>
             )}
           </div>
         </div>
@@ -167,7 +149,6 @@ function SessionTimeline({ sessions, tutors }: { sessions: any[]; tutors: any[] 
   );
 }
 
-// ── MetricsPanel ─────────────────────────────────────────────────────────────
 function MetricsPanel({ students, allSessions, tutors }: { students: any[]; allSessions: any[]; tutors: any[] }) {
   const [open, setOpen] = useState(false);
 
@@ -316,7 +297,6 @@ function MetricsPanel({ students, allSessions, tutors }: { students: any[]; allS
   );
 }
 
-// ── Field ─────────────────────────────────────────────────────────────────────
 function Field({ label, value, field, type = 'text', isEditing, draft, onChange }: {
   label: string; value: string; field: string; type?: string;
   isEditing: boolean; draft: any; onChange: (f: string, v: string) => void;
@@ -331,7 +311,6 @@ function Field({ label, value, field, type = 'text', isEditing, draft, onChange 
   );
 }
 
-// ── StudentCard ───────────────────────────────────────────────────────────────
 function StudentCard({
   student, onRefetch, tutors, allSessions, allAvailableSeats, onBookingSuccess,
 }: {
@@ -380,19 +359,19 @@ function StudentCard({
 
   const handleUpdate = async () => {
     setSaving(true);
-    const { error } = await supabase.from('slake_students').update({
+    const { error } = await supabase.from(STUDENTS).update({
       name: draft.name, grade: draft.grade,
       email: draft.email || null, phone: draft.phone || null,
       parent_name: draft.parent_name || null, parent_email: draft.parent_email || null,
       parent_phone: draft.parent_phone || null, bluebook_url: draft.bluebook_url || null,
     }).eq('id', student.id);
-if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { studentName: draft.name }); }
+    if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { studentName: draft.name }); }
     setSaving(false);
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); return; }
-    await supabase.from('slake_students').delete().eq('id', student.id);
+    await supabase.from(STUDENTS).delete().eq('id', student.id);
     logEvent('student_deleted', {});
     onRefetch();
   };
@@ -416,20 +395,14 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
     <>
       <div className="bg-white rounded-2xl overflow-hidden transition-all"
         style={{ border: expanded ? '1.5px solid #fecaca' : '1.5px solid #f1f5f9' }}>
-
-        {/* ── Collapsed row ── */}
         <div className="px-4 py-3.5 flex items-center gap-3">
-          {/* Avatar */}
           <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0"
             style={{ background: color }}>{initials}</div>
 
-          {/* Main info */}
           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpanded(e => !e)}>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-black text-[#0f172a]">{student.name}</span>
-              {student.grade && (
-                <span className="text-[9px] font-bold text-[#94a3b8]">Gr. {student.grade}</span>
-              )}
+              {student.grade && <span className="text-[9px] font-bold text-[#94a3b8]">Gr. {student.grade}</span>}
               {isAtRisk && (
                 <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
                   style={{ background: '#fef2f2', color: '#dc2626' }}>
@@ -437,31 +410,21 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
                 </span>
               )}
             </div>
-
-            {/* Single-line status */}
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              {/* Booking status */}
               <span className="flex items-center gap-1 text-[10px] font-semibold"
                 style={{ color: isBooked ? '#16a34a' : '#dc2626' }}>
-                <span className="w-1.5 h-1.5 rounded-full inline-block"
-                  style={{ background: isBooked ? '#16a34a' : '#dc2626' }}/>
+                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: isBooked ? '#16a34a' : '#dc2626' }}/>
                 {isBooked ? 'Booked' : 'Not booked'}
               </span>
-
-              {/* Attendance rate — only if has history */}
               {past.length > 0 && (
                 <>
                   <span className="text-[#e2e8f0]">·</span>
                   <span className="text-[10px] font-semibold" style={{ color: rateColor }}>
                     {rate !== null ? `${Math.round(rate * 100)}%` : '—'} attendance
                   </span>
-                  {noShowCount > 0 && (
-                    <span className="text-[10px] text-[#94a3b8]">{noShowCount} no-show{noShowCount !== 1 ? 's' : ''}</span>
-                  )}
+                  {noShowCount > 0 && <span className="text-[10px] text-[#94a3b8]">{noShowCount} no-show{noShowCount !== 1 ? 's' : ''}</span>}
                 </>
               )}
-
-              {/* Next session */}
               {nextSession && (
                 <>
                   <span className="text-[#e2e8f0]">·</span>
@@ -473,20 +436,15 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={() => setShowBooking(true)}
               className="px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-white transition-all active:scale-95"
-              style={{ background: '#dc2626' }}>
-              Book
-            </button>
+              style={{ background: '#dc2626' }}>Book</button>
             {!isEditing && (
               <>
                 <button onClick={() => { setIsEditing(true); setExpanded(true); setTab('contact'); }}
                   className="px-2 py-1.5 rounded-lg text-[10px] font-bold text-[#64748b] transition-all"
-                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  Edit
-                </button>
+                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>Edit</button>
                 <button onClick={handleDelete}
                   className={`p-1.5 rounded-lg transition-all ${confirmDelete ? 'bg-red-100 text-red-600 text-xs font-black px-2' : 'text-[#cbd5e1] hover:text-red-400'}`}>
                   {confirmDelete ? '?' : <Trash2 size={12}/>}
@@ -495,8 +453,7 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
             )}
             {isEditing && (
               <>
-                <button onClick={() => { setIsEditing(false); setDraft(student); }}
-                  className="p-1.5 rounded-lg text-[#94a3b8]"><X size={13}/></button>
+                <button onClick={() => { setIsEditing(false); setDraft(student); }} className="p-1.5 rounded-lg text-[#94a3b8]"><X size={13}/></button>
                 <button onClick={handleUpdate} disabled={saving}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black text-white disabled:opacity-50"
                   style={{ background: '#0f172a' }}>
@@ -504,34 +461,26 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
                 </button>
               </>
             )}
-            <button onClick={() => setExpanded(e => !e)}
-              className="p-1.5 rounded-lg text-[#94a3b8] transition-all">
+            <button onClick={() => setExpanded(e => !e)} className="p-1.5 rounded-lg text-[#94a3b8] transition-all">
               {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
             </button>
           </div>
         </div>
 
-        {/* ── Expanded ── */}
         {expanded && (
           <div style={{ borderTop: '1px solid #f8fafc' }}>
-            {/* Tab bar */}
             <div className="flex px-4 gap-0" style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
               {(['sessions', 'contact'] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)}
                   className="py-2.5 mr-5 text-[10px] font-black uppercase tracking-widest border-b-2 -mb-px transition-colors"
-                  style={tab === t
-                    ? { color: '#dc2626', borderColor: '#dc2626' }
-                    : { color: '#94a3b8', borderColor: 'transparent' }}>
+                  style={tab === t ? { color: '#dc2626', borderColor: '#dc2626' } : { color: '#94a3b8', borderColor: 'transparent' }}>
                   {t === 'sessions' ? `Sessions (${allStudentSessions.length})` : 'Contact'}
                 </button>
               ))}
             </div>
 
             <div className="p-4">
-              {tab === 'sessions' && (
-                <SessionTimeline sessions={allStudentSessions} tutors={tutors} />
-              )}
-
+              {tab === 'sessions' && <SessionTimeline sessions={allStudentSessions} tutors={tutors} />}
               {tab === 'contact' && (
                 <div className="space-y-4">
                   <div>
@@ -553,10 +502,10 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-widest mb-2 text-[#dc2626]">Bluebook</p>
                     {isEditing
-                      ? <input type="url" value={draft.bluebook_url ?? ''} onChange={e => handleDraftChange('bluebook_url', e.target.value)} className={inputCls} placeholder="https://yourorg.sharepoint.com/..."/>
+                      ? <input type="url" value={draft.bluebook_url ?? ''} onChange={e => handleDraftChange('bluebook_url', e.target.value)} className={inputCls} placeholder="https://..."/>
                       : student.bluebook_url
                         ? <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
+                            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold"
                             style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', color: '#15803d' }}>
                             <ExternalLink size={12}/> Open Bluebook
                           </a>
@@ -565,8 +514,7 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
                   {isEditing && (
                     <div className="flex justify-end gap-2 pt-1">
                       <button onClick={() => { setIsEditing(false); setDraft(student); }}
-                        className="px-4 py-2 text-xs font-bold text-[#64748b] rounded-xl"
-                        style={{ background: '#f1f5f9' }}>Cancel</button>
+                        className="px-4 py-2 text-xs font-bold text-[#64748b] rounded-xl" style={{ background: '#f1f5f9' }}>Cancel</button>
                       <button onClick={handleUpdate} disabled={saving}
                         className="flex items-center gap-2 px-5 py-2 text-white rounded-xl text-xs font-black disabled:opacity-50"
                         style={{ background: '#dc2626' }}>
@@ -592,7 +540,6 @@ if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { stu
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function StudentAdminPage() {
   const [students, setStudents] = useState<any[]>([]);
   const [tutors, setTutors] = useState<any[]>([]);
@@ -608,17 +555,17 @@ export default function StudentAdminPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [sRes, tRes, sesRes] = await Promise.all([
-      supabase.from('slake_students').select('*').order('name'),
-      supabase.from('slake_tutors').select('*').order('name'),
-      supabase.from('slake_sessions')
-        .select('id, session_date, tutor_id, time, slake_session_students(id, student_id, name, topic, status)')
-        .order('session_date'),
+      supabase.from(STUDENTS).select('*').order('name'),
+      supabase.from(TUTORS).select('*').order('name'),
+      (supabase.from(SESSIONS)
+        .select(`id, session_date, tutor_id, time, ${SS}(id, student_id, name, topic, status)`)
+        .order('session_date') as any),
     ]);
     setStudents(sRes.data ?? []);
     setTutors(tRes.data ?? []);
     setAllSessions((sesRes.data ?? []).map((r: any) => ({
       id: r.id, date: r.session_date, tutorId: r.tutor_id, time: r.time,
-      students: (r.slake_session_students ?? []).map((ss: any) => ({
+      students: (r[SS] ?? []).map((ss: any) => ({
         id: ss.student_id, rowId: ss.id, name: ss.name, topic: ss.topic, status: ss.status,
       })),
     })));
@@ -670,7 +617,7 @@ export default function StudentAdminPage() {
   const handleCreate = async () => {
     if (!newStudent.name) return;
     setCreating(true);
-    await supabase.from('slake_students').insert([{
+    await supabase.from(STUDENTS).insert([{
       name: newStudent.name, grade: newStudent.grade || null,
       email: newStudent.email || null, phone: newStudent.phone || null,
       parent_name: newStudent.parent_name || null, parent_email: newStudent.parent_email || null,
@@ -681,7 +628,6 @@ export default function StudentAdminPage() {
 
   return (
     <div className="min-h-screen pb-20" style={{ background: '#f8fafc', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-      {/* Header */}
       <div className="sticky top-0 z-40 bg-white border-b border-[#f1f5f9]">
         <div className="max-w-3xl mx-auto px-5 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -703,7 +649,6 @@ export default function StudentAdminPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-5 pt-5 space-y-4">
-        {/* Stats */}
         {!loading && (
           <div className="grid grid-cols-3 gap-3">
             {[
@@ -721,10 +666,8 @@ export default function StudentAdminPage() {
           </div>
         )}
 
-        {/* Metrics */}
         {!loading && <MetricsPanel students={students} allSessions={allSessions} tutors={tutors}/>}
 
-        {/* Search */}
         <div className="relative">
           <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94a3b8]"/>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…"
@@ -732,7 +675,6 @@ export default function StudentAdminPage() {
           {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8]"><X size={13}/></button>}
         </div>
 
-        {/* Add form */}
         {adding && (
           <div className="bg-white rounded-2xl overflow-hidden shadow-sm" style={{ border: '1.5px solid #fecaca' }}>
             <div className="px-5 py-3.5 flex items-center justify-between" style={{ background: '#fff5f5', borderBottom: '1px solid #fecdd3' }}>
@@ -753,10 +695,10 @@ export default function StudentAdminPage() {
               <div>
                 <p className="text-[9px] font-black uppercase tracking-widest mb-2 text-[#dc2626]">Student Contact <span className="font-normal normal-case text-[#94a3b8]">(optional)</span></p>
                 <div className="grid grid-cols-2 gap-3">
-                  {[['Email','email','email','student@email.com'],['Phone','phone','tel','(555) 000-0000']].map(([l,f,t,p]) => (
+                  {[['Email','email','email','student@email.com'],['Phone','phone','tel','(555) 000-0000']].map(([l,f,t,ph]) => (
                     <div key={f} className="space-y-1">
                       <label className="text-[9px] font-black text-[#94a3b8] uppercase tracking-widest">{l}</label>
-                      <input type={t} value={(newStudent as any)[f]} onChange={e => setNewStudent({ ...newStudent, [f]: e.target.value })} className={inputCls} placeholder={p}/>
+                      <input type={t} value={(newStudent as any)[f]} onChange={e => setNewStudent({ ...newStudent, [f]: e.target.value })} className={inputCls} placeholder={ph}/>
                     </div>
                   ))}
                 </div>
@@ -764,10 +706,10 @@ export default function StudentAdminPage() {
               <div>
                 <p className="text-[9px] font-black uppercase tracking-widest mb-2 text-[#dc2626]">Parent / Guardian <span className="font-normal normal-case text-[#94a3b8]">(optional)</span></p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {[['Name','parent_name','text','Parent name'],['Email','parent_email','email','parent@email.com'],['Phone','parent_phone','tel','(555) 000-0000']].map(([l,f,t,p]) => (
+                  {[['Name','parent_name','text','Parent name'],['Email','parent_email','email','parent@email.com'],['Phone','parent_phone','tel','(555) 000-0000']].map(([l,f,t,ph]) => (
                     <div key={f} className="space-y-1">
                       <label className="text-[9px] font-black text-[#94a3b8] uppercase tracking-widest">{l}</label>
-                      <input type={t} value={(newStudent as any)[f]} onChange={e => setNewStudent({ ...newStudent, [f]: e.target.value })} className={inputCls} placeholder={p}/>
+                      <input type={t} value={(newStudent as any)[f]} onChange={e => setNewStudent({ ...newStudent, [f]: e.target.value })} className={inputCls} placeholder={ph}/>
                     </div>
                   ))}
                 </div>
@@ -781,7 +723,6 @@ export default function StudentAdminPage() {
           </div>
         )}
 
-        {/* Count */}
         {!loading && (
           <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest px-1">
             {filtered.length} student{filtered.length !== 1 ? 's' : ''}
@@ -790,7 +731,6 @@ export default function StudentAdminPage() {
           </p>
         )}
 
-        {/* List */}
         {loading ? (
           <div className="flex flex-col items-center py-24 gap-3">
             <Loader2 size={22} className="animate-spin text-[#dc2626]"/>

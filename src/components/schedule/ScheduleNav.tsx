@@ -16,6 +16,7 @@ interface ScheduleNavProps {
   setSelectedTutorFilter: (v: string | null) => void;
   onOpenTutorModal: () => void;
   onOpenEnrollModal: () => void;
+  commandBarSlot?: React.ReactNode;
 }
 
 export function ScheduleNav({
@@ -31,6 +32,7 @@ export function ScheduleNav({
   setSelectedTutorFilter,
   onOpenTutorModal,
   onOpenEnrollModal,
+  commandBarSlot,
 }: ScheduleNavProps) {
   return (
     <div className="fixed top-16 left-0 right-0 z-30 border-b"
@@ -79,6 +81,11 @@ export function ScheduleNav({
         )}
 
         <div className="flex-1 min-w-0" />
+
+        {/* AI command bar button — renders whatever MasterDeployment passes in */}
+        {commandBarSlot}
+
+        <div className="w-px h-5 shrink-0" style={{ background: '#fca5a5' }} />
 
         {/* Tutor filter */}
         <div className="relative shrink-0">

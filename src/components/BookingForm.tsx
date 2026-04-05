@@ -261,7 +261,7 @@ export function BookingForm({
       <div className="hidden md:flex w-full max-w-5xl bg-white rounded-2xl overflow-hidden border border-[#e7e3dd] shadow-2xl flex-row" style={{ maxHeight: '85vh' }}>
         <div className="w-72 bg-[#faf9f7] border-r border-[#e7e3dd] flex flex-col">
           <div className="p-5 bg-white border-b border-[#e7e3dd]">
-            <h3 className="text-lg font-bold text-[#1c1917] mb-1">C2 Scheduler</h3>
+            <h3 className="text-lg font-bold text-[#1c1917] mb-1">Center Scheduler</h3>
             <p className="text-xs text-[#a8a29e] mb-3">Select a student to schedule</p>
             <div className="relative">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a8a29e]" />

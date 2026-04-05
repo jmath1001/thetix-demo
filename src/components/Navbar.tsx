@@ -21,8 +21,8 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo - Clickable to Home */}
         <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <div className="w-8 h-8 bg-[#ea2709] rounded-lg flex items-center justify-center text-white font-bold">C2</div>
-          <span className="font-bold text-sm md:text-base text-stone-900">C2</span>
+          <div className="w-8 h-8 bg-[#ea2709] rounded-lg flex items-center justify-center text-white font-bold">C</div>
+          <span className="font-bold text-sm md:text-base text-stone-900">Tutoring Center</span>
         </a>
 
         {/* Desktop Links (Hidden on Mobile) */}

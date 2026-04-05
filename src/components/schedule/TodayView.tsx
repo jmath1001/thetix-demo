@@ -746,7 +746,7 @@ export function TodayView({
                                         <div className="flex justify-between items-start mb-1">
                                           <p className="text-sm font-bold leading-tight" style={{ color: '#111827' }}>{student.name}</p>
                                           <div className="flex items-center gap-1">
-                                            {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>✓</span>}
+                                            {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>Confirmed</span>}
                                             {student.confirmationStatus === 'cancelled'            && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
                                             {student.confirmationStatus === 'reschedule_requested' && <span style={{ color: '#6d28d9', fontSize: 10 }}>↗</span>}
                                             <button

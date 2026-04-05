@@ -68,7 +68,7 @@ export default function ConfirmPage() {
       <div className="w-full max-w-sm bg-white rounded-2xl border border-[#e7e3dd] shadow-lg p-8 text-center">
         <div className="flex items-center justify-center gap-2 mb-8">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-black" style={{ background: '#ea2709' }}>C2</div>
-          <span className="font-bold text-stone-900">C2 Education</span>
+          <span className="font-bold text-stone-900">Prep Center</span>
         </div>
         <Suspense fallback={
           <><Loader2 size={36} className="animate-spin text-[#6d28d9] mx-auto mb-4" /><p className="text-sm text-[#a8a29e]">Loading…</p></>

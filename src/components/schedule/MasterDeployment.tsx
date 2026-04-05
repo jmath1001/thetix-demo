@@ -24,6 +24,7 @@ import { TodayView } from './TodayView';
 import { WeekView } from './WeekView';
 import { AttendanceModal } from './AttendanceModal';
 import { logEvent } from '@/lib/analytics';
+import { CommandBar } from '@/components/CommandBar';
 
 export default function MasterDeployment() {
   const [todayDate, setTodayDate] = useState<Date>(() => getCentralTimeNow());
@@ -48,18 +49,18 @@ export default function MasterDeployment() {
   }, []);
 
   useEffect(() => {
-    if (todayView) {
-      document.body.style.overflow = 'hidden';
-      document.body.style.background = '#fafafa';
-    } else {
-      document.body.style.overflow = '';
-      document.body.style.background = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-      document.body.style.background = '';
-    };
-  }, [todayView]);
+  if (todayView) {
+    document.documentElement.style.overflow = 'hidden'; // <-- html element, not body
+    document.body.style.background = '#fafafa';
+  } else {
+    document.documentElement.style.overflow = '';
+    document.body.style.background = '';
+  }
+  return () => {
+    document.documentElement.style.overflow = '';
+    document.body.style.background = '';
+  };
+}, [todayView]);
 
   const tutorPaletteMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -88,7 +89,6 @@ export default function MasterDeployment() {
         const isoDate = toISODate(date);
         const dow = dayOfWeek(isoDate);
         if (!tutor.availability.includes(dow)) return;
-        // ── Skip if tutor is on time off for this date ──
         if (timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate)) return;
         getSessionsForDay(dow).forEach(block => {
           if (!isTutorAvailable(tutor, dow, block.time)) return;
@@ -119,18 +119,40 @@ export default function MasterDeployment() {
       setIsEnrollModalOpen(false);
       setGridSlotToBook(null);
       logEvent('session_booked', {
-  studentName: data.student.name,
-  tutorName: data.slot.tutor.name,
-  date: (data.slot as any).date,
-  recurring: data.recurring,
-  source: gridSlotToBook ? 'grid_slot' : 'booking_form',
-});
+        studentName: data.student.name,
+        tutorName: data.slot.tutor.name,
+        date: (data.slot as any).date,
+        recurring: data.recurring,
+        source: gridSlotToBook ? 'grid_slot' : 'booking_form',
+      });
       setTimeout(() => setBookingToast(null), 4000);
     } catch (err: any) {
       alert(err.message || "Something went wrong with the booking.");
       console.error('Booking failed:', err);
     }
   };
+
+  // ── Called when CommandBar AI resolves a booking intent ──────────────────
+  const handleAIBookingAction = useCallback(({
+    studentId, slotDate, slotTime, tutorId, topic,
+  }: {
+    studentId: string
+    slotDate: string
+    slotTime: string
+    tutorId: string
+    topic: string
+  }) => {
+    const tutor = tutors.find(t => t.id === tutorId)
+    if (!tutor) return
+    const dow = dayOfWeek(slotDate)
+    const block = getSessionsForDay(dow).find(b => b.time === slotTime)
+    const dayName = DAY_NAMES[ACTIVE_DAYS.indexOf(dow)]
+    // Pre-fill the slot — same as clicking a green cell in the grid
+    setGridSlotToBook({ tutor, dayNum: dow, dayName, time: slotTime, date: slotDate, block } as any)
+    // Pre-select student cat so the right tab is shown in BookingForm
+    setEnrollCat(tutor.cat)
+    logEvent('ai_booking_initiated', { studentId, tutorId, slotDate, slotTime, topic })
+  }, [tutors])
 
   const setSelectedSessionWithNotes = (s: any) => {
     setSelectedSession(s);
@@ -187,6 +209,16 @@ export default function MasterDeployment() {
         setSelectedTutorFilter={setSelectedTutorFilter}
         onOpenTutorModal={() => setIsTutorModalOpen(true)}
         onOpenEnrollModal={() => setIsEnrollModalOpen(true)}
+        // ── CommandBar sits inside ScheduleNav as a button in the header ──
+        commandBarSlot={
+          <CommandBar
+            sessions={sessions}
+            students={students}
+            tutors={tutors}
+            onBookingAction={handleAIBookingAction}
+            allAvailableSeats={allAvailableSeats}
+          />
+        }
       />
 
       {todayView && (

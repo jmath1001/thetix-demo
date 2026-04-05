@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+// ── Table names — swap prefix via NEXT_PUBLIC_TABLE_PREFIX env var ────────────
+const p              = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
+const TUTORS         = `${p}_tutors`
+const STUDENTS       = `${p}_students`
+const SESSIONS       = `${p}_sessions`
+const SS             = `${p}_session_students`   // short alias used in nested selects
+const RECURRING      = `${p}_recurring_series`
+const TIME_OFF       = `${p}_tutor_time_off`
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type Tutor = {
@@ -84,7 +93,7 @@ export type ScheduleData = {
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 export function getCentralTimeNow(): Date {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' }))
 }
 
 export function getWeekStart(d: Date): Date {
@@ -97,10 +106,10 @@ export function getWeekStart(d: Date): Date {
 }
 
 export function toISODate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function getWeekDates(weekStart: Date): Date[] {
@@ -164,20 +173,17 @@ export function useScheduleData(weekStart: Date): ScheduleData {
 
       try {
         const [tutorRes, studentRes, sessionRes, timeOffRes] = await Promise.all([
-          supabase.from('slake_tutors').select('*').order('name'),
-          supabase.from('slake_students').select('*').order('name'),
-          supabase
-            .from('slake_sessions')
-            .select(`
-              id, session_date, tutor_id, time,
-              slake_session_students ( id, student_id, name, topic, status, notes, confirmation_status, series_id )
-            `)
+          supabase.from(TUTORS).select('*').order('name'),
+          supabase.from(STUDENTS).select('*').order('name'),
+          (supabase
+            .from(SESSIONS)
+            .select(`id, session_date, tutor_id, time, ${SS} ( id, student_id, name, topic, status, notes, confirmation_status, series_id )`)
             .gte('session_date', from)
             .lte('session_date', to)
             .order('session_date')
-            .order('time'),
+            .order('time') as any),
           supabase
-            .from('slake_tutor_time_off')
+            .from(TIME_OFF)
             .select('*')
             .gte('date', from)
             .lte('date', to),
@@ -188,7 +194,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
         if (sessionRes.error) throw sessionRes.error
         if (timeOffRes.error) throw timeOffRes.error
 
-        const tutors: Tutor[] = (tutorRes.data ?? []).map(r => ({
+        const tutors: Tutor[] = (tutorRes.data ?? []).map((r: any) => ({
           id:                 r.id,
           name:               r.name,
           subjects:           r.subjects ?? [],
@@ -197,7 +203,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           availabilityBlocks: r.availability_blocks ?? [],
         }))
 
-        const students: Student[] = (studentRes.data ?? []).map(r => ({
+        const students: Student[] = (studentRes.data ?? []).map((r: any) => ({
           id:                 r.id,
           name:               r.name,
           subject:            r.subject,
@@ -215,12 +221,12 @@ export function useScheduleData(weekStart: Date): ScheduleData {
         const gradeMap: Record<string, string | null> = {}
         students.forEach(s => { gradeMap[s.id] = s.grade })
 
-        const sessions: Session[] = (sessionRes.data ?? []).map(r => ({
+        const sessions: Session[] = (sessionRes.data ?? []).map((r: any) => ({
           id:       r.id,
           date:     r.session_date,
           tutorId:  r.tutor_id,
           time:     r.time,
-          students: (r.slake_session_students ?? []).map((ss: any) => ({
+          students: (r[SS] ?? []).map((ss: any) => ({
             id:                 ss.student_id,
             rowId:              ss.id,
             name:               ss.name,
@@ -233,7 +239,7 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           })),
         }))
 
-        const timeOffMapped: TimeOff[] = (timeOffRes.data ?? []).map(r => ({
+        const timeOffMapped: TimeOff[] = (timeOffRes.data ?? []).map((r: any) => ({
           id:      r.id,
           tutorId: r.tutor_id,
           date:    r.date,
@@ -263,14 +269,8 @@ export function useScheduleData(weekStart: Date): ScheduleData {
 // ── Write helpers ─────────────────────────────────────────────────────────────
 
 export async function bookStudent({
-  tutorId,
-  date,
-  time,
-  student,
-  topic,
-  notes = '',
-  recurring = false,
-  recurringWeeks = 1,
+  tutorId, date, time, student, topic,
+  notes = '', recurring = false, recurringWeeks = 1,
 }: {
   tutorId: string
   date: string
@@ -288,24 +288,14 @@ export async function bookStudent({
   if (recurring && recurringWeeks > 1) {
     const endDate = new Date(date + 'T00:00:00')
     endDate.setDate(endDate.getDate() + (recurringWeeks - 1) * 7)
-
     const { data: series, error: seriesErr } = await supabase
-      .from('slake_recurring_series')
+      .from(RECURRING)
       .insert({
-        student_id:  student.id,
-        tutor_id:    tutorId,
-        day_of_week: dayOfWeek(date),
-        time,
-        topic,
-        notes:       notes || null,
-        start_date:  date,
-        end_date:    toISODate(endDate),
-        total_weeks: recurringWeeks,
-        status:      'active',
+        student_id: student.id, tutor_id: tutorId, day_of_week: dayOfWeek(date),
+        time, topic, notes: notes || null, start_date: date,
+        end_date: toISODate(endDate), total_weeks: recurringWeeks, status: 'active',
       })
-      .select('id')
-      .single()
-
+      .select('id').single()
     if (seriesErr) throw seriesErr
     seriesId = series.id
   }
@@ -315,208 +305,121 @@ export async function bookStudent({
     d.setDate(d.getDate() + w * 7)
     const isoDate = toISODate(d)
 
-    // ── Double-booking check: student can't be in two sessions at the same time ──
-    // Check across ALL tutors, not just the one being booked
     const { data: sessionsAtTime } = await supabase
-      .from('slake_sessions')
-      .select('id')
-      .eq('session_date', isoDate)
-      .eq('time', time)
+      .from(SESSIONS).select('id').eq('session_date', isoDate).eq('time', time)
 
     if (sessionsAtTime && sessionsAtTime.length > 0) {
       const sessionIds = sessionsAtTime.map((s: any) => s.id)
       const { data: alreadyBooked } = await supabase
-        .from('slake_session_students')
-        .select('id')
-        .in('session_id', sessionIds)
-        .eq('student_id', student.id)
-        .neq('status', 'cancelled')
-        .maybeSingle()
-
-      if (alreadyBooked) {
-        throw new Error(`${student.name} is already booked at ${time} on ${isoDate}`)
-      }
+        .from(SS).select('id').in('session_id', sessionIds)
+        .eq('student_id', student.id).neq('status', 'cancelled').maybeSingle()
+      if (alreadyBooked) throw new Error(`${student.name} is already booked at ${time} on ${isoDate}`)
     }
 
-    const { data: existing, error: fetchErr } = await supabase
-      .from('slake_sessions')
-      .select('id, slake_session_students(id)')
-      .eq('session_date', isoDate)
-      .eq('tutor_id', tutorId)
-      .eq('time', time)
-      .maybeSingle()
-
+    const { data: existing, error: fetchErr } = await (supabase
+      .from(SESSIONS)
+      .select(`id, ${SS}(id)`)
+      .eq('session_date', isoDate).eq('tutor_id', tutorId).eq('time', time)
+      .maybeSingle() as any)
     if (fetchErr) throw fetchErr
 
     let sessionId: string
-
     if (existing) {
-      if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) {
+      if (existing[SS] && existing[SS].length >= MAX_CAPACITY)
         throw new Error(`This session with the tutor is full for ${isoDate}`)
-      }
       sessionId = existing.id
     } else {
       const { data: created, error: createErr } = await supabase
-        .from('slake_sessions')
-        .insert({ session_date: isoDate, tutor_id: tutorId, time })
-        .select('id')
-        .single()
+        .from(SESSIONS).insert({ session_date: isoDate, tutor_id: tutorId, time }).select('id').single()
       if (createErr) throw createErr
       sessionId = created.id
     }
 
-    const { error: enrollErr } = await supabase
-      .from('slake_session_students')
-      .insert({
-        session_id: sessionId,
-        student_id: student.id,
-        name:       student.name,
-        topic,
-        notes:      notes || null,
-        status:     'scheduled',
-        series_id:  seriesId,
-      })
-
+    const { error: enrollErr } = await supabase.from(SS).insert({
+      session_id: sessionId, student_id: student.id, name: student.name,
+      topic, notes: notes || null, status: 'scheduled', series_id: seriesId,
+    })
     if (enrollErr) throw enrollErr
   }
 }
 
-export async function updateAttendance({
-  sessionId,
-  studentId,
-  status,
-}: {
-  sessionId: string
-  studentId: string
-  status: 'scheduled' | 'present' | 'no-show'
+export async function updateAttendance({ sessionId, studentId, status }: {
+  sessionId: string; studentId: string; status: 'scheduled' | 'present' | 'no-show'
 }) {
-  const { error } = await supabase
-    .from('slake_session_students')
-    .update({ status })
-    .eq('session_id', sessionId)
-    .eq('student_id', studentId)
-
+  const { error } = await supabase.from(SS).update({ status })
+    .eq('session_id', sessionId).eq('student_id', studentId)
   if (error) throw error
 }
 
-export async function removeStudentFromSession({
-  sessionId,
-  studentId,
-}: {
-  sessionId: string
-  studentId: string
+export async function removeStudentFromSession({ sessionId, studentId }: {
+  sessionId: string; studentId: string
 }) {
-  const { error } = await supabase
-    .from('slake_session_students')
-    .delete()
-    .eq('session_id', sessionId)
-    .eq('student_id', studentId)
-
+  const { error } = await supabase.from(SS).delete()
+    .eq('session_id', sessionId).eq('student_id', studentId)
   if (error) throw error
 }
 
-export async function updateSessionNotes({
-  rowId,
-  notes,
-}: {
-  rowId: string
-  notes: string | null
+export async function updateSessionNotes({ rowId, notes }: {
+  rowId: string; notes: string | null
 }) {
-  const { error } = await supabase
-    .from('slake_session_students')
-    .update({ notes })
-    .eq('id', rowId)
-
+  const { error } = await supabase.from(SS).update({ notes }).eq('id', rowId)
   if (error) throw error
 }
 
 // ── Recurring series helpers ──────────────────────────────────────────────────
 
 export async function fetchAllSeries(): Promise<RecurringSeries[]> {
-  const { data, error } = await supabase
-    .from('slake_recurring_series')
-    .select(`
-      id, created_at, student_id, tutor_id, day_of_week, time,
-      topic, notes, start_date, end_date, total_weeks, status,
-      slake_students ( name ),
-      slake_tutors ( name )
-    `)
-    .order('start_date', { ascending: false })
-
+  const { data, error } = await (supabase
+    .from(RECURRING)
+    .select(`id, created_at, student_id, tutor_id, day_of_week, time, topic, notes, start_date, end_date, total_weeks, status, ${STUDENTS} ( name ), ${TUTORS} ( name )`)
+    .order('start_date', { ascending: false }) as any)
   if (error) throw error
-
   return (data ?? []).map((r: any) => ({
-    id:          r.id,
-    createdAt:   r.created_at,
-    studentId:   r.student_id,
-    studentName: r.slake_students?.name ?? 'Unknown',
-    tutorId:     r.tutor_id,
-    tutorName:   r.slake_tutors?.name ?? 'Unknown',
-    dayOfWeek:   r.day_of_week,
-    time:        r.time,
-    topic:       r.topic,
-    notes:       r.notes ?? null,
-    startDate:   r.start_date,
-    endDate:     r.end_date,
-    totalWeeks:  r.total_weeks,
-    status:      r.status,
+    id: r.id, createdAt: r.created_at, studentId: r.student_id,
+    studentName: r[STUDENTS]?.name ?? 'Unknown',
+    tutorId: r.tutor_id, tutorName: r[TUTORS]?.name ?? 'Unknown',
+    dayOfWeek: r.day_of_week, time: r.time, topic: r.topic,
+    notes: r.notes ?? null, startDate: r.start_date, endDate: r.end_date,
+    totalWeeks: r.total_weeks, status: r.status,
   }))
 }
 
 export async function fetchSeriesSessions(seriesId: string) {
-  const { data, error } = await supabase
-    .from('slake_session_students')
-    .select(`
-      id, status, notes,
-      slake_sessions ( id, session_date, time, tutor_id )
-    `)
-    .eq('series_id', seriesId)
-    .order('slake_sessions(session_date)')
-
+  const { data, error } = await (supabase
+    .from(SS)
+    .select(`id, status, notes, ${SESSIONS} ( id, session_date, time, tutor_id )`)
+    .eq('series_id', seriesId) as any)
   if (error) throw error
   return data ?? []
 }
 
 export async function cancelSeries(seriesId: string): Promise<void> {
   const today = toISODate(new Date())
-
-  const { data: futureSessions, error: fetchErr } = await supabase
-    .from('slake_session_students')
-    .select(`id, slake_sessions!inner ( session_date )`)
-    .eq('series_id', seriesId)
-
+  const { data: futureSessions, error: fetchErr } = await (supabase
+    .from(SS)
+    .select(`id, ${SESSIONS}!inner ( session_date )`)
+    .eq('series_id', seriesId) as any)
   if (fetchErr) throw fetchErr
 
   const futureRowIds = (futureSessions ?? [])
     .filter((r: any) => {
-      const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
-      return session?.session_date >= today
+      const s = Array.isArray(r[SESSIONS]) ? r[SESSIONS][0] : r[SESSIONS]
+      return s?.session_date >= today
     })
     .map((r: any) => r.id)
 
   if (futureRowIds.length > 0) {
-    const { error: deleteErr } = await supabase
-      .from('slake_session_students')
-      .delete()
-      .in('id', futureRowIds)
-
+    const { error: deleteErr } = await supabase.from(SS).delete().in('id', futureRowIds)
     if (deleteErr) throw deleteErr
   }
 
-  const { error: updateErr } = await supabase
-    .from('slake_recurring_series')
-    .update({ status: 'cancelled' })
-    .eq('id', seriesId)
-
+  const { error: updateErr } = await supabase.from(RECURRING)
+    .update({ status: 'cancelled' }).eq('id', seriesId)
   if (updateErr) throw updateErr
 }
 
-// JS day (0=Sun…6=Sat) → ISO day-of-week (1=Mon…7=Sun)
-function jsDayToIso(jsDay: number): number {
-  return jsDay === 0 ? 7 : jsDay
-}
+function jsDayToIso(jsDay: number): number { return jsDay === 0 ? 7 : jsDay }
 
-// Find the next occurrence of targetIsoDow on or after fromDateStr
 function nextOccurrenceOfDay(fromDateStr: string, targetIsoDow: number): string {
   const from = new Date(fromDateStr + 'T00:00:00')
   const fromDow = jsDayToIso(from.getDay())
@@ -527,30 +430,15 @@ function nextOccurrenceOfDay(fromDateStr: string, targetIsoDow: number): string 
   return toISODate(result)
 }
 
-export async function rescheduleSeries({
-  seriesId,
-  newTutorId,
-  newTime,
-  student,
-  topic,
-  overrideDayOfWeek,
-}: {
-  seriesId: string
-  newTutorId: string
-  newTime: string
-  student: Student
-  topic: string
-  overrideDayOfWeek?: number
+export async function rescheduleSeries({ seriesId, newTutorId, newTime, student, topic, overrideDayOfWeek }: {
+  seriesId: string; newTutorId: string; newTime: string
+  student: Student; topic: string; overrideDayOfWeek?: number
 }): Promise<void> {
   const today = toISODate(new Date())
   const MAX_CAPACITY = 3
 
   const { data: seriesRow, error: seriesErr } = await supabase
-    .from('slake_recurring_series')
-    .select('end_date, day_of_week')
-    .eq('id', seriesId)
-    .single()
-
+    .from(RECURRING).select('end_date, day_of_week').eq('id', seriesId).single()
   if (seriesErr) throw seriesErr
 
   const seriesEndDate: string = seriesRow.end_date
@@ -558,29 +446,24 @@ export async function rescheduleSeries({
   const targetDow: number    = overrideDayOfWeek ?? currentDow
   const isDayChange           = overrideDayOfWeek !== undefined && overrideDayOfWeek !== currentDow
 
-  const { data: futureSessions, error: fetchErr } = await supabase
-    .from('slake_session_students')
-    .select(`id, slake_sessions!inner ( id, session_date )`)
-    .eq('series_id', seriesId)
-
+  const { data: futureSessions, error: fetchErr } = await (supabase
+    .from(SS)
+    .select(`id, ${SESSIONS}!inner ( id, session_date )`)
+    .eq('series_id', seriesId) as any)
   if (fetchErr) throw fetchErr
 
   const futureRows = (futureSessions ?? []).filter((r: any) => {
-    const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
-    return session?.session_date >= today
+    const s = Array.isArray(r[SESSIONS]) ? r[SESSIONS][0] : r[SESSIONS]
+    return s?.session_date >= today
   })
 
   if (futureRows.length > 0) {
-    const { error: deleteErr } = await supabase
-      .from('slake_session_students')
-      .delete()
+    const { error: deleteErr } = await supabase.from(SS).delete()
       .in('id', futureRows.map((r: any) => r.id))
-
     if (deleteErr) throw deleteErr
   }
 
   let targetDates: string[]
-
   if (isDayChange) {
     targetDates = []
     let cursor = nextOccurrenceOfDay(today, targetDow)
@@ -593,89 +476,56 @@ export async function rescheduleSeries({
   } else {
     targetDates = futureRows
       .map((r: any) => {
-        const session = Array.isArray(r.slake_sessions) ? r.slake_sessions[0] : r.slake_sessions
-        return session?.session_date as string
+        const s = Array.isArray(r[SESSIONS]) ? r[SESSIONS][0] : r[SESSIONS]
+        return s?.session_date as string
       })
-      .filter(Boolean)
-      .sort()
+      .filter(Boolean).sort()
   }
 
   for (const isoDate of targetDates) {
-    const { data: existing } = await supabase
-      .from('slake_sessions')
-      .select('id, slake_session_students(id)')
-      .eq('session_date', isoDate)
-      .eq('tutor_id', newTutorId)
-      .eq('time', newTime)
-      .maybeSingle()
+    const { data: existing } = await (supabase
+      .from(SESSIONS)
+      .select(`id, ${SS}(id)`)
+      .eq('session_date', isoDate).eq('tutor_id', newTutorId).eq('time', newTime)
+      .maybeSingle() as any)
 
     let sessionId: string
-
     if (existing) {
-      if (existing.slake_session_students && existing.slake_session_students.length >= MAX_CAPACITY) {
+      if (existing[SS] && existing[SS].length >= MAX_CAPACITY)
         throw new Error(`Session is full on ${isoDate} — cannot reschedule to this slot`)
-      }
       sessionId = existing.id
     } else {
       const { data: created, error: createErr } = await supabase
-        .from('slake_sessions')
-        .insert({ session_date: isoDate, tutor_id: newTutorId, time: newTime })
-        .select('id')
-        .single()
+        .from(SESSIONS).insert({ session_date: isoDate, tutor_id: newTutorId, time: newTime })
+        .select('id').single()
       if (createErr) throw createErr
       sessionId = created.id
     }
 
-    const { error: enrollErr } = await supabase
-      .from('slake_session_students')
-      .insert({
-        session_id: sessionId,
-        student_id: student.id,
-        name:       student.name,
-        topic,
-        status:     'scheduled',
-        series_id:  seriesId,
-      })
-
+    const { error: enrollErr } = await supabase.from(SS).insert({
+      session_id: sessionId, student_id: student.id, name: student.name,
+      topic, status: 'scheduled', series_id: seriesId,
+    })
     if (enrollErr) throw enrollErr
   }
 
   const seriesUpdate: Record<string, any> = { tutor_id: newTutorId, time: newTime, topic }
   if (isDayChange) seriesUpdate.day_of_week = targetDow
-
-  const { error: updateErr } = await supabase
-    .from('slake_recurring_series')
-    .update(seriesUpdate)
-    .eq('id', seriesId)
-
+  const { error: updateErr } = await supabase.from(RECURRING).update(seriesUpdate).eq('id', seriesId)
   if (updateErr) throw updateErr
 }
 
 export async function markCompletedSeries(): Promise<void> {
   const today = toISODate(new Date())
-
-  const { error } = await supabase
-    .from('slake_recurring_series')
-    .update({ status: 'completed' })
-    .eq('status', 'active')
-    .lt('end_date', today)
-
+  const { error } = await supabase.from(RECURRING)
+    .update({ status: 'completed' }).eq('status', 'active').lt('end_date', today)
   if (error) throw error
 }
 
-// ── Confirmation helper ───────────────────────────────────────────────────────
-
-export async function updateConfirmationStatus({
-  rowId,
-  status,
-}: {
-  rowId: string
-  status: 'confirmed' | 'unconfirmed' | null
+export async function updateConfirmationStatus({ rowId, status }: {
+  rowId: string; status: 'confirmed' | 'unconfirmed' | null
 }) {
-  const { error } = await supabase
-    .from('slake_session_students')
-    .update({ confirmation_status: status })
-    .eq('id', rowId)
-
+  const { error } = await supabase.from(SS)
+    .update({ confirmation_status: status }).eq('id', rowId)
   if (error) throw error
 }
