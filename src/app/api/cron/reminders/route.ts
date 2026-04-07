@@ -15,6 +15,28 @@ const STUDENTS = DB.students;
 const SETTINGS = DB.centerSettings;
 const REMINDER_LOGS = DB.reminderLogs;
 
+type ReminderStudent = {
+  name?: string;
+  email?: string;
+  parent_name?: string;
+  parent_email?: string;
+};
+
+type ReminderEntry = {
+  id: string;
+  reminder_sent?: boolean;
+  confirmation_token?: string | null;
+  [STUDENTS]?: ReminderStudent | ReminderStudent[];
+  [SESSIONS]?: ReminderSession | ReminderSession[];
+};
+
+type ReminderSession = {
+  id?: string;
+  session_date: string;
+  time: string;
+  [SS]?: ReminderEntry[];
+};
+
 function pickRelation(row: any, key: string) {
   return Array.isArray(row?.[key]) ? row[key][0] : row?.[key];
 }
@@ -146,12 +168,12 @@ export async function GET() {
     const tomorrow    = new Date(); tomorrow.setDate(now.getDate() + 1);
     const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 
-    const { data: sessions, error } = await supabase
+    const { data: sessions, error } = await (supabase
       .from(SESSIONS)
       .select(`id, session_date, time,
         ${SS} ( id, status, reminder_sent, confirmation_token, topic,
           ${STUDENTS} ( name, email, parent_name, parent_email ) )`)
-      .in("session_date", [todayStr, tomorrowStr]);
+      .in("session_date", [todayStr, tomorrowStr]) as PromiseLike<{ data: ReminderSession[] | null; error: any }>);
     if (error) throw error;
 
     const transporter = getTransporter();
@@ -159,7 +181,7 @@ export async function GET() {
     const summaryEntries: string[] = [];
 
     for (const session of sessions ?? []) {
-      for (const entry of (session[SS] ?? []) as any[]) {
+      for (const entry of (session[SS] as ReminderEntry[] | undefined) ?? []) {
         if (entry.reminder_sent) continue;
         const result = await sendReminderForEntry({ entry, session, settings, transporter });
         if (!result.skipped) {
@@ -199,19 +221,19 @@ export async function POST(req: NextRequest) {
     const { data: settings, error: settingsError } = await supabase.from(SETTINGS).select("*").single();
     if (settingsError || !settings) throw new Error("Settings not found");
 
-    const { data: entries, error: fetchErr } = await supabase
+    const { data: entries, error: fetchErr } = await (supabase
       .from(SS)
       .select(`id, status, reminder_sent, confirmation_token, topic,
         ${STUDENTS} ( name, email, parent_name, parent_email ),
         ${SESSIONS} ( session_date, time )`)
-      .in("id", body.sessionStudentIds);
+      .in("id", body.sessionStudentIds) as PromiseLike<{ data: ReminderEntry[] | null; error: any }>);
     if (fetchErr) throw fetchErr;
 
     const transporter = getTransporter();
     let sent = 0;
     const errors: string[] = [];
 
-    for (const entry of (entries ?? []) as any[]) {
+    for (const entry of entries ?? []) {
       const session = pickRelation(entry, SESSIONS);
       const student = pickRelation(entry, STUDENTS);
       if (!session) { errors.push(`${student?.name ?? entry.id}: session not found`); continue; }
