@@ -520,13 +520,13 @@ export function CommandBar({
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', height: '36px',
         background: '#fff', borderRadius: 10,
-        border: isFocused ? '1.5px solid #a78bfa' : '1.5px solid #e2e8f0',
+        border: isFocused ? '1.5px solid #8b5cf6' : '1.5px solid #c4b5fd',
         transition: 'all 0.2s',
         boxShadow: isFocused
-          ? '0 0 0 3px rgba(167,139,250,0.2), 0 0 20px rgba(139,92,246,0.1)'
-          : '0 0 0 2.5px rgba(167,139,250,0.08), 0 1px 3px rgba(0,0,0,0.05)',
+          ? '0 0 0 3px rgba(139,92,246,0.25), 0 0 24px rgba(139,92,246,0.22), 0 4px 12px rgba(0,0,0,0.08)'
+          : '0 0 0 2px rgba(139,92,246,0.22), 0 0 14px rgba(139,92,246,0.16), 0 2px 8px rgba(0,0,0,0.06)',
       }}>
-        <Sparkles size={14} style={{ color: loading ? '#8b5cf6' : C.textMuted, flexShrink: 0 }} />
+        <Sparkles size={14} style={{ color: '#8b5cf6', flexShrink: 0 }} />
         <div style={{ flex: 1, position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
           <input
             ref={inputRef}

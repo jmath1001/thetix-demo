@@ -168,6 +168,11 @@ function SidePanel({
               </div>
             ) : (
               <div className="space-y-1.5">
+                <div className="px-2 py-1.5 rounded-lg" style={{ background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#b45309' }}>
+                    Waiting For Confirmation
+                  </p>
+                </div>
                 {pendingStudents.map((student: any, idx: number) => (
                   <div key={`${student.rowId || student.id}-${idx}`}
                     className="p-2.5 rounded-lg cursor-pointer transition-all hover:shadow-sm"
