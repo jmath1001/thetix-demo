@@ -26,6 +26,7 @@ export type EventName =
   | 'reminder_sent'
  | 'template_saved'
  | 'tutor_edited'
+ | 'students_imported'
  | 'ai_booking_initiated'
  |'schedule_builder_confirmed'
  |'bulk_remove_sessions'
