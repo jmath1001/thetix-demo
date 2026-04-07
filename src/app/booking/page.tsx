@@ -37,13 +37,14 @@ const ACTIVE_DAYS = [1, 2, 3, 4, 6];
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday'];
 
 const SESSION_BLOCKS = [
-  { id: 'S1', label: 'Session 1', time: '15:30', display: '3:30 – 5:20 PM', days: [1,2,3,4] },
-  { id: 'S2', label: 'Session 2', time: '17:30', display: '5:30 – 7:20 PM', days: [1,2,3,4] },
-  { id: 'S3', label: 'Session 3', time: '19:30', display: '7:30 – 9:20 PM', days: [1,2,3,4] },
-  { id: 'S4', label: 'Session 1', time: '09:00', display: '9:00 – 10:50 AM', days: [6] },
-  { id: 'S5', label: 'Session 2', time: '11:00', display: '11:00 AM – 12:50 PM', days: [6] },
-  { id: 'S6', label: 'Session 3', time: '13:30', display: '1:30 – 3:20 PM', days: [6] },
-  { id: 'S7', label: 'Session 4', time: '15:30', display: '3:30 – 5:20 PM', days: [6] },
+  { id: 'S1', label: 'Session 1', time: '13:30', display: '1:30 – 3:20 PM', days: [1,2,3,4] },
+  { id: 'S2', label: 'Session 2', time: '15:30', display: '3:30 – 5:20 PM', days: [1,2,3,4] },
+  { id: 'S3', label: 'Session 3', time: '17:30', display: '5:30 – 7:20 PM', days: [1,2,3,4] },
+  { id: 'S4', label: 'Session 4', time: '19:30', display: '7:30 – 9:20 PM', days: [1,2,3,4] },
+  { id: 'S5', label: 'Session 1', time: '09:00', display: '9:00 – 10:50 AM', days: [6] },
+  { id: 'S6', label: 'Session 2', time: '11:00', display: '11:00 AM – 12:50 PM', days: [6] },
+  { id: 'S7', label: 'Session 3', time: '13:30', display: '1:30 – 3:20 PM', days: [6] },
+  { id: 'S8', label: 'Session 4', time: '15:30', display: '3:30 – 5:20 PM', days: [6] },
 ];
 
 const MAX_CAPACITY = 3;
