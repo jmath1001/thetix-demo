@@ -126,17 +126,9 @@ export function BookingForm({
     return Array.from(s).sort();
   }, [catSeats]);
 
-  // If a slot is prefilled (inline booking), only show that tutor's subjects
-  const prefilledTutorSubjects = useMemo(() => {
-    if (!prefilledSlot?.tutor?.subjects) return [];
-    return (prefilledSlot.tutor.subjects as string[]).sort();
-  }, [prefilledSlot]);
-
-  const subjectsToDisplay = prefilledSlot ? prefilledTutorSubjects : catSubjects;
-
   const filteredSubjectOptions = useMemo(() => {
-    return subjectsToDisplay.filter(s => s.toLowerCase().includes(topic.toLowerCase()));
-  }, [subjectsToDisplay, topic]);
+    return catSubjects.filter(s => s.toLowerCase().includes(topic.toLowerCase()));
+  }, [catSubjects, topic]);
 
   React.useEffect(() => { setSubjectFilter(null); }, [enrollCat]);
   const studentHasAvailability = selectedStudent?.availabilityBlocks?.length > 0;

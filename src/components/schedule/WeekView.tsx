@@ -9,9 +9,6 @@ import { ACTIVE_DAYS, DAY_NAMES, TUTOR_PALETTES } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
 
-const MATH_TOPICS = ['Algebra', 'Geometry', 'Pre-Calculus', 'Calculus', 'Statistics', 'SAT Math', 'ACT Math', 'Math'];
-const ENG_TOPICS  = ['Reading', 'Writing', 'Grammar', 'Essay', 'SAT English', 'ACT English', 'English'];
-
 interface InlineForm {
   query: string;
   student: any | null;
@@ -25,7 +22,7 @@ interface InlineForm {
 const emptyForm = (tutor: Tutor): InlineForm => ({
   query: '',
   student: null,
-  topic: tutor.cat === 'math' ? 'Math' : 'English',
+  topic: tutor.subjects?.[0] ?? '',
   recurring: false,
   recurringWeeks: 4,
   saving: false,
@@ -125,13 +122,9 @@ export function WeekView({
   };
 
   const topicsFor = (tutor: Tutor) =>
-    tutor.cat === 'math' ? MATH_TOPICS : ENG_TOPICS;
+    Array.from(new Set((tutor.subjects ?? []).map((s: string) => s?.trim()).filter(Boolean)));
 
-  const topicMatchesTutor = (tutor: Tutor, topic: string | null) => {
-    if (!topic) return true;
-    if (topic.toLowerCase() === 'other') return true;
-    return topicsFor(tutor).some(t => t.toLowerCase() === topic.toLowerCase());
-  };
+  const topicMatchesTutor = (_tutor: Tutor, _topic: string | null) => true;
 
   const dropStateFor = (tutor: Tutor, isOutside: boolean): 'valid' | 'invalid' | null => {
     if (isOutside || !draggingTopic) return null;
@@ -141,10 +134,6 @@ export function WeekView({
   const handleSave = async (key: string, tutor: Tutor, date: string, block: any) => {
     const form = forms[key];
     if (!form?.student || !form.topic) return;
-    if (!topicMatchesTutor(tutor, form.topic)) {
-      patchForm(key, { error: `${tutor.name} does not teach ${form.topic}.` });
-      return;
-    }
     patchForm(key, { saving: true, error: null });
     try {
       await onInlineBook({
@@ -209,9 +198,9 @@ export function WeekView({
     const form  = forms[key];
     if (!form) return null;
     const hints   = getSuggestions(key);
-    const isTopicCompatible = topicMatchesTutor(tutor, form.topic);
-    const canSave = !!form.student && !!form.topic && !form.saving && isTopicCompatible && (!form.recurring || form.recurringWeeks >= 2);
+    const canSave = !!form.student && !!form.topic && !form.saving && (!form.recurring || form.recurringWeeks >= 2);
     const topics  = topicsFor(tutor);
+    const selectedTopicOption = topics.includes(form.topic) ? form.topic : '__custom__';
 
     return (
       <div data-inline-form className="flex flex-col gap-2 p-2.5 rounded-xl"
@@ -245,7 +234,7 @@ export function WeekView({
                   onMouseLeave={e => (e.currentTarget.style.background = 'white')}
                   onMouseDown={e => {
                     e.preventDefault();
-                    const autoTopic = s.subject ? (topics.find(t => t.toLowerCase() === s.subject?.toLowerCase()) ?? form.topic) : form.topic;
+                    const autoTopic = s.subject ?? form.topic;
                     patchForm(key, { student: s, query: s.name, topic: autoTopic });
                     setOpenDropdown(null);
                   }}>
@@ -257,12 +246,22 @@ export function WeekView({
             </div>
           )}
         </div>
-        <select value={form.topic} onChange={e => patchForm(key, { topic: e.target.value })}
+        <select value={selectedTopicOption} onChange={e => patchForm(key, { topic: e.target.value === '__custom__' ? '' : e.target.value })}
           className="w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none"
-          style={{ background: '#f3f4f6', border: isTopicCompatible ? '1px solid #e5e7eb' : '1.5px solid #ef4444', color: isTopicCompatible ? '#374151' : '#b91c1c' }}>
+          style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#374151' }}>
           {topics.map(t => <option key={t} value={t}>{t}</option>)}
-          <option value="Other">Other</option>
+          <option value="__custom__">Custom topic...</option>
         </select>
+        {selectedTopicOption === '__custom__' && (
+          <input
+            type="text"
+            value={form.topic}
+            onChange={e => patchForm(key, { topic: e.target.value })}
+            placeholder="Type custom topic"
+            className="w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none"
+            style={{ background: '#fefefe', border: '1px solid #cbd5e1', color: '#374151' }}
+          />
+        )}
         <div className="rounded-lg p-2" style={{ background: '#f8fafc', border: '1px solid #e5e7eb' }}>
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#475569' }}>Recurring</span>
@@ -298,9 +297,9 @@ export function WeekView({
             </div>
           )}
         </div>
-        {(form.error || !isTopicCompatible) && (
+        {form.error && (
           <p className="text-[9px] font-semibold" style={{ color: '#dc2626' }}>
-            {form.error ?? `${tutor.name} does not teach ${form.topic}.`}
+            {form.error}
           </p>
         )}
         <button onClick={() => handleSave(key, tutor, date, block)} disabled={!canSave}

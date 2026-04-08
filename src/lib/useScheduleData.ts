@@ -32,12 +32,9 @@ export type Student = {
   availabilityBlocks: string[]
   email: string | null
   phone: string | null
-  mom_name: string | null
-  mom_email: string | null
-  mom_phone: string | null
-  dad_name: string | null
-  dad_email: string | null
-  dad_phone: string | null
+  parent_name: string | null
+  parent_email: string | null
+  parent_phone: string | null
   bluebook_url: string | null
 }
 
@@ -217,12 +214,9 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           availabilityBlocks: r.availability_blocks ?? [],
           email:              r.email ?? null,
           phone:              r.phone ?? null,
-          mom_name:           r.mom_name ?? null,
-          mom_email:          r.mom_email ?? null,
-          mom_phone:          r.mom_phone ?? null,
-          dad_name:           r.dad_name ?? null,
-          dad_email:          r.dad_email ?? null,
-          dad_phone:          r.dad_phone ?? null,
+          parent_name:        r.parent_name ?? null,
+          parent_email:       r.parent_email ?? null,
+          parent_phone:       r.parent_phone ?? null,
           bluebook_url:       r.bluebook_url ?? null,
         }))
 
@@ -380,13 +374,6 @@ export async function updateSessionNotes({ rowId, notes }: {
   if (error) throw error
 }
 
-export async function updateSessionTopic({ rowId, topic }: {
-  rowId: string; topic: string
-}) {
-  const { error } = await supabase.from(SS).update({ topic }).eq('id', rowId)
-  if (error) throw error
-}
-
 export async function moveStudentSession({
   rowId,
   studentId,
@@ -404,15 +391,6 @@ export async function moveStudentSession({
 }) {
   const MOVE_MAX_CAPACITY = 3
 
-  const topicMatchesTutorCategory = (topic: string | null, cat: string | null) => {
-    if (!topic) return true
-    if (topic.toLowerCase() === 'other') return true
-    const norm = topic.toLowerCase()
-    if ((cat ?? '').toLowerCase() === 'math') return MATH_TOPICS.some(t => t.toLowerCase() === norm)
-    if ((cat ?? '').toLowerCase() === 'english') return ENG_TOPICS.some(t => t.toLowerCase() === norm)
-    return false
-  }
-
   // Fast no-op: same slot
   const { data: fromSession, error: fromErr } = await supabase
     .from(SESSIONS)
@@ -427,25 +405,6 @@ export async function moveStudentSession({
     fromSession.time === toTime
   ) {
     return
-  }
-
-  const { data: movingRow, error: rowErr } = await supabase
-    .from(SS)
-    .select('topic')
-    .eq('id', rowId)
-    .eq('student_id', studentId)
-    .single()
-  if (rowErr) throw rowErr
-
-  const { data: targetTutor, error: tutorErr } = await supabase
-    .from(TUTORS)
-    .select('name, cat')
-    .eq('id', toTutorId)
-    .single()
-  if (tutorErr) throw tutorErr
-
-  if (!topicMatchesTutorCategory(movingRow?.topic ?? null, targetTutor?.cat ?? null)) {
-    throw new Error(`${targetTutor?.name ?? 'That tutor'} does not teach ${movingRow?.topic ?? 'this topic'}.`)
   }
 
   const { data: sessionsAtTime, error: satErr } = await supabase
