@@ -35,6 +35,12 @@ export type Student = {
   parent_name: string | null
   parent_email: string | null
   parent_phone: string | null
+  mom_name: string | null
+  mom_email: string | null
+  mom_phone: string | null
+  dad_name: string | null
+  dad_email: string | null
+  dad_phone: string | null
   bluebook_url: string | null
 }
 
@@ -217,6 +223,12 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           parent_name:        r.parent_name ?? null,
           parent_email:       r.parent_email ?? null,
           parent_phone:       r.parent_phone ?? null,
+          mom_name:           r.mom_name ?? null,
+          mom_email:          r.mom_email ?? null,
+          mom_phone:          r.mom_phone ?? null,
+          dad_name:           r.dad_name ?? null,
+          dad_email:          r.dad_email ?? null,
+          dad_phone:          r.dad_phone ?? null,
           bluebook_url:       r.bluebook_url ?? null,
         }))
 

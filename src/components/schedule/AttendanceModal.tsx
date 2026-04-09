@@ -253,6 +253,38 @@ function ModalContent({
                 <div className="px-3 pt-2 pb-3">
                   <p className="text-[9px] font-bold text-[#94a3b8] uppercase tracking-wider mb-1.5">Parent / Guardian</p>
                   <div className="space-y-1">
+                    {(cr?.mom_name || cr?.mom_email || cr?.mom_phone) && (
+                      <div className="border-l-2 border-[#f59e0b] pl-2.5 py-1.5">
+                        <p className="text-[8px] font-bold text-[#f59e0b] uppercase tracking-wider mb-1">Mother</p>
+                        <div className="space-y-1">
+                          {cr?.mom_name && (
+                            <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(203,213,225,0.5)' }}>
+                              <User size={11} style={{ color: '#94a3b8' }} className="shrink-0" />
+                              <span className="flex-1 text-[12.5px] font-medium text-[#1e293b]">{cr.mom_name}</span>
+                              <CopyBtn value={cr.mom_name} />
+                            </div>
+                          )}
+                          {cr?.mom_email && <ContactRow href={`mailto:${cr.mom_email}`} icon={<Mail size={11} />} label={cr.mom_email} copyValue={cr.mom_email} />}
+                          {cr?.mom_phone && <ContactRow href={`tel:${cr.mom_phone}`} icon={<Phone size={11} />} label={cr.mom_phone} copyValue={cr.mom_phone} />}
+                        </div>
+                      </div>
+                    )}
+                    {(cr?.dad_name || cr?.dad_email || cr?.dad_phone) && (
+                      <div className="border-l-2 border-[#3b82f6] pl-2.5 py-1.5">
+                        <p className="text-[8px] font-bold text-[#3b82f6] uppercase tracking-wider mb-1">Father</p>
+                        <div className="space-y-1">
+                          {cr?.dad_name && (
+                            <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(203,213,225,0.5)' }}>
+                              <User size={11} style={{ color: '#94a3b8' }} className="shrink-0" />
+                              <span className="flex-1 text-[12.5px] font-medium text-[#1e293b]">{cr.dad_name}</span>
+                              <CopyBtn value={cr.dad_name} />
+                            </div>
+                          )}
+                          {cr?.dad_email && <ContactRow href={`mailto:${cr.dad_email}`} icon={<Mail size={11} />} label={cr.dad_email} copyValue={cr.dad_email} />}
+                          {cr?.dad_phone && <ContactRow href={`tel:${cr.dad_phone}`} icon={<Phone size={11} />} label={cr.dad_phone} copyValue={cr.dad_phone} />}
+                        </div>
+                      </div>
+                    )}
                     {cr?.parent_name && (
                       <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(203,213,225,0.5)' }}>
                         <User size={11} style={{ color: '#94a3b8' }} className="shrink-0" />
@@ -262,7 +294,7 @@ function ModalContent({
                     )}
                     {cr?.parent_email && <ContactRow href={`mailto:${cr.parent_email}`} icon={<Mail size={11} />} label={cr.parent_email} copyValue={cr.parent_email} />}
                     {cr?.parent_phone && <ContactRow href={`tel:${cr.parent_phone}`} icon={<Phone size={11} />} label={cr.parent_phone} copyValue={cr.parent_phone} />}
-                    {!cr?.parent_name && !cr?.parent_email && !cr?.parent_phone && (
+                    {!cr?.mom_name && !cr?.mom_email && !cr?.mom_phone && !cr?.dad_name && !cr?.dad_email && !cr?.dad_phone && !cr?.parent_name && !cr?.parent_email && !cr?.parent_phone && (
                       <div className="px-2.5 py-2 rounded-lg text-[12px] text-[#94a3b8]" style={{ background: '#f1f5f9', border: '1px solid #e2e8f0' }}>No parent contact on file</div>
                     )}
                   </div>
@@ -404,13 +436,30 @@ export function AttendanceModal(props: AttendanceModalProps) {
     (studentId != null && String(st.id) === String(studentId)) ||
     (studentName && String(st.name ?? '').trim().toLowerCase() === studentName)
   );
+  
+  // Construct parent info — only use explicit parent_* fields, NOT mom/dad fallbacks
+  const parentName = studentRecord?.parent_name ?? studentRecord?.parentName ?? 
+    student?.parent_name ?? student?.parentName ?? null;
+  
+  const parentEmail = studentRecord?.parent_email ?? studentRecord?.parentEmail ?? 
+    student?.parent_email ?? student?.parentEmail ?? null;
+  
+  const parentPhone = studentRecord?.parent_phone ?? studentRecord?.parentPhone ?? 
+    student?.parent_phone ?? student?.parentPhone ?? null;
+  
   const contactInfo = {
     email: studentRecord?.email ?? studentRecord?.student_email ?? student?.email ?? student?.student_email ?? null,
     phone: studentRecord?.phone ?? studentRecord?.student_phone ?? student?.phone ?? student?.student_phone ?? null,
     bluebook_url: studentRecord?.bluebook_url ?? studentRecord?.bluebookUrl ?? student?.bluebook_url ?? student?.bluebookUrl ?? null,
-    parent_name: studentRecord?.parent_name ?? studentRecord?.parentName ?? student?.parent_name ?? student?.parentName ?? null,
-    parent_email: studentRecord?.parent_email ?? studentRecord?.parentEmail ?? student?.parent_email ?? student?.parentEmail ?? null,
-    parent_phone: studentRecord?.parent_phone ?? studentRecord?.parentPhone ?? student?.parent_phone ?? student?.parentPhone ?? null,
+    parent_name: parentName,
+    parent_email: parentEmail,
+    parent_phone: parentPhone,
+    mom_name: studentRecord?.mom_name ?? student?.mom_name ?? null,
+    mom_email: studentRecord?.mom_email ?? student?.mom_email ?? null,
+    mom_phone: studentRecord?.mom_phone ?? student?.mom_phone ?? null,
+    dad_name: studentRecord?.dad_name ?? student?.dad_name ?? null,
+    dad_email: studentRecord?.dad_email ?? student?.dad_email ?? null,
+    dad_phone: studentRecord?.dad_phone ?? student?.dad_phone ?? null,
   };
 
   const altTutors = props.tutors.filter(t => {
