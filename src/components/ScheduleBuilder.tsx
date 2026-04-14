@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { X, Sparkles, Loader2, Check, AlertTriangle, ChevronDown, RotateCcw, Calendar, User, Clock, ArrowRight, Plus, Trash2 } from 'lucide-react'
 import type { Student, Tutor } from '@/lib/useScheduleData'
 import { SchedulePreviewGrid } from '@/components/SchedulePreviewGrid'
@@ -11,6 +11,8 @@ interface AvailableSeat {
   date: string
   time: string
   seatsLeft: number
+  occupied?: number
+  maxCapacity?: number
   block?: { label: string; display: string }
   dayNum: number
 }
@@ -34,6 +36,27 @@ interface Proposal {
   reason: string
 }
 
+interface MoveStep {
+  type: 'place' | 'move'
+  studentName: string
+  subject: string
+  fromSlot?: { dayName: string; label: string; tutorName: string }
+  toSlot: { dayName: string; label: string; tutorName: string }
+}
+
+interface SuggestionOption {
+  title: string
+  detail: string
+  steps: string[]
+  moves?: MoveStep[]
+  explanation?: {
+    scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }>
+    constraintsChecked: Array<{ name: string; status: 'pass' | 'fail'; detail: string }>
+    alternatives: Array<{ label: string; reason: string }>
+    confidence: { level: 'high' | 'medium' | 'low'; reason: string }
+  }
+}
+
 interface ScheduleBuilderProps {
   students: Student[]
   tutors: Tutor[]
@@ -41,6 +64,7 @@ interface ScheduleBuilderProps {
   allAvailableSeats: AvailableSeat[]
   weekStart: string
   weekEnd: string
+  initialMode?: 'batch' | 'single'
   onConfirm: (bookings: { student: Student; slot: AvailableSeat; topic: string }[]) => Promise<void>
   onClose: () => void
 }
@@ -121,9 +145,17 @@ function clientSideMatch(
     const scored = candidates
       .map(({ seat, index }) => {
         let score = 0
-        const filled = seat.seatsLeft - getRem(index, seat)
-        score += filled * 5
-        
+
+        // Strongly prefer adding into already-running sessions before opening new ones.
+        const baseOccupied = typeof seat.occupied === 'number'
+          ? seat.occupied
+          : Math.max(0, (seat.maxCapacity ?? 3) - seat.seatsLeft)
+        score += baseOccupied * 10
+
+        // Small bonus for additional fill created during this run.
+        const runAssignedHere = assignedCounts[index] ?? 0
+        score += runAssignedHere * 4
+
         if (!daysBooked.has(seat.dayNum)) score += 8
         else score -= 15
         
@@ -178,8 +210,9 @@ function clientSideMatch(
 }
 
 export function ScheduleBuilder({
-  students, tutors, sessions, allAvailableSeats, weekStart, weekEnd, onConfirm, onClose
+  students, tutors, sessions, allAvailableSeats, weekStart, weekEnd, initialMode = 'batch', onConfirm, onClose
 }: ScheduleBuilderProps) {
+  const [builderMode, setBuilderMode] = useState<'batch' | 'single'>(initialMode)
   const [step, setStep] = useState<'select' | 'preview'>('select')
   // Map of studentId → list of subjects needed (with local needId)
   const [studentNeeds, setStudentNeeds] = useState<Record<string, { subject: string; needId: string; allowSameDayDouble: boolean }[]>>({})
@@ -187,10 +220,24 @@ export function ScheduleBuilder({
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [generating, setGenerating] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [suggestionsByNeed, setSuggestionsByNeed] = useState<Record<string, SuggestionOption[]>>({})
+
+  const [singleStudentId, setSingleStudentId] = useState('')
+  const [singleSubject, setSingleSubject] = useState('')
+  const [singleSessionBlocks, setSingleSessionBlocks] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [studentAvailability, setStudentAvailability] = useState<Record<string, string[]>>({})
+  const [persistedAvailability, setPersistedAvailability] = useState<Record<string, string[]>>({})
   const [availabilityOpenFor, setAvailabilityOpenFor] = useState<string | null>(null)
   const [savingAvailability, setSavingAvailability] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const next: Record<string, string[]> = {}
+    students.forEach(s => {
+      next[s.id] = [...(s.availabilityBlocks ?? [])]
+    })
+    setPersistedAvailability(next)
+  }, [students])
 
   // Existing bookings this week by student
   const bookedSlotsByStudent = useMemo(() => {
@@ -215,6 +262,302 @@ export function ScheduleBuilder({
     return ids
   }, [sessions])
 
+  const existingSeatCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    sessions.forEach((s: any) => {
+      const activeStudents = (s.students ?? []).filter((st: any) => st.status !== 'cancelled').length
+      if (activeStudents <= 0 || !s.tutorId || !s.date || !s.time) return
+      const key = `${s.tutorId}|${s.date}|${s.time}`
+      counts[key] = (counts[key] ?? 0) + activeStudents
+    })
+    return counts
+  }, [sessions])
+
+  const studentById = useMemo(() => {
+    const map: Record<string, Student> = {}
+    students.forEach(s => { map[s.id] = s })
+    return map
+  }, [students])
+
+  const tutorById = useMemo(() => {
+    const map: Record<string, Tutor> = {}
+    tutors.forEach(t => { map[t.id] = t })
+    return map
+  }, [tutors])
+
+  const buildSuggestionsForNeed = useCallback((need: StudentNeed, currentProposals: Proposal[]): SuggestionOption[] => {
+    const options: SuggestionOption[] = []
+    const studentExisting = bookedSlotsByStudent[need.student.id] ?? new Set<string>()
+    const studentRunBooked = new Set(
+      currentProposals
+        .filter(p => p.student.id === need.student.id && p.slot)
+        .map(p => `${p.slot!.date}-${p.slot!.time}`)
+    )
+
+    const proposalLoadBySeat = new Map<string, number>()
+    currentProposals.forEach(p => {
+      if (!p.slot) return
+      const key = `${p.slot.tutor.id}|${p.slot.date}|${p.slot.time}`
+      proposalLoadBySeat.set(key, (proposalLoadBySeat.get(key) ?? 0) + 1)
+    })
+
+    const seatRemaining = (seat: AvailableSeat) => {
+      const key = `${seat.tutor.id}|${seat.date}|${seat.time}`
+      return seat.seatsLeft - (proposalLoadBySeat.get(key) ?? 0)
+    }
+
+    const directCandidates = allAvailableSeats
+      .filter(seat =>
+        subjectMatchesTutor(need.subject, seat.tutor) &&
+        seatRemaining(seat) > 0 &&
+        !studentExisting.has(`${seat.date}-${seat.time}`) &&
+        !studentRunBooked.has(`${seat.date}-${seat.time}`) &&
+        (
+          !(need.student.availabilityBlocks?.length) ||
+          need.student.availabilityBlocks?.includes(`${seat.dayNum}-${seat.time}`)
+        )
+      )
+      .sort((a, b) => {
+        const aOccupied = typeof a.occupied === 'number' ? a.occupied : Math.max(0, (a.maxCapacity ?? 3) - a.seatsLeft)
+        const bOccupied = typeof b.occupied === 'number' ? b.occupied : Math.max(0, (b.maxCapacity ?? 3) - b.seatsLeft)
+        if (bOccupied !== aOccupied) return bOccupied - aOccupied
+        return a.seatsLeft - b.seatsLeft
+      })
+      .slice(0, 3)
+
+    // Calculate all candidates for confidence assessment
+    const allValidCandidates = allAvailableSeats
+      .filter(seat =>
+        subjectMatchesTutor(need.subject, seat.tutor) &&
+        seatRemaining(seat) > 0 &&
+        !studentExisting.has(`${seat.date}-${seat.time}`) &&
+        !studentRunBooked.has(`${seat.date}-${seat.time}`) &&
+        (
+          !(need.student.availabilityBlocks?.length) ||
+          need.student.availabilityBlocks?.includes(`${seat.dayNum}-${seat.time}`)
+        )
+      )
+
+    directCandidates.forEach((seat, idx) => {
+      const scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }> = []
+      const occupied = typeof seat.occupied === 'number' ? seat.occupied : Math.max(0, (seat.maxCapacity ?? 3) - seat.seatsLeft)
+      
+      if (occupied > 0) {
+        scoringFactors.push({ label: 'Fills existing session', value: `${occupied} already booked`, impact: 'positive' })
+      } else {
+        scoringFactors.push({ label: 'Opens new session', value: 'No students yet', impact: 'neutral' })
+      }
+      
+      scoringFactors.push({ label: 'Availability match', value: 'Matches student preferences', impact: 'positive' })
+      scoringFactors.push({ label: 'Subject expertise', value: `${seat.tutor.name} teaches ${need.subject}`, impact: 'positive' })
+      scoringFactors.push({ label: 'Capacity available', value: `${seatRemaining(seat)} open seat${seatRemaining(seat) !== 1 ? 's' : ''}`, impact: 'positive' })
+
+      const constraintsChecked: Array<{ name: string; status: 'pass' | 'fail'; detail: string }> = [
+        { name: 'Subject Match', status: 'pass', detail: `${seat.tutor.name} teaches ${need.subject}` },
+        { name: 'Time Available', status: 'pass', detail: `${seat.dayName} ${seat.block?.label ?? seat.time}` },
+        { name: 'Capacity', status: 'pass', detail: `${seatRemaining(seat)} of ${seat.maxCapacity ?? 3} seats open` },
+        { name: 'Student Availability', status: 'pass', detail: need.student.availabilityBlocks?.length ? 'Matches student blocks' : 'No restrictions' },
+        { name: 'No Double Booking', status: 'pass', detail: 'Student not already booked this time' },
+      ]
+
+      const alternatives = allValidCandidates
+        .filter(s => !(s.tutor.id === seat.tutor.id && s.date === seat.date && s.time === seat.time))
+        .slice(0, 2)
+        .map((alt, i) => {
+          const reason = i === 0 ? 'Second best ranked option' : 'Third option considered'
+          return { label: `${alt.dayName} ${alt.block?.label ?? alt.time} w/ ${alt.tutor.name}`, reason }
+        })
+
+      const confidenceLevel = allValidCandidates.length > 5 ? 'high' : allValidCandidates.length > 2 ? 'medium' : 'low'
+      const confidenceReason = allValidCandidates.length > 5 
+        ? `Many options available (${allValidCandidates.length}) — consistent scheduling` 
+        : allValidCandidates.length > 2 
+        ? `Moderate flexibility (${allValidCandidates.length} options)` 
+        : `Limited options (${allValidCandidates.length}) — fewer alternatives if changes needed`
+
+      options.push({
+        title: `Option ${idx + 1}: Direct placement`,
+        detail: `${seat.dayName} ${seat.block?.label ?? seat.time} with ${seat.tutor.name}`,
+        steps: [
+          `Book ${need.student.name} into ${seat.dayName} ${seat.block?.label ?? seat.time}`,
+          `Tutor: ${seat.tutor.name} · Subject: ${need.subject}`,
+        ],
+        moves: [{
+          type: 'place',
+          studentName: need.student.name,
+          subject: need.subject,
+          toSlot: { dayName: seat.dayName, label: seat.block?.label ?? seat.time, tutorName: seat.tutor.name },
+        }],
+        explanation: {
+          scoringFactors,
+          constraintsChecked,
+          alternatives,
+          confidence: { level: confidenceLevel as 'high' | 'medium' | 'low', reason: confidenceReason },
+        },
+      })
+    })
+
+    const conflictSeats = allAvailableSeats
+      .filter(seat =>
+        subjectMatchesTutor(need.subject, seat.tutor) &&
+        seatRemaining(seat) > 0 &&
+        (
+          !(need.student.availabilityBlocks?.length) ||
+          need.student.availabilityBlocks?.includes(`${seat.dayNum}-${seat.time}`)
+        ) &&
+        (studentExisting.has(`${seat.date}-${seat.time}`) || studentRunBooked.has(`${seat.date}-${seat.time}`))
+      )
+      .slice(0, 3)
+
+    for (const conflictSeat of conflictSeats) {
+      const conflictingSession = (sessions ?? []).find((s: any) =>
+        s.date === conflictSeat.date &&
+        s.time === conflictSeat.time &&
+        (s.students ?? []).some((st: any) => st.id === need.student.id && st.status !== 'cancelled')
+      )
+
+      const conflictTopic = conflictingSession
+        ? ((conflictingSession.students ?? []).find((st: any) => st.id === need.student.id && st.status !== 'cancelled')?.topic || need.subject)
+        : need.subject
+
+      const moveTarget = allAvailableSeats.find(seat => {
+        if (!subjectMatchesTutor(conflictTopic, seat.tutor)) return false
+        if (seatRemaining(seat) <= 0) return false
+        if (seat.date === conflictSeat.date && seat.time === conflictSeat.time) return false
+        if ((need.student.availabilityBlocks?.length ?? 0) > 0 && !need.student.availabilityBlocks?.includes(`${seat.dayNum}-${seat.time}`)) return false
+        if (studentExisting.has(`${seat.date}-${seat.time}`)) return false
+        if (studentRunBooked.has(`${seat.date}-${seat.time}`)) return false
+        return true
+      })
+
+      if (!moveTarget) continue
+
+      const scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }> = [
+        { label: 'Resolves conflict', value: `Moves ${conflictTopic} to clear slot`, impact: 'positive' },
+        { label: 'Maintains subject', value: `Keeps ${conflictTopic} with qualified tutor`, impact: 'positive' },
+        { label: 'Adds new subject', value: `Books ${need.subject} in freed slot`, impact: 'positive' },
+        { label: 'Two-step process', value: 'Requires moving existing session', impact: 'negative' },
+      ]
+
+      const constraintsChecked: Array<{ name: string; status: 'pass' | 'fail'; detail: string }> = [
+        { name: 'Subject Match (original)', status: 'pass', detail: `Existing ${conflictTopic} can be moved` },
+        { name: 'Subject Match (new)', status: 'pass', detail: `${conflictSeat.tutor.name} teaches ${need.subject}` },
+        { name: 'Move Destination', status: 'pass', detail: `${moveTarget.dayName} ${moveTarget.block?.label ?? moveTarget.time}` },
+        { name: 'No Double Booking', status: 'pass', detail: 'Clear all time conflicts' },
+      ]
+
+      options.push({
+        title: `Option ${options.length + 1}: Resolve double booking`,
+        detail: `Move ${need.student.name}'s conflicting session, then place ${need.subject}`,
+        steps: [
+          `Move existing ${conflictTopic} session from ${conflictSeat.dayName} ${conflictSeat.block?.label ?? conflictSeat.time} to ${moveTarget.dayName} ${moveTarget.block?.label ?? moveTarget.time} with ${moveTarget.tutor.name}`,
+          `Then book ${need.student.name} for ${need.subject} at ${conflictSeat.dayName} ${conflictSeat.block?.label ?? conflictSeat.time} with ${conflictSeat.tutor.name}`,
+        ],
+        moves: [
+          {
+            type: 'move',
+            studentName: need.student.name,
+            subject: conflictTopic,
+            fromSlot: { dayName: conflictSeat.dayName, label: conflictSeat.block?.label ?? conflictSeat.time, tutorName: conflictSeat.tutor.name },
+            toSlot: { dayName: moveTarget.dayName, label: moveTarget.block?.label ?? moveTarget.time, tutorName: moveTarget.tutor.name },
+          },
+          {
+            type: 'place',
+            studentName: need.student.name,
+            subject: need.subject,
+            toSlot: { dayName: conflictSeat.dayName, label: conflictSeat.block?.label ?? conflictSeat.time, tutorName: conflictSeat.tutor.name },
+          },
+        ],
+        explanation: {
+          scoringFactors,
+          constraintsChecked,
+          alternatives: [],
+          confidence: { level: 'medium', reason: 'Requires moving existing booking — verify student availability' },
+        },
+      })
+
+      if (options.length >= 4) break
+    }
+
+    const fullSessions = (sessions ?? []).filter((s: any) => ((s.students ?? []).filter((st: any) => st.status !== 'cancelled').length >= 3))
+    for (const full of fullSessions) {
+      const tutor = tutorById[full.tutorId]
+      if (!tutor || !subjectMatchesTutor(need.subject, { subjects: tutor.subjects } as any)) continue
+
+      const dayNum = new Date(full.date + 'T00:00:00').getDay()
+      if ((need.student.availabilityBlocks?.length ?? 0) > 0 && !need.student.availabilityBlocks?.includes(`${dayNum}-${full.time}`)) continue
+      if (studentExisting.has(`${full.date}-${full.time}`)) continue
+
+      const fullStudents = (full.students ?? []).filter((st: any) => st.status !== 'cancelled')
+      for (const st of fullStudents) {
+        const movingStudent = studentById[st.id]
+        if (!movingStudent) continue
+        const movingTopic = st.topic || movingStudent.subject || need.subject
+
+        const destination = allAvailableSeats.find(seat => {
+          if (!subjectMatchesTutor(movingTopic, seat.tutor)) return false
+          if (seatRemaining(seat) <= 0) return false
+          if (seat.date === full.date && seat.time === full.time) return false
+          const movingExisting = bookedSlotsByStudent[movingStudent.id] ?? new Set<string>()
+          if (movingExisting.has(`${seat.date}-${seat.time}`)) return false
+          if ((movingStudent.availabilityBlocks?.length ?? 0) > 0 && !movingStudent.availabilityBlocks?.includes(`${seat.dayNum}-${seat.time}`)) return false
+          return true
+        })
+
+        if (!destination) continue
+
+        const fullDayName = (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])[new Date(full.date + 'T00:00:00').getDay()] ?? full.date
+        const fullBlockLabel = SESSION_BLOCKS.find((b: any) => b.time === full.time)?.label ?? full.time
+
+        const scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }> = [
+          { label: 'Opens full session', value: 'Session has 3 students — making room optimizes class', impact: 'positive' },
+          { label: 'Maintains balance', value: `${movingStudent.name} still gets ${movingTopic}`, impact: 'positive' },
+          { label: 'Adds capacity', value: `${need.student.name} fills needed ${need.subject} slot`, impact: 'positive' },
+          { label: 'More complex', value: 'Requires rearranging current students', impact: 'negative' },
+        ]
+
+        options.push({
+          title: `Option ${options.length + 1}: Rearrangement`,
+          detail: `Move ${movingStudent.name} out, then place ${need.student.name}`,
+          steps: [
+            `Move ${movingStudent.name} (${movingTopic}) to ${destination.dayName} ${destination.block?.label ?? destination.time} with ${destination.tutor.name}`,
+            `Then book ${need.student.name} (${need.subject}) into ${full.date} ${full.time} with ${tutor.name}`,
+          ],
+          moves: [
+            {
+              type: 'move',
+              studentName: movingStudent.name,
+              subject: movingTopic,
+              fromSlot: { dayName: fullDayName, label: fullBlockLabel, tutorName: tutor.name },
+              toSlot: { dayName: destination.dayName, label: destination.block?.label ?? destination.time, tutorName: destination.tutor.name },
+            },
+            {
+              type: 'place',
+              studentName: need.student.name,
+              subject: need.subject,
+              toSlot: { dayName: fullDayName, label: fullBlockLabel, tutorName: tutor.name },
+            },
+          ],
+          explanation: {
+            scoringFactors,
+            constraintsChecked: [
+              { name: 'Session Capacity Check', status: 'pass', detail: 'Current session is full (3/3 students)' },
+              { name: 'Availability', status: 'pass', detail: `${movingStudent.name} available at destination` },
+              { name: 'No Double Booking', status: 'pass', detail: `${need.student.name} can take freed slot` },
+            ],
+            alternatives: [],
+            confidence: { level: 'medium', reason: 'Works best if stakeholders approve moving an existing student' },
+          },
+        })
+        break
+      }
+
+      if (options.length >= 4) break
+    }
+
+    return options.slice(0, 4)
+  }, [allAvailableSeats, bookedSlotsByStudent, sessions, studentById, tutorById])
+
   const filteredStudents = useMemo(() =>
     students.filter(s => s.name.toLowerCase().includes(search.toLowerCase())),
     [students, search]
@@ -226,7 +569,6 @@ export function ScheduleBuilder({
       if (next.has(id)) {
         next.delete(id)
         setStudentNeeds(sn => { const n = { ...sn }; delete n[id]; return n })
-        setStudentAvailability(sa => { const n = { ...sa }; delete n[id]; return n })
         if (availabilityOpenFor === id) setAvailabilityOpenFor(null)
       } else {
         next.add(id)
@@ -238,12 +580,33 @@ export function ScheduleBuilder({
         }))
         setStudentAvailability(sa => ({
           ...sa,
-          [id]: [...(selectedStudent?.availabilityBlocks ?? [])],
+          [id]: [...(sa[id] ?? persistedAvailability[id] ?? selectedStudent?.availabilityBlocks ?? [])],
         }))
       }
       return next
     })
-  }, [students, availabilityOpenFor])
+  }, [students, availabilityOpenFor, persistedAvailability])
+
+  const saveStudentAvailability = useCallback(async (studentId: string, availabilityBlocks: string[]) => {
+    const res = await fetch('/api/student-availability', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId, availabilityBlocks })
+    })
+
+    if (!res.ok) {
+      let message = 'Failed to save availability.'
+      try {
+        const payload = await res.json()
+        if (payload?.error) message = payload.error
+      } catch {
+        // Ignore non-JSON response body.
+      }
+      throw new Error(message)
+    }
+
+    setPersistedAvailability(prev => ({ ...prev, [studentId]: [...availabilityBlocks] }))
+  }, [])
 
   const toggleAvailabilityBlock = useCallback((studentId: string, dow: number, time: string) => {
     const key = `${dow}-${time}`
@@ -257,13 +620,14 @@ export function ScheduleBuilder({
       setSavingAvailability(s => new Set([...s, studentId]))
       ;(async () => {
         try {
-          await fetch('/api/student-availability', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ studentId, availabilityBlocks: next })
-          })
+          await saveStudentAvailability(studentId, next)
         } catch (err) {
           console.error('Failed to save availability:', err)
+          setStudentAvailability(sa => ({
+            ...sa,
+            [studentId]: [...(persistedAvailability[studentId] ?? [])],
+          }))
+          alert((err as Error).message || 'Failed to save availability.')
         } finally {
           setSavingAvailability(s => {
             const next = new Set(s)
@@ -275,11 +639,10 @@ export function ScheduleBuilder({
       
       return { ...prev, [studentId]: next }
     })
-  }, [])
+  }, [persistedAvailability, saveStudentAvailability])
 
   const resetAvailability = useCallback((studentId: string) => {
-    const s = students.find(st => st.id === studentId)
-    const originalBlocks = [...(s?.availabilityBlocks ?? [])]
+    const originalBlocks = [...(persistedAvailability[studentId] ?? [])]
     
     setStudentAvailability(prev => ({
       ...prev,
@@ -290,13 +653,10 @@ export function ScheduleBuilder({
     setSavingAvailability(sa => new Set([...sa, studentId]))
     ;(async () => {
       try {
-        await fetch('/api/student-availability', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ studentId, availabilityBlocks: originalBlocks })
-        })
+        await saveStudentAvailability(studentId, originalBlocks)
       } catch (err) {
         console.error('Failed to save availability:', err)
+        alert((err as Error).message || 'Failed to reset availability.')
       } finally {
         setSavingAvailability(sa => {
           const next = new Set(sa)
@@ -305,7 +665,7 @@ export function ScheduleBuilder({
         })
       }
     })()
-  }, [students])
+  }, [persistedAvailability, saveStudentAvailability])
 
   const addSubjectRow = useCallback((studentId: string) => {
     setStudentNeeds(prev => {
@@ -362,17 +722,44 @@ export function ScheduleBuilder({
     (studentNeeds[id] ?? []).some(n => !n.subject) ||
     (studentNeeds[id] ?? []).length === 0
   )
-  const canGenerate = selectedCount > 0 && !missingSubject && !generating
+  const singleSelectedStudent = useMemo(() => students.find(s => s.id === singleStudentId) ?? null, [students, singleStudentId])
+  const canGenerate = builderMode === 'batch'
+    ? selectedCount > 0 && !missingSubject && !generating
+    : !!singleSelectedStudent && !!singleSubject && !generating
 
   const generate = useCallback(async () => {
     if (!canGenerate) return
+    const needsToRun: StudentNeed[] = builderMode === 'single'
+      ? (() => {
+          if (!singleSelectedStudent || !singleSubject) return []
+          return [{
+            student: {
+              ...singleSelectedStudent,
+              // Single-mode availability is ad-hoc for this booking only.
+              availabilityBlocks: [],
+            },
+            subject: singleSubject,
+            needId: `${singleSelectedStudent.id}-single`,
+            allowSameDayDouble: false,
+          }]
+        })()
+      : allNeeds
+
+    if (!needsToRun.length) return
+
+    const hasSingleBlocks = builderMode === 'single' && singleSessionBlocks.length > 0
+    const seatsForRun = hasSingleBlocks
+      ? allAvailableSeats.filter(seat => singleSessionBlocks.includes(`${seat.dayNum}-${seat.time}`))
+      : allAvailableSeats
+
     setGenerating(true)
     try {
+      const needStudentIds = Array.from(new Set(needsToRun.map(n => n.student.id)))
       const res = await fetch('/api/schedule-builder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          needs: allNeeds.map(n => ({
+          needs: needsToRun.map(n => ({
             studentId: n.student.id,
             studentName: n.student.name,
             subject: n.subject,
@@ -380,7 +767,7 @@ export function ScheduleBuilder({
             availabilityBlocks: n.student.availabilityBlocks ?? [],
             allowSameDayDouble: n.allowSameDayDouble,
           })),
-          availableSeats: allAvailableSeats.map((s, i) => ({
+          availableSeats: seatsForRun.map((s, i) => ({
             index: i,
             tutorId: s.tutor.id,
             tutorName: s.tutor.name,
@@ -391,9 +778,11 @@ export function ScheduleBuilder({
             date: s.date,
             time: s.time,
             seatsLeft: s.seatsLeft,
+            occupied: typeof (s as any).count === 'number' ? (s as any).count : Math.max(0, 3 - s.seatsLeft),
+            maxCapacity: 3,
             label: s.block?.label,
           })),
-          existingBookings: [...selectedIds].map(id => ({
+          existingBookings: needStudentIds.map(id => ({
             studentId: id,
             existingSlots: Array.from(bookedSlotsByStudent[id] ?? []),
           })),
@@ -405,12 +794,12 @@ export function ScheduleBuilder({
       if (!res.ok) throw new Error('API error')
       const data = await res.json()
 
-      const built: Proposal[] = allNeeds.map(need => {
+      const built: Proposal[] = needsToRun.map(need => {
         const a = data.assignments?.find((x: any) => x.studentId === need.student.id && x.subject === need.subject)
         if (!a || a.slotIndex == null) {
           return { needId: need.needId, student: need.student, subject: need.subject, slot: null, status: 'unmatched' as ProposalStatus, reason: a?.reason ?? 'No valid slot found' }
         }
-        const slot = allAvailableSeats[a.slotIndex]
+        const slot = seatsForRun[a.slotIndex]
         if (!slot) {
           return { needId: need.needId, student: need.student, subject: need.subject, slot: null, status: 'unmatched' as ProposalStatus, reason: 'Slot index invalid' }
         }
@@ -418,14 +807,27 @@ export function ScheduleBuilder({
       })
 
       setProposals(built)
+      const nextSuggestions: Record<string, SuggestionOption[]> = {}
+      needsToRun.forEach(need => {
+        const placed = built.find(p => p.needId === need.needId)?.slot
+        if (!placed) nextSuggestions[need.needId] = buildSuggestionsForNeed(need, built)
+      })
+      setSuggestionsByNeed(nextSuggestions)
       setStep('preview')
     } catch {
-      setProposals(clientSideMatch(allNeeds, allAvailableSeats, bookedSlotsByStudent))
+      const fallbackBuilt = clientSideMatch(needsToRun, seatsForRun, bookedSlotsByStudent)
+      setProposals(fallbackBuilt)
+      const nextSuggestions: Record<string, SuggestionOption[]> = {}
+      needsToRun.forEach(need => {
+        const placed = fallbackBuilt.find(p => p.needId === need.needId)?.slot
+        if (!placed) nextSuggestions[need.needId] = buildSuggestionsForNeed(need, fallbackBuilt)
+      })
+      setSuggestionsByNeed(nextSuggestions)
       setStep('preview')
     } finally {
       setGenerating(false)
     }
-  }, [canGenerate, allNeeds, allAvailableSeats, weekStart, weekEnd, selectedIds, bookedSlotsByStudent])
+  }, [canGenerate, builderMode, singleSelectedStudent, singleSubject, allNeeds, allAvailableSeats, weekStart, weekEnd, bookedSlotsByStudent, buildSuggestionsForNeed, singleSessionBlocks])
 
   const swapSlot = useCallback((needId: string, slotIndex: number) => {
     const slot = allAvailableSeats[slotIndex]
@@ -464,6 +866,21 @@ export function ScheduleBuilder({
     return { success: true }
   }, [allAvailableSeats, proposals, bookedSlotsByStudent, sessions])
 
+  const computeRatioMetrics = useCallback((proposalList: Proposal[]) => {
+    const counts: Record<string, number> = { ...existingSeatCounts }
+    proposalList.forEach(p => {
+      if (!p.slot) return
+      const key = `${p.slot.tutor.id}|${p.slot.date}|${p.slot.time}`
+      counts[key] = (counts[key] ?? 0) + 1
+    })
+    const activeSessions = Object.values(counts).filter(c => c > 0).length
+    const totalStudents = Object.values(counts).reduce((sum, c) => sum + c, 0)
+    const ratio = activeSessions > 0 ? totalStudents / activeSessions : 0
+    return { counts, activeSessions, totalStudents, ratio }
+  }, [existingSeatCounts])
+
+  const currentRatioMetrics = useMemo(() => computeRatioMetrics(proposals), [computeRatioMetrics, proposals])
+
   const removeProposal = useCallback((needId: string) => {
     setProposals(prev => prev.filter(p => p.needId !== needId))
   }, [])
@@ -496,10 +913,14 @@ export function ScheduleBuilder({
           <div style={{ width: '100%', maxWidth: 520, borderRadius: 28, background: 'white', border: '1px solid #e5e7eb', boxShadow: '0 24px 80px rgba(15,23,42,0.12)', padding: '32px', color: '#0f172a' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.28em', color: '#64748b', margin: 0 }}>Schedule builder</p>
-                <h2 style={{ fontSize: 26, fontWeight: 800, margin: '10px 0 0', lineHeight: 1.05 }}>Generating schedule…</h2>
+                <p style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.28em', color: '#64748b', margin: 0 }}>{builderMode === 'single' ? 'Single session planner' : 'Weekly planner'}</p>
+                <h2 style={{ fontSize: 26, fontWeight: 800, margin: '10px 0 0', lineHeight: 1.05 }}>{builderMode === 'single' ? 'Finding the best slot…' : 'Planning the week…'}</h2>
               </div>
-              <p style={{ margin: 0, color: '#475569', lineHeight: 1.75 }}>Running constraint engine — matching subjects, checking capacity, spreading across days.</p>
+              <p style={{ margin: 0, color: '#475569', lineHeight: 1.75 }}>
+                {builderMode === 'single'
+                  ? 'Matching subject, tutor fit, and open seats for one booking.'
+                  : 'Running constraint engine — matching subjects, checking capacity, and spreading sessions across the week.'}
+              </p>
               <div style={{ display: 'flex', gap: 10 }}>
                 {[0, 1, 2, 3].map(i => (
                   <div key={i} style={{ flex: 1, height: 10, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden' }}>
@@ -522,11 +943,27 @@ export function ScheduleBuilder({
               <Sparkles size={16} style={{ color: '#5b21b6' }} />
             </div>
             <div>
-              <p style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>Schedule Builder</p>
-              <p style={{ fontSize: 11, fontWeight: 600, color: '#334155', margin: '3px 0 0' }}>Week of {weekStart} · {allAvailableSeats.length} open seats</p>
+              <p style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>{builderMode === 'single' ? 'Single Session Planner' : 'Weekly Planner'}</p>
+              <p style={{ fontSize: 11, fontWeight: 600, color: '#334155', margin: '3px 0 0' }}>
+                {builderMode === 'single'
+                  ? `Find the best open seat for one student · ${allAvailableSeats.length} options this week`
+                  : `Week of ${weekStart} · ${allAvailableSeats.length} open seats`}
+              </p>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 4, borderRadius: 10, background: '#e2e8f0', border: '1px solid #94a3b8' }}>
+              <button
+                onClick={() => setBuilderMode('batch')}
+                style={{ padding: '5px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800, background: builderMode === 'batch' ? '#1d4ed8' : 'transparent', color: builderMode === 'batch' ? '#ffffff' : '#0f172a' }}>
+                Plan Week
+              </button>
+              <button
+                onClick={() => setBuilderMode('single')}
+                style={{ padding: '5px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800, background: builderMode === 'single' ? '#1d4ed8' : 'transparent', color: builderMode === 'single' ? '#ffffff' : '#0f172a' }}>
+                Book One
+              </button>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 10, background: '#f8fafc', border: '1px solid #cbd5e1' }}>
               {(['Select', 'Preview'] as const).map((label, i) => {
                 const isActive = (i === 0 && step === 'select') || (i === 1 && step === 'preview')
@@ -550,14 +987,149 @@ export function ScheduleBuilder({
         {/* Step 1 — Select */}
         {step === 'select' && (
           <>
-            <div style={{ padding: '12px 24px', borderBottom: '1px solid #e2e8f0', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc' }}>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" style={{ ...inputStyle, flex: 1 }} />
-              <button onClick={() => { students.forEach(s => { if (!selectedIds.has(s.id)) toggleStudent(s.id) }) }} style={btnSecondary}>All</button>
-              <button onClick={() => { setSelectedIds(new Set()); setStudentNeeds({}) }} style={btnSecondary}>None</button>
-            </div>
+            {builderMode === 'batch' && (
+              <div style={{ padding: '12px 24px', borderBottom: '1px solid #e2e8f0', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc' }}>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" style={{ ...inputStyle, flex: 1 }} />
+                <button onClick={() => { students.forEach(s => { if (!selectedIds.has(s.id)) toggleStudent(s.id) }) }} style={btnSecondary}>All</button>
+                <button onClick={() => { setSelectedIds(new Set()); setStudentNeeds({}) }} style={btnSecondary}>None</button>
+              </div>
+            )}
+
+
 
             <div style={{ overflowY: 'auto', flex: 1 }}>
-              {filteredStudents.length === 0 ? (
+              <div style={{ padding: '14px 24px 0' }}>
+                <div style={{ borderRadius: 12, border: '1px solid #94a3b8', background: '#f8fafc', padding: 12 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>What To Select Here</p>
+                  <p style={{ margin: '0 0 8px', fontSize: 12, color: '#1e293b', lineHeight: 1.55 }}>
+                    {builderMode === 'single'
+                      ? 'Pick one student and one subject. Optional session preferences narrow which day/time blocks are allowed for this booking.'
+                      : 'Select students to include in this run, then assign the subject/session count for each. The planner will maximize packing density while respecting constraints.'}
+                  </p>
+                  <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#7f1d1d' }}>
+                    Recurring series are preserved. This planner does not move recurring bookings.
+                  </p>
+                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Constraints This Scheduler Uses</p>
+                  <div style={{ fontSize: 12, color: '#1e293b', lineHeight: 1.55 }}>
+                    <span style={{ display: 'block' }}>1. Tutor subject compatibility.</span>
+                    <span style={{ display: 'block' }}>2. Student availability blocks and no time collisions.</span>
+                    <span style={{ display: 'block' }}>3. Tutor time-off and tutor availability windows.</span>
+                    <span style={{ display: 'block' }}>4. Session seat capacity and consolidation priority.</span>
+                  </div>
+                </div>
+              </div>
+
+              {builderMode === 'single' ? (
+                <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                  {/* Student + Subject */}
+                  <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 14, padding: 20 }}>
+                    <p style={{ margin: '0 0 14px', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Book a single session</p>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 220 }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Student</label>
+                        <div style={{ position: 'relative' }}>
+                          <select
+                            value={singleStudentId}
+                            onChange={e => { setSingleStudentId(e.target.value) }}
+                            style={{ width: '100%', padding: '9px 28px 9px 12px', borderRadius: 10, border: `1.5px solid ${singleStudentId ? '#7c3aed' : '#cbd5e1'}`, fontSize: 13, fontWeight: 600, color: singleStudentId ? '#0f172a' : '#94a3b8', background: 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}>
+                            <option value="">Pick student…</option>
+                            {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                          <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Subject</label>
+                        <div style={{ position: 'relative' }}>
+                          <select
+                            value={singleSubject}
+                            onChange={e => setSingleSubject(e.target.value)}
+                            style={{ width: '100%', padding: '9px 28px 9px 12px', borderRadius: 10, border: `1.5px solid ${singleSubject ? '#7c3aed' : '#cbd5e1'}`, fontSize: 13, fontWeight: 600, color: singleSubject ? '#0f172a' : '#94a3b8', background: 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}>
+                            <option value="">Pick subject…</option>
+                            {ALL_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                          <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Single-session ad-hoc session blocks (does not modify stored availability) */}
+                  {singleSelectedStudent && (
+                    <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 14, padding: 20 }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                        Session Preferences (optional)
+                        {singleSessionBlocks.length === 0 && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#fef9c3', color: '#854d0e', border: '1px solid #fde68a' }}>
+                            Any session
+                          </span>
+                        )}
+                        {singleSessionBlocks.length > 0 && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd' }}>
+                            {singleSessionBlocks.length} session block{singleSessionBlocks.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </p>
+                      <p style={{ fontSize: 11, color: '#64748b', margin: '3px 0 12px' }}>
+                        Pick specific day/session blocks for this one class only. If none selected, engine can place anywhere.
+                      </p>
+
+                      <div style={{ borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden', background: '#fff' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                              <th style={{ textAlign: 'left', fontSize: 10, fontWeight: 800, color: '#64748b', padding: '7px 10px' }}>Session</th>
+                              {AVAILABILITY_DAYS.map(d => (
+                                <th key={d.dow} style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, color: '#64748b', padding: '7px 6px' }}>{d.label}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {SESSION_BLOCKS.map((block, i) => (
+                              <tr key={block.id} style={{ borderBottom: i < SESSION_BLOCKS.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                                <td style={{ padding: '7px 10px' }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{block.label}</div>
+                                  <div style={{ fontSize: 10, color: '#64748b' }}>{block.display}</div>
+                                </td>
+                                {AVAILABILITY_DAYS.map(d => {
+                                  const applicable = block.days.includes(d.dow)
+                                  const key = `${d.dow}-${block.time}`
+                                  const active = applicable && singleSessionBlocks.includes(key)
+                                  return (
+                                    <td key={d.dow} style={{ padding: 6, textAlign: 'center' }}>
+                                      {applicable ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSingleSessionBlocks(prev => prev.includes(key) ? prev.filter(x => x !== key) : [...prev, key])}
+                                          style={{ width: 24, height: 24, borderRadius: 7, border: `1.5px solid ${active ? '#7c3aed' : '#cbd5e1'}`, background: active ? '#7c3aed' : 'white', color: active ? 'white' : '#94a3b8', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                                          {active ? '✓' : ''}
+                                        </button>
+                                      ) : (
+                                        <div style={{ width: 24, height: 24, margin: '0 auto', borderRadius: 7, background: '#f1f5f9' }} />
+                                      )}
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSingleSessionBlocks([])}
+                          style={{ padding: '8px 10px', borderRadius: 8, border: '1.5px solid #cbd5e1', background: 'white', color: '#475569', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                          Clear selection
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              ) : filteredStudents.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 13 }}>No students found</div>
               ) : filteredStudents.map(student => {
                 const isSelected = selectedIds.has(student.id)
@@ -720,7 +1292,11 @@ export function ScheduleBuilder({
 
             <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <p style={{ fontSize: 12, color: missingSubject ? '#e11d48' : '#64748b', margin: 0 }}>
-                {selectedCount === 0
+                {builderMode === 'single'
+                  ? (!singleSelectedStudent || !singleSubject
+                      ? 'Pick a student and subject to generate single-session suggestions'
+                      : `Generate suggestions for ${singleSelectedStudent.name} · ${singleSubject}`)
+                  : selectedCount === 0
                   ? 'Select students to schedule'
                   : missingSubject
                   ? 'Some students are missing a subject'
@@ -743,6 +1319,9 @@ export function ScheduleBuilder({
             <div style={{ padding: '12px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a' }}>{placedCount} placed</span>
               {unmatchedCount > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#fff1f2', color: '#e11d48' }}>{unmatchedCount} unmatched</span>}
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#e0f2fe', color: '#0369a1' }}>
+                Ratio {currentRatioMetrics.ratio.toFixed(2)}
+              </span>
               <span style={{ fontSize: 11, color: '#334155', fontWeight: 600, marginLeft: 4 }}>Week of {weekStart}</span>
               <button onClick={() => setStep('select')} style={{ ...btnSecondary, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <RotateCcw size={11} /> Back
@@ -752,6 +1331,7 @@ export function ScheduleBuilder({
             <div style={{ overflowY: 'auto', flex: 1, padding: '20px 24px' }}>
               <SchedulePreviewGrid
                 proposals={proposals}
+                suggestionsByNeed={suggestionsByNeed}
                 allAvailableSeats={allAvailableSeats}
                 existingSessions={sessions.map((s: any) => ({
                   date: s.date,
@@ -787,6 +1367,7 @@ export function ScheduleBuilder({
           </>
         )}
       </div>
+
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }

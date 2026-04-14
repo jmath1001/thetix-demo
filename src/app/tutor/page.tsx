@@ -32,7 +32,7 @@ const EMPTY_TUTOR: Omit<TutorWithContact, 'id'> = {
   email: '', phone: '',
 };
 
-const inputCls = "w-full rounded-xl border border-[#94a3b8] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] shadow-[0_1px_2px_rgba(15,23,42,0.06)] focus:outline-none focus:border-[#dc2626] focus:ring-4 focus:ring-[#fee2e2] transition-all";
+const inputCls = "w-full rounded-lg border border-[#94a3b8] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] shadow-[0_1px_2px_rgba(15,23,42,0.06)] focus:outline-none focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff] transition-all";
 const fieldCardCls = "rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)]";
 const fieldLabelCls = "block text-[9px] font-black uppercase tracking-[0.22em] text-[#64748b]";
 
@@ -57,9 +57,9 @@ function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChang
                 const active = selected.includes(subject);
                 return (
                   <button key={subject} type="button" onClick={() => toggle(subject)}
-                    className="rounded-xl px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] transition-all"
+                    className="rounded-md px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] transition-all"
                     style={active
-                      ? { background: '#dc2626', color: 'white', border: '1.5px solid #dc2626', boxShadow: '0 8px 18px rgba(220,38,38,0.18)' }
+                      ? { background: '#4f46e5', color: 'white', border: '1.5px solid #4f46e5', boxShadow: '0 8px 18px rgba(79,70,229,0.18)' }
                       : { background: 'white', color: '#475569', border: '1.5px solid #cbd5e1' }}>
                     {subject}
                   </button>
@@ -107,11 +107,11 @@ function AvailabilityGrid({ blocks, onChange }: { blocks: string[]; onChange: (b
                     <td key={d.dow} className="p-1.5 text-center">
                       {applicable ? (
                         <button type="button" onClick={() => toggle(d.dow, block.time)}
-                          className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl transition-all"
+                          className="mx-auto flex h-9 w-9 items-center justify-center rounded-md transition-all"
                           style={{
-                            background: active ? '#dc2626' : 'white',
-                            border: `1.5px solid ${active ? '#dc2626' : '#cbd5e1'}`,
-                            boxShadow: active ? '0 10px 20px rgba(220,38,38,0.18)' : 'none',
+                            background: active ? '#4f46e5' : 'white',
+                            border: `1.5px solid ${active ? '#4f46e5' : '#cbd5e1'}`,
+                            boxShadow: active ? '0 10px 20px rgba(79,70,229,0.18)' : 'none',
                           }}>
                           {active && <span className="text-white text-[10px] font-black">✓</span>}
                         </button>
@@ -165,8 +165,8 @@ function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Sick, vacation" className={inputCls} />
         </div>
         <button onClick={handleAdd} disabled={!date || saving}
-          className="mb-0.5 flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
-          style={{ background: date ? '#dc2626' : '#e2e8f0', color: date ? 'white' : '#94a3b8', cursor: date ? 'pointer' : 'not-allowed', boxShadow: date ? '0 12px 24px rgba(220,38,38,0.22)' : 'none' }}>
+          className="mb-0.5 flex items-center gap-1.5 rounded-md px-4 py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
+          style={{ background: date ? '#4f46e5' : '#e2e8f0', color: date ? 'white' : '#94a3b8', cursor: date ? 'pointer' : 'not-allowed', boxShadow: date ? '0 12px 24px rgba(79,70,229,0.22)' : 'none' }}>
           {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} />} Add
         </button>
       </div>
@@ -328,7 +328,23 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
             ))}
           </div>
 
-          <div className="p-5">
+          <div className="p-5 max-h-[62vh] overflow-y-auto">
+            {isEditing && tab === 'details' && (
+              <div className="sticky top-0 z-20 -mx-5 mb-5 border-b border-[#cbd5e1] bg-[#f8fbff] px-5 py-3">
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => { setIsEditing(false); setDraft(tutor); }}
+                    className="rounded-xl border border-[#94a3b8] px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#334155]"
+                    style={{ background: '#e2e8f0' }}>
+                    Cancel
+                  </button>
+                  <button onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); setIsEditing(false); }} disabled={!dirty || saving}
+                    className="flex items-center gap-2 rounded-md px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-50"
+                    style={{ background: '#4f46e5', boxShadow: '0 12px 24px rgba(79,70,229,0.24)' }}>
+                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+                  </button>
+                </div>
+              </div>
+            )}
             {tab === 'details' ? (
               <div className="space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -406,17 +422,6 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
                   </>
                 )}
 
-                {isEditing && (
-                  <div className="flex justify-end gap-3 border-t border-[#cbd5e1] pt-4">
-                    <button onClick={() => { setIsEditing(false); setDraft(tutor); }}
-                      className="rounded-xl border border-[#94a3b8] px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#334155]" style={{ background: '#e2e8f0' }}>Cancel</button>
-                    <button onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); setIsEditing(false); }} disabled={!dirty || saving}
-                      className="flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-50"
-                      style={{ background: '#dc2626', boxShadow: '0 12px 24px rgba(220,38,38,0.24)' }}>
-                      {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <TimeOffPanel tutor={tutor} timeOffList={timeOffList} onRefetch={onRefetch} />
@@ -530,21 +535,21 @@ export default function TutorManagementPage() {
   );
 
   return (
-    <div className="h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe5f0 0%, #edf2f7 26%, #f6f8fb 100%)', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+    <div className="tutor-admin h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe5f0 0%, #edf2f7 26%, #f6f8fb 100%)', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
       <div className="h-full overflow-y-auto overscroll-contain">
 
       {/* Top bar */}
-      <div className="sticky top-0 z-40 border-b border-[rgba(148,163,184,0.24)] backdrop-blur-xl" style={{ background: 'rgba(15,23,42,0.88)' }}>
+      <div className="sticky top-0 z-40 border-b border-[#e2e8f0] backdrop-blur-xl" style={{ background: 'rgba(255,255,255,0.92)' }}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[rgba(255,255,255,0.12)] bg-[rgba(220,38,38,0.18)]">
-              <UserPlus size={18} style={{ color: '#fda4af' }} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#c7d2fe] bg-[#eef2ff]">
+              <UserPlus size={18} style={{ color: '#4f46e5' }} />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#fda4af]">Tutor Admin</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#4f46e5]">Tutor Admin</p>
               <div className="flex items-center gap-2">
-                <span className="text-base font-black text-white">Tutors</span>
-                {!loading && <span className="rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#e2e8f0]">{tutors.length}</span>}
+                <span className="text-base font-black text-[#0f172a]">Tutors</span>
+                {!loading && <span className="rounded-full border border-[#c7d2fe] bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">{tutors.length}</span>}
               </div>
             </div>
           </div>
@@ -559,8 +564,8 @@ export default function TutorManagementPage() {
             )}
             <button
               onClick={() => { setAdding(a => !a); setNewTutor(EMPTY_TUTOR); }}
-              className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all"
-              style={{ background: adding ? '#334155' : '#dc2626', boxShadow: adding ? 'none' : '0 12px 24px rgba(220,38,38,0.24)' }}>
+              className="flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all"
+              style={{ background: adding ? '#334155' : '#4f46e5', boxShadow: adding ? 'none' : '0 12px 24px rgba(79,70,229,0.24)' }}>
               {adding ? <><X size={13} /> Cancel</> : <><UserPlus size={13} /> Add Tutor</>}
             </button>
           </div>
@@ -581,8 +586,8 @@ export default function TutorManagementPage() {
           <div className="space-y-5 rounded-xl bg-white p-6 shadow-[0_20px_44px_rgba(15,23,42,0.1)]"
             style={{ border: '1px solid #cbd5e1' }}>
             <div className="flex items-center gap-2">
-              <div className="h-4 w-1 rounded-full" style={{ background: '#dc2626' }} />
-              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: '#dc2626' }}>New Tutor</p>
+              <div className="h-4 w-1 rounded-full" style={{ background: '#4f46e5' }} />
+              <p className="text-[10px] font-black uppercase tracking-[0.22em]" style={{ color: '#4f46e5' }}>New Tutor</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -596,9 +601,9 @@ export default function TutorManagementPage() {
                 <div className="mt-2 flex gap-2">
                   {(['math', 'english'] as const).map(c => (
                     <button key={c} onClick={() => setNewTutor({ ...newTutor, cat: c })}
-                      className="flex-1 rounded-xl py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all"
+                      className="flex-1 rounded-md py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all"
                       style={newTutor.cat === c
-                        ? { background: '#dc2626', color: 'white', border: '1.5px solid #dc2626', boxShadow: '0 10px 20px rgba(220,38,38,0.18)' }
+                        ? { background: '#4f46e5', color: 'white', border: '1.5px solid #4f46e5', boxShadow: '0 10px 20px rgba(79,70,229,0.18)' }
                         : { background: 'white', color: '#475569', border: '1.5px solid #cbd5e1' }}>
                       {c === 'math' ? 'Math / Sci' : 'Eng / Hist'}
                     </button>
@@ -614,7 +619,7 @@ export default function TutorManagementPage() {
                   <Mail size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
                   <input type="email" value={newTutor.email ?? ''} onChange={e => setNewTutor({ ...newTutor, email: e.target.value })}
                     placeholder="tutor@email.com"
-                    className="w-full rounded-xl border border-[#94a3b8] bg-white py-2.5 pl-8 pr-3 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] focus:outline-none focus:border-[#dc2626] focus:ring-4 focus:ring-[#fee2e2] transition-all" />
+                    className="w-full rounded-lg border border-[#94a3b8] bg-white py-2.5 pl-8 pr-3 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] focus:outline-none focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff] transition-all" />
                 </div>
               </div>
               <div className={fieldCardCls}>
@@ -623,7 +628,7 @@ export default function TutorManagementPage() {
                   <Phone size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
                   <input type="tel" value={newTutor.phone ?? ''} onChange={e => setNewTutor({ ...newTutor, phone: e.target.value })}
                     placeholder="(555) 000-0000"
-                    className="w-full rounded-xl border border-[#94a3b8] bg-white py-2.5 pl-8 pr-3 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] focus:outline-none focus:border-[#dc2626] focus:ring-4 focus:ring-[#fee2e2] transition-all" />
+                    className="w-full rounded-lg border border-[#94a3b8] bg-white py-2.5 pl-8 pr-3 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] focus:outline-none focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff] transition-all" />
                 </div>
               </div>
             </div>
@@ -645,11 +650,11 @@ export default function TutorManagementPage() {
                 Cancel
               </button>
               <button onClick={handleAdd} disabled={saving || !newTutor.name.trim()}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
+                className="flex-1 flex items-center justify-center gap-2 rounded-md py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
                 style={{
-                  background: newTutor.name.trim() ? '#dc2626' : '#f1f5f9',
+                  background: newTutor.name.trim() ? '#4f46e5' : '#f1f5f9',
                   color: newTutor.name.trim() ? 'white' : '#94a3b8',
-                  boxShadow: newTutor.name.trim() ? '0 12px 24px rgba(220,38,38,0.22)' : 'none',
+                  boxShadow: newTutor.name.trim() ? '0 12px 24px rgba(79,70,229,0.22)' : 'none',
                 }}>
                 {saving ? <><Loader2 size={12} className="animate-spin" /> Adding…</> : <><UserPlus size={12} /> Add to Database</>}
               </button>
@@ -667,14 +672,14 @@ export default function TutorManagementPage() {
         ) : (
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
             {/* Table header - hidden on mobile */}
-            <div className="hidden md:grid px-4 py-3" style={{ gridTemplateColumns: '32px 34px minmax(150px,2.2fr) minmax(86px,0.9fr) minmax(140px,1.3fr) minmax(120px,1.2fr) 70px 110px', background: '#0f172a', borderBottom: '1px solid #1e293b' }}>
+            <div className="hidden md:grid px-4 py-3" style={{ gridTemplateColumns: '32px 34px minmax(150px,2.2fr) minmax(86px,0.9fr) minmax(140px,1.3fr) minmax(120px,1.2fr) 70px 110px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <div className="flex items-center justify-center">
-                <button onClick={toggleAll} className="text-[#cbd5e1] hover:text-[#fda4af] transition-colors">
+                <button onClick={toggleAll} className="text-[#94a3b8] hover:text-[#dc2626] transition-colors">
                   {allSelected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
                 </button>
               </div>
               {['', 'Name', 'Category', 'Subjects', 'Contact', 'Time Off', 'Actions'].map((h, i) => (
-                <div key={i} className={`flex items-center text-[9px] font-black uppercase tracking-[0.2em] text-[#cbd5e1] ${h === 'Actions' ? 'justify-end pr-3' : ''}`}>{h}</div>
+                <div key={i} className={`flex items-center text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b] ${h === 'Actions' ? 'justify-end pr-3' : ''}`}>{h}</div>
               ))}
             </div>
 
@@ -702,6 +707,11 @@ export default function TutorManagementPage() {
         )}
       </div>
       </div>
+      <style>{`
+        .tutor-admin button {
+          border-radius: 8px !important;
+        }
+      `}</style>
     </div>
   );
 }

@@ -496,15 +496,15 @@ export function BookingForm({
 
 export function BookingToast({ data, onClose }: { data: BookingConfirmData; onClose: () => void }) {
   return (
-    <div className="fixed bottom-6 left-1/2 z-60 flex min-w-75 max-w-[90vw] -translate-x-1/2 items-center gap-4 rounded-2xl border border-[#e7e3dd] bg-white px-5 py-4 shadow-2xl">
-      <div className="w-10 h-10 rounded-full bg-[#eef2ff] flex items-center justify-center text-[#4f46e5] shrink-0">
-        <Check size={20} strokeWidth={3} />
+    <div className="fixed bottom-6 left-1/2 z-60 flex min-w-75 max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3.5 shadow-[0_8px_30px_rgba(0,0,0,0.10)]">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+        <Check size={17} strokeWidth={2.5} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-[#1c1917]">{data.student.name} Booked!</p>
-        <p className="text-[11px] text-[#a8a29e] truncate">{data.slot.dayName} · {data.topic} · {data.slot.tutor.name}{data.recurring ? ` · ${data.recurringWeeks}wk` : ''}</p>
+        <p className="text-sm font-semibold text-slate-900 leading-snug">{data.student.name} booked</p>
+        <p className="text-[11px] text-slate-400 truncate mt-0.5">{data.slot.dayName} · {data.topic} · {data.slot.tutor.name}{data.recurring ? ` · ${data.recurringWeeks} wk` : ''}</p>
       </div>
-      <button onClick={onClose} className="text-[#a8a29e] hover:text-[#4f46e5] shrink-0"><X size={16} /></button>
+      <button onClick={onClose} className="shrink-0 text-slate-300 hover:text-slate-500 transition"><X size={15} /></button>
     </div>
   );
 }

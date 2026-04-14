@@ -144,7 +144,7 @@ function SidePanel({
   };
 
   const statusStyle = (status: string) => {
-    if (status === 'present')  return { bg: '#dcfce7', border: '#86efac', dot: '#16a34a', label: '✓ Present' };
+    if (status === 'present')  return { bg: '#dbeafe', border: '#93c5fd', dot: '#2563eb', label: '✓ Present' };
     if (status === 'no-show')  return { bg: '#fee2e2', border: '#fca5a5', dot: '#dc2626', label: '✕ No-show' };
     return                            { bg: '#dbeafe', border: '#7dd3fc', dot: '#0284c7', label: '→ Unmarked' };
   };
@@ -228,7 +228,7 @@ function SidePanel({
             <div className="flex gap-1.5 px-2.5 py-2.5 shrink-0" style={{ borderBottom: '1.5px solid #f1f5f9', background: '#f8fafc' }}>
               {([
                 { key: 'all',      label: 'All',     dot: '#10b981' },
-                { key: 'present',  label: '✓',    dot: '#10b981' },
+                { key: 'present',  label: '✓',    dot: '#2563eb' },
                 { key: 'no-show',  label: '✕', dot: '#dc2626' },
                 { key: 'unmarked', label: '?',       dot: '#0284c7' },
               ] as const).map(f => (
@@ -237,7 +237,7 @@ function SidePanel({
                   onClick={() => setAttFilter(f.key)}
                   className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[9px] font-black transition-all"
                   style={attFilter === f.key
-                    ? { background: f.key === 'present' ? '#dcfce7' : f.key === 'no-show' ? '#fee2e2' : '#dbeafe', color: f.key === 'present' ? '#16a34a' : f.key === 'no-show' ? '#dc2626' : '#0284c7', border: '1.5px solid' + (f.key === 'present' ? '#86efac' : f.key === 'no-show' ? '#fca5a5' : '#7dd3fc'), boxShadow: f.key === 'present' ? '0 2px 4px rgba(22,163,74,0.1)' : f.key === 'no-show' ? '0 2px 4px rgba(220,38,38,0.1)' : '0 2px 4px rgba(2,132,199,0.1)' }
+                    ? { background: f.key === 'present' ? '#dbeafe' : f.key === 'no-show' ? '#fee2e2' : '#dbeafe', color: f.key === 'present' ? '#2563eb' : f.key === 'no-show' ? '#dc2626' : '#0284c7', border: '1.5px solid' + (f.key === 'present' ? '#93c5fd' : f.key === 'no-show' ? '#fca5a5' : '#7dd3fc'), boxShadow: f.key === 'present' ? '0 2px 4px rgba(37,99,235,0.1)' : f.key === 'no-show' ? '0 2px 4px rgba(220,38,38,0.1)' : '0 2px 4px rgba(2,132,199,0.1)' }
                     : { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}>
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: f.dot, opacity: attFilter === f.key ? 1 : 0.5 }} />
                   {f.label}
@@ -286,7 +286,7 @@ function SidePanel({
                         {/* Attendance toggles */}
                         <div className="flex border-t" style={{ borderColor: st.border }}>
                           {([
-                            { status: 'present' as const, label: '✓ Here',    activeBg: '#16a34a', activeColor: 'white' },
+                            { status: 'present' as const, label: '✓ Here',    activeBg: '#2563eb', activeColor: 'white' },
                             { status: 'scheduled' as const, label: '–', activeBg: '#64748b', activeColor: 'white' },
                             { status: 'no-show' as const, label: '✕ Skip',    activeBg: '#dc2626', activeColor: 'white' },
                           ]).map((btn, bi) => {
@@ -507,6 +507,16 @@ export function TodayView({
     } catch (err: any) {
       alert(err?.message || 'Unable to move student to that slot.');
     }
+  };
+
+  const attendanceBadge = (status: string) => {
+    if (status === 'present') {
+      return { label: 'PRESENT', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
+    }
+    if (status === 'no-show') {
+      return { label: 'NO-SHOW', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
+    }
+    return null;
   };
 
   // ── inline form (desktop) ─────────────────────────────────────────────────
@@ -939,12 +949,26 @@ export function TodayView({
                                         onDragEnd={() => setDraggingTopic(null)}
                                         style={
                                           student.status === 'no-show'  ? { background: '#f8fafc', border: '1.5px solid #94a3b8', opacity: 0.65, boxShadow: 'inset 0 0 0 1px rgba(148,163,184,0.2)' }
-                                          : student.status === 'present' ? { background: '#dcfce7', border: '1.5px solid #16a34a', boxShadow: '0 1px 0 rgba(22,163,74,0.18), inset 0 0 0 1px rgba(255,255,255,0.5)' }
+                                          : student.status === 'present' ? { background: '#dbeafe', border: '1.5px solid #2563eb', boxShadow: '0 1px 0 rgba(37,99,235,0.18), inset 0 0 0 1px rgba(255,255,255,0.5)' }
                                           :                               { background: palette.bg, border: `1.5px solid ${palette.border}`, boxShadow: '0 1px 0 rgba(17,24,39,0.12)' }
                                         }
                                         onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
                                         <div className="flex justify-between items-start mb-1">
-                                          <p className="text-sm font-bold leading-tight" style={{ color: '#111827' }}>{student.name}</p>
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <p className="text-sm font-bold leading-tight truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                            {attendanceBadge(student.status) && (
+                                              <span
+                                                className="text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+                                                style={{
+                                                  background: attendanceBadge(student.status)!.bg,
+                                                  color: attendanceBadge(student.status)!.color,
+                                                  border: `1px solid ${attendanceBadge(student.status)!.border}`,
+                                                }}
+                                              >
+                                                {attendanceBadge(student.status)!.label}
+                                              </span>
+                                            )}
+                                          </div>
                                           <div className="flex items-center gap-1">
                                             {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>Confirmed</span>}
                                             {student.confirmationStatus === 'cancelled'            && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
@@ -959,7 +983,7 @@ export function TodayView({
                                               }}
                                               className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all"
                                               style={student.status === 'present'
-                                                ? { background: '#059669', border: '1.5px solid #059669' }
+                                                ? { background: '#2563eb', border: '1.5px solid #2563eb' }
                                                 : { background: 'white', border: '1.5px solid #d1d5db' }}>
                                               {student.status === 'present' && <Check size={11} strokeWidth={3} color="white" />}
                                             </button>
@@ -1083,7 +1107,21 @@ export function TodayView({
                                           </button>
                                           <div className="flex-1 min-w-0 cursor-pointer"
                                             onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
-                                            <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827' }}>{student.name}</p>
+                                            <div className="flex items-center gap-1">
+                                              <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                              {attendanceBadge(student.status) && (
+                                                <span
+                                                  className="text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-wider"
+                                                  style={{
+                                                    background: attendanceBadge(student.status)!.bg,
+                                                    color: attendanceBadge(student.status)!.color,
+                                                    border: `1px solid ${attendanceBadge(student.status)!.border}`,
+                                                  }}
+                                                >
+                                                  {student.status === 'present' ? 'P' : 'NS'}
+                                                </span>
+                                              )}
+                                            </div>
                                             <p className="text-[8px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
                                               {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}{student.seriesId ? ' ↺' : ''}
                                             </p>

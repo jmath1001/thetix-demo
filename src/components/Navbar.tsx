@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   Calendar, Users, GraduationCap,
@@ -28,26 +28,11 @@ export function Navbar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const current = pathname || '/';
-  const sidebarRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const onPointerDown = (event: MouseEvent) => {
-      if (collapsed) return;
-      if (window.innerWidth < 768) return;
-      const target = event.target as Node | null;
-      if (target && sidebarRef.current && !sidebarRef.current.contains(target)) {
-        setCollapsed(true);
-      }
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [collapsed]);
 
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
       <aside
-        ref={sidebarRef}
         className="hidden md:flex md:sticky md:top-0 md:h-screen md:shrink-0 flex-col z-40"
         style={{
           width: collapsed ? 64 : 224,
@@ -94,7 +79,7 @@ export function Navbar() {
               </span>
               <button
                 onClick={() => setCollapsed(true)}
-                title="Collapse sidebar"
+                title="Full View"
                 className="flex items-center justify-center rounded-lg shrink-0"
                 style={{ width: 28, height: 28, color: '#9ca3af', background: 'transparent', border: 'none', cursor: 'pointer', transition: 'color 0.15s, background 0.15s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = ACCENT; (e.currentTarget as HTMLElement).style.background = ACCENT_BG; }}
@@ -151,6 +136,7 @@ export function Navbar() {
               </a>
             );
           })}
+
         </nav>
 
         <div className="h-3 shrink-0" />

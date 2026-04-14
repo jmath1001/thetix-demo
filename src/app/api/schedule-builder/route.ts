@@ -13,6 +13,8 @@ interface SeatInput {
   date: string
   time: string
   seatsLeft: number
+  occupied?: number
+  maxCapacity?: number
   label?: string
 }
 
@@ -113,9 +115,15 @@ function scoreSlot(
   const hasAvail = studentAvailable(need.availabilityBlocks, seat.dayNum, seat.time)
   if (hasAvail) score += 10
 
-  // Prefer filling existing slots over opening new ones
-  const filled = (capacityMap[seat.index] ?? 0) - remaining
-  score += filled * 5  // 0 filled = 0, 1 filled = 5, 2 filled = 10
+  // Prefer filling existing sessions over opening new ones.
+  const baseOccupied = typeof seat.occupied === 'number'
+    ? seat.occupied
+    : Math.max(0, (seat.maxCapacity ?? 3) - seat.seatsLeft)
+  score += baseOccupied * 10
+
+  // Small bonus for extra fill created during this run.
+  const runAssignedHere = assignedCounts[seat.index] ?? 0
+  score += runAssignedHere * 4
 
   // Prefer different days from already-assigned sessions this run
   if (!daysAlreadyBookedThisRun.has(seat.dayNum)) score += 8

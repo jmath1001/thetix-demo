@@ -33,9 +33,25 @@ export function CalendarPreview({
     
     if (proposal?.changes) {
       proposal.changes.forEach((change: any) => {
+        const action = change?.action ?? 'place';
+
+        if (action === 'move') {
+          const fromSessionId = change?.fromSessionId;
+          const studentId = change?.studentId;
+          if (fromSessionId && studentId) {
+            const fromIdx = baseSessions.findIndex(s => s.id === fromSessionId);
+            if (fromIdx >= 0) {
+              baseSessions[fromIdx] = {
+                ...baseSessions[fromIdx],
+                students: (baseSessions[fromIdx].students ?? []).filter((st: any) => st.id !== studentId),
+              };
+            }
+          }
+        }
+
         if (change.newSlot?.date && change.newSlot?.time && change.newSlot?.tutorName) {
           // Find the tutor
-          const tutor = tutors.find(t => t.name === change.newSlot.tutorName);
+          const tutor = tutors.find(t => t.id === change.newSlot.tutorId) ?? tutors.find(t => t.name === change.newSlot.tutorName);
           if (!tutor) return;
           
           // Find or create the session
@@ -57,7 +73,7 @@ export function CalendarPreview({
           }
           
           // Find the student
-          const student = students.find(s => s.name === change.studentName);
+          const student = students.find(s => s.id === change.studentId) ?? students.find(s => s.name === change.studentName);
           if (student && !session.students.find((st: any) => st.id === student.id)) {
             session.students.push({
               id: student.id,

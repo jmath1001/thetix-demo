@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
-export function useOptimizer(onRefresh: () => void) {
+type ApplyChangesFn = (changes: any[]) => Promise<void>
+
+export function useOptimizer(onRefresh: () => void, onApplyChanges?: ApplyChangesFn) {
   const [proposal, setProposal] = useState<any>(null)
   const [isApplying, setIsApplying] = useState(false)
 
@@ -11,19 +13,22 @@ export function useOptimizer(onRefresh: () => void) {
     }
   }
 
-  // This function simulates the database write for the demo
+  // Apply proposal changes and refresh schedule state
   const confirmChanges = async (changes: any[]) => {
     setIsApplying(true)
-    
-    // Simulate network delay for the demo "wow" effect
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    console.log("DEMO: Successfully 'updated' these records:", changes)
-    
-    setIsApplying(false)
-    setProposal(null)
-    
-    if (onRefresh) onRefresh() // Refresh your local state
+    try {
+      if (onApplyChanges) {
+        await onApplyChanges(changes)
+      } else {
+        // Fallback for legacy callers: close preview and refresh only.
+        console.warn('Optimizer confirm called without apply handler; no persistence occurred.')
+      }
+
+      setProposal(null)
+      if (onRefresh) onRefresh()
+    } finally {
+      setIsApplying(false)
+    }
   }
 
   return {

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { AlertTriangle, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Sparkles, X } from 'lucide-react'
 import { getSessionsForDay } from '@/components/constants'
 import { dayOfWeek } from '@/lib/useScheduleData'
 
@@ -25,6 +25,27 @@ interface Proposal {
   reason: string
 }
 
+interface MoveStep {
+  type: 'place' | 'move'
+  studentName: string
+  subject: string
+  fromSlot?: { dayName: string; label: string; tutorName: string }
+  toSlot: { dayName: string; label: string; tutorName: string }
+}
+
+interface SuggestionOption {
+  title: string
+  detail: string
+  steps: string[]
+  moves?: MoveStep[]
+  explanation?: {
+    scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }>
+    constraintsChecked: Array<{ name: string; status: 'pass' | 'fail'; detail: string }>
+    alternatives: Array<{ label: string; reason: string }>
+    confidence: { level: 'high' | 'medium' | 'low'; reason: string }
+  }
+}
+
 interface ExistingEntry {
   studentName: string
   topic: string
@@ -41,10 +62,28 @@ interface ExistingSession {
 
 interface SchedulePreviewGridProps {
   proposals: Proposal[]
+  suggestionsByNeed?: Record<string, SuggestionOption[]>
   allAvailableSeats: AvailableSeat[]
   existingSessions: ExistingSession[]
   onSwap: (needId: string, slotIndex: number) => { success: boolean; reason?: string }
   onRemove: (needId: string) => void
+}
+
+function SlotChip({ dayName, label, tutorName, variant }: { dayName: string; label: string; tutorName: string; variant: 'from' | 'to' }) {
+  const isFrom = variant === 'from'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+      <span style={{
+        fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap',
+        background: isFrom ? '#fee2e2' : '#dbeafe',
+        color: isFrom ? '#b91c1c' : '#1d4ed8',
+        border: `1px solid ${isFrom ? '#fca5a5' : '#93c5fd'}`,
+      }}>
+        {dayName} · {label}
+      </span>
+      <span style={{ fontSize: 9, color: '#64748b', fontWeight: 600, paddingLeft: 4 }}>{tutorName}</span>
+    </div>
+  )
 }
 
 const TUTOR_PALETTES = [
@@ -57,9 +96,10 @@ const TUTOR_PALETTES = [
 ]
 
 export function SchedulePreviewGrid({
-  proposals, allAvailableSeats, existingSessions, onSwap, onRemove,
+  proposals, suggestionsByNeed, allAvailableSeats, existingSessions, onSwap, onRemove,
 }: SchedulePreviewGridProps) {
   const [swapOpen, setSwapOpen] = useState<string | null>(null)
+  const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null)
 
   const placedProposals = proposals.filter(p => p.slot)
   const unmatchedProposals = proposals.filter(p => !p.slot)
@@ -427,15 +467,172 @@ export function SchedulePreviewGrid({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {unmatchedProposals.map(p => (
-              <div key={p.needId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'white', border: '1px solid #fecdd3' }}>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.student.name}</span>
-                  <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>{p.subject}</span>
+              <div key={p.needId} style={{ padding: '10px 12px', borderRadius: 8, background: 'white', border: '1px solid #fecdd3' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.student.name}</span>
+                    <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>{p.subject}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: '#e11d48' }}>{p.reason}</span>
+                  <button onClick={() => onRemove(p.needId)} style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #fecdd3', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e11d48', flexShrink: 0 }}>
+                    <X size={10} />
+                  </button>
                 </div>
-                <span style={{ fontSize: 11, color: '#e11d48' }}>{p.reason}</span>
-                <button onClick={() => onRemove(p.needId)} style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #fecdd3', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e11d48', flexShrink: 0 }}>
-                  <X size={10} />
-                </button>
+
+                {(suggestionsByNeed?.[p.needId]?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Suggestions</div>
+                    {suggestionsByNeed?.[p.needId]?.map((opt, i) => {
+                      const isDirectPlacement = opt.title.includes('Direct')
+                      const isDoubleBooking   = opt.title.includes('double')
+                      const accentColor = isDirectPlacement ? '#2563eb' : isDoubleBooking ? '#ea580c' : '#7c3aed'
+                      const accentBg    = isDirectPlacement ? '#dbeafe'  : isDoubleBooking ? '#fff7ed'  : '#f5f3ff'
+                      const accentBorder= isDirectPlacement ? '#bfdbfe'  : isDoubleBooking ? '#fed7aa'  : '#e9d5ff'
+
+                      return (
+                        <div key={`${p.needId}-opt-${i}`} style={{ border: `1.5px solid ${accentBorder}`, borderRadius: 10, background: accentBg, overflow: 'hidden' }}>
+                          {/* Option header */}
+                          <div style={{ padding: '7px 10px', borderBottom: `1px solid ${accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                              <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: accentColor, color: 'white' }}>
+                                {isDirectPlacement ? 'DIRECT' : isDoubleBooking ? 'DOUBLE BOOKING' : 'REARRANGE'}
+                              </span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#1e293b' }}>{opt.detail}</span>
+                            </div>
+                            {opt.explanation && (
+                              <button
+                                onClick={() => setExpandedExplanation(expandedExplanation === `${p.needId}-${i}` ? null : `${p.needId}-${i}`)}
+                                style={{ fontSize: 9, fontWeight: 600, padding: '2px 8px', borderRadius: 6, border: `1.5px solid ${accentBorder}`, background: 'white', color: accentColor, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                              >
+                                {expandedExplanation === `${p.needId}-${i}` ? 'Hide' : 'Explain'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Visual move steps */}
+                          <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {(opt.moves ?? []).map((move, mi) => {
+                              const isMove = move.type === 'move'
+                              const stepBg = isMove ? '#fff7ed' : '#f0fdf4'
+                              const stepBorder = isMove ? '#fed7aa' : '#bbf7d0'
+                              const iconBg = isMove ? '#ea580c' : '#16a34a'
+
+                              return (
+                                <div key={mi}>
+                                  {mi > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', marginBottom: 4 }}>
+                                      <div style={{ width: 1, height: 12, background: '#cbd5e1', marginLeft: 8 }} />
+                                      <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>then</span>
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8, background: stepBg, border: `1.5px solid ${stepBorder}` }}>
+                                    {/* Icon */}
+                                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                                      <span style={{ color: 'white', fontSize: 11, fontWeight: 900, lineHeight: 1 }}>{isMove ? '↔' : '+'}</span>
+                                    </div>
+
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      {/* Student + subject */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
+                                        <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>{move.studentName}</span>
+                                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20, background: 'white', border: `1px solid ${stepBorder}`, color: '#475569' }}>{move.subject}</span>
+                                        <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8' }}>{isMove ? 'MOVE' : 'PLACE'}</span>
+                                      </div>
+
+                                      {/* Slot flow */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        {isMove && move.fromSlot && (
+                                          <>
+                                            <SlotChip dayName={move.fromSlot.dayName} label={move.fromSlot.label} tutorName={move.fromSlot.tutorName} variant='from' />
+                                            <ArrowRight size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                                          </>
+                                        )}
+                                        <SlotChip dayName={move.toSlot.dayName} label={move.toSlot.label} tutorName={move.toSlot.tutorName} variant='to' />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+
+                            {/* Fallback to text steps if no moves */}
+                            {(!opt.moves || opt.moves.length === 0) && (
+                              <ul style={{ margin: '0 0 0 16px', padding: 0, color: '#334155', fontSize: 11 }}>
+                                {opt.steps.map((step, si) => <li key={si}>{step}</li>)}
+                              </ul>
+                            )}
+                          </div>
+
+                          {/* Detailed Explanation Panel */}
+                          {expandedExplanation === `${p.needId}-${i}` && opt.explanation && (
+                            <div style={{ padding: '10px', borderTop: `1px solid ${accentBorder}`, background: 'white', fontSize: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {/* Confidence */}
+                              <div style={{ padding: '8px', borderRadius: 8, background: opt.explanation.confidence.level === 'high' ? '#f0fdf4' : opt.explanation.confidence.level === 'medium' ? '#fffbeb' : '#fff1f2', border: `1px solid ${opt.explanation.confidence.level === 'high' ? '#bbf7d0' : opt.explanation.confidence.level === 'medium' ? '#fde68a' : '#fecdd3'}` }}>
+                                <div style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3, color: opt.explanation.confidence.level === 'high' ? '#166534' : opt.explanation.confidence.level === 'medium' ? '#92400e' : '#9f1239' }}>
+                                  Confidence: {opt.explanation.confidence.level.toUpperCase()}
+                                </div>
+                                <div style={{ fontSize: 10, color: opt.explanation.confidence.level === 'high' ? '#166534' : opt.explanation.confidence.level === 'medium' ? '#92400e' : '#9f1239', lineHeight: 1.4 }}>
+                                  {opt.explanation.confidence.reason}
+                                </div>
+                              </div>
+
+                              {/* Scoring Factors */}
+                              <div>
+                                <div style={{ fontSize: 9, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Scoring Factors</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {opt.explanation.scoringFactors.map((factor, fi) => (
+                                    <div key={fi} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '5px 8px', borderRadius: 6, background: factor.impact === 'positive' ? '#f0fdf4' : factor.impact === 'negative' ? '#fff1f2' : '#f8fafc', border: `1px solid ${factor.impact === 'positive' ? '#dcfce7' : factor.impact === 'negative' ? '#ffe4e6' : '#e2e8f0'}` }}>
+                                      <div style={{ fontSize: 10, fontWeight: 700, color: factor.impact === 'positive' ? '#15803d' : factor.impact === 'negative' ? '#b91c1c' : '#64748b', marginTop: 1 }}>
+                                        {factor.impact === 'positive' ? '✓' : factor.impact === 'negative' ? '⚠' : '→'}
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 9 }}>{factor.label}</div>
+                                        <div style={{ fontSize: 9, color: '#64748b', marginTop: 1 }}>{factor.value}</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Constraints Checked */}
+                              <div>
+                                <div style={{ fontSize: 9, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Constraints Verified</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  {opt.explanation.constraintsChecked.map((constraint, ci) => (
+                                    <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 6, background: constraint.status === 'pass' ? '#f0fdf4' : '#fff1f2' }}>
+                                      <span style={{ fontSize: 8, fontWeight: 900, color: constraint.status === 'pass' ? '#16a34a' : '#e11d48' }}>
+                                        {constraint.status === 'pass' ? '✓' : '✗'}
+                                      </span>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 9 }}>{constraint.name}</div>
+                                        <div style={{ fontSize: 8, color: '#64748b', marginTop: 1 }}>{constraint.detail}</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Alternatives Considered */}
+                              {opt.explanation.alternatives.length > 0 && (
+                                <div>
+                                  <div style={{ fontSize: 9, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Other Options Considered</div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    {opt.explanation.alternatives.map((alt, ai) => (
+                                      <div key={ai} style={{ padding: '6px 8px', borderRadius: 6, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                        <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 9 }}>{alt.label}</div>
+                                        <div style={{ fontSize: 8, color: '#64748b', marginTop: 2 }}>{alt.reason}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

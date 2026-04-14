@@ -125,8 +125,9 @@ export default function OptimizationPreview({
             <div className="mt-5 flex flex-wrap gap-2">
               <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-indigo-700">Tutor availability</span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700">Student availability</span>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Balanced week load</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">Max session density</span>
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-amber-700">Frequency-aware</span>
+              <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-rose-700">Recurring preserved</span>
             </div>
           </div>
         </div>
@@ -186,6 +187,21 @@ export default function OptimizationPreview({
                           </div>
                         </div>
                       </div>
+
+                      {Array.isArray(change.suggestionOptions) && change.suggestionOptions.length > 0 && (
+                        <div className="rounded-3xl border border-indigo-100 bg-indigo-50/60 p-3 text-sm">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-indigo-500">Suggestion options</p>
+                          <div className="mt-2 space-y-2">
+                            {change.suggestionOptions.slice(0, 3).map((option: any, optionIndex: number) => (
+                              <div key={optionIndex} className="rounded-2xl bg-white p-2.5 text-slate-700 shadow-sm">
+                                <p className="text-xs font-semibold text-slate-900">{option.title || `Option ${optionIndex + 1}`}</p>
+                                <p className="mt-0.5 text-xs text-slate-600">{option.detail}</p>
+                                <p className="mt-1 text-xs text-indigo-700">{option.explanation || 'Valid alternative if priorities change.'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="hidden items-center justify-end sm:flex">
@@ -202,7 +218,7 @@ export default function OptimizationPreview({
 
         <div className="border-t border-slate-200 bg-white/90 px-6 py-5 sm:px-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-500">Review the session bookings above before confirming. The changes are only applied after you commit.</p>
+            <p className="text-sm text-slate-500">Review the session bookings above before confirming. Changes apply only after commit, and recurring series are not moved by this optimizer.</p>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
                 onClick={onCancel}

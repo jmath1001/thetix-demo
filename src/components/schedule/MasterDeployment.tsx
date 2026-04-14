@@ -1,5 +1,6 @@
 "use client"
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Loader2, Zap } from 'lucide-react';
 
 import { MAX_CAPACITY, getSessionsForDay, type SessionBlock } from '@/components/constants';
@@ -33,11 +34,17 @@ import { AttendanceModal } from './AttendanceModal';
 import { logEvent } from '@/lib/analytics';
 import { CommandBar } from '@/components/CommandBar';
 import { ScheduleBuilder } from '@/components/ScheduleBuilder';
+import { ScheduleOptimizerController, type OptimizerScope } from '@/components/optimizer/ScheduleOptimizerController';
 
 export default function MasterDeployment() {
+  const searchParams = useSearchParams();
+  const lastHandledActionRef = useRef<string | null>(null);
+  const optimizerRunRef = useRef<(scope?: OptimizerScope) => void>(() => {});
   const [todayDate, setTodayDate] = useState<Date>(() => getCentralTimeNow());
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const [isScheduleBuilderOpen, setIsScheduleBuilderOpen] = useState(false);
+  const [scheduleBuilderMode, setScheduleBuilderMode] = useState<'batch' | 'single'>('batch');
+  const [isSchedulerMenuOpen, setIsSchedulerMenuOpen] = useState(false);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const { tutors, students, sessions, timeOff, loading, error, refetch } = useScheduleData(weekStart);
@@ -63,6 +70,7 @@ export default function MasterDeployment() {
   const [isBulkRemoving, setIsBulkRemoving] = useState(false);
   const [isClearingWeek, setIsClearingWeek] = useState(false);
   const [localSessions, setLocalSessions] = useState(sessions);
+  const [infoToast, setInfoToast] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalSessions(sessions);
@@ -176,6 +184,16 @@ export default function MasterDeployment() {
     setTodayDate(date);
     setWeekStart(getWeekStart(date));
   }, []);
+
+  useEffect(() => {
+    const fromQuery = searchParams.get('date');
+    if (!fromQuery || !/^\d{4}-\d{2}-\d{2}$/.test(fromQuery)) return;
+    const parsed = new Date(fromQuery + 'T00:00:00');
+    if (Number.isNaN(parsed.getTime())) return;
+    if (toISODate(parsed) === toISODate(todayDate)) return;
+    setTodayDate(parsed);
+    setWeekStart(getWeekStart(parsed));
+  }, [searchParams, todayDate]);
 
   useEffect(() => {
     if (!todayView) return;
@@ -298,7 +316,7 @@ export default function MasterDeployment() {
         getSessionsForDay(dow).forEach(block => {
           if (!isTutorAvailable(tutor, dow, block.time)) return;
           const session = localSessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
-          const count = session ? session.students.length : 0;
+          const count = session ? session.students.filter((s: any) => s.status !== 'cancelled').length : 0;
           if (count < MAX_CAPACITY) {
             seats.push({ tutor, dayName: DAY_NAMES[ACTIVE_DAYS.indexOf(dow)], date: isoDate, time: block.time, block, count, seatsLeft: MAX_CAPACITY - count, dayNum: dow });
           }
@@ -320,7 +338,7 @@ export default function MasterDeployment() {
         getSessionsForDay(dow).forEach(block => {
           if (!isTutorAvailable(tutor, dow, block.time)) return;
           const session = localSessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
-          const count = session ? session.students.length : 0;
+          const count = session ? session.students.filter((s: any) => s.status !== 'cancelled').length : 0;
           if (count < MAX_CAPACITY) {
             seats.push({ tutor, dayName: DAY_NAMES[ACTIVE_DAYS.indexOf(dow)], date: isoDate, time: block.time, block, count, seatsLeft: MAX_CAPACITY - count, dayNum: dow });
           }
@@ -438,7 +456,145 @@ export default function MasterDeployment() {
     setAiPrefilledStudentId(null);
   };
 
-  const { proposal, isApplying, openPreview, confirmChanges, closePreview } = useOptimizer(refetch);
+  const applyOptimizerChanges = useCallback(async (changes: any[]) => {
+    let applied = 0;
+    let moved = 0;
+    let placed = 0;
+    const failed: string[] = [];
+
+    for (const change of changes ?? []) {
+      const action = change?.action ?? 'place';
+
+      if (action === 'move') {
+        const rowId = change?.rowId;
+        const studentId = change?.studentId;
+        const fromSessionId = change?.fromSessionId;
+        const slot = change?.newSlot;
+        const toTutorId = slot?.tutorId;
+        const toDate = slot?.date;
+        const toTime = slot?.time;
+
+        if (!rowId || !studentId || !fromSessionId || !toTutorId || !toDate || !toTime) {
+          failed.push(`Skipped ${change?.studentName || 'student'}: missing move data.`);
+          continue;
+        }
+
+        try {
+          await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
+          applied += 1;
+          moved += 1;
+        } catch (err: any) {
+          const msg = err?.message || 'move failed';
+          failed.push(`Failed move ${change?.studentName || studentId}: ${msg}`);
+        }
+        continue;
+      }
+
+      const studentName = change?.studentName;
+      const slot = change?.newSlot;
+      if (!studentName || !slot?.date || !slot?.time || !slot?.tutorName) {
+        failed.push('Skipped one suggestion with missing student/slot data.');
+        continue;
+      }
+
+      const student = students.find((s: any) => s.id === change?.studentId) ?? students.find((s: any) => s.name === studentName);
+      const tutor = tutors.find((t: any) => t.id === slot?.tutorId) ?? tutors.find((t: any) => t.name === slot.tutorName);
+      const topic = slot.topic || change.subject || student?.subject;
+
+      if (!student || !tutor || !topic) {
+        failed.push(`Skipped ${studentName}: missing ${!student ? 'student' : !tutor ? 'tutor' : 'topic'} data.`);
+        continue;
+      }
+
+      try {
+        await bookStudent({
+          tutorId: tutor.id,
+          date: slot.date,
+          time: slot.time,
+          student,
+          topic,
+          notes: '',
+          recurring: false,
+          recurringWeeks: 1,
+        });
+        applied += 1;
+        placed += 1;
+      } catch (err: any) {
+        const msg = err?.message || 'booking failed';
+        failed.push(`Failed ${studentName}: ${msg}`);
+      }
+    }
+
+    if (applied > 0) {
+      refetch();
+      if (placed > 0) logEvent('session_booked', { source: 'optimizer', count: placed });
+      if (moved > 0) logEvent('reassign_used', { source: 'optimizer', count: moved });
+    }
+
+    if (failed.length > 0) {
+      alert(`${applied} optimization booking${applied === 1 ? '' : 's'} applied. ${failed.length} issue${failed.length === 1 ? '' : 's'}:\n\n${failed.slice(0, 5).join('\n')}`);
+    } else if (applied === 0) {
+      alert('No optimizer changes were applied.');
+    }
+  }, [refetch, students, tutors]);
+
+  const { proposal, isApplying, openPreview, confirmChanges, closePreview } = useOptimizer(refetch, applyOptimizerChanges);
+
+  const openOptimizerFromCurrentSchedule = useCallback((scope: OptimizerScope = 'weekly') => {
+    optimizerRunRef.current(scope);
+  }, []);
+
+  useEffect(() => {
+    const action = searchParams.get('action');
+    const key = action ? `${action}` : null;
+
+    if (!action) {
+      lastHandledActionRef.current = null;
+      return;
+    }
+    if (lastHandledActionRef.current === key) return;
+
+    if (action === 'build' || action === 'schedule-batch') {
+      setScheduleBuilderMode('batch');
+      setIsScheduleBuilderOpen(true);
+      setIsSchedulerMenuOpen(false);
+      lastHandledActionRef.current = key;
+      return;
+    }
+
+    if (action === 'schedule-single') {
+      setScheduleBuilderMode('single');
+      setIsScheduleBuilderOpen(true);
+      setIsSchedulerMenuOpen(false);
+      lastHandledActionRef.current = key;
+      return;
+    }
+
+    if (action === 'optimized-scheduler') {
+      setScheduleBuilderMode('batch');
+      setIsScheduleBuilderOpen(true);
+      setIsSchedulerMenuOpen(false);
+      lastHandledActionRef.current = key;
+      return;
+    }
+
+    if (action === 'optimize') {
+      openOptimizerFromCurrentSchedule('weekly');
+      lastHandledActionRef.current = key;
+      return;
+    }
+
+    if (action === 'optimize-daily') {
+      openOptimizerFromCurrentSchedule('daily');
+      lastHandledActionRef.current = key;
+      return;
+    }
+
+    if (action === 'optimize-weekly') {
+      openOptimizerFromCurrentSchedule('weekly');
+      lastHandledActionRef.current = key;
+    }
+  }, [openOptimizerFromCurrentSchedule, searchParams]);
 
   if (loading) return (
     <div className="w-full min-h-screen flex items-center justify-center" style={{ background: '#fafafa' }}>
@@ -495,28 +651,58 @@ export default function MasterDeployment() {
               weekStart={weekStartIso}
               nextWeekStart={toISODate(nextWeekStart)}
             />
-            <span title="Open schedule builder" style={{ display: 'inline-flex' }}>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
-                onClick={() => setIsScheduleBuilderOpen(true)}
+                onClick={() => setIsSchedulerMenuOpen(prev => !prev)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 5,
-                  padding: '4px 11px',
-                  borderRadius: 8,
-                  background: 'linear-gradient(135deg,#f59e0b,#ea580c)',
-                  border: '1px solid #c2410c',
-                  color: 'white',
+                  gap: 6,
+                  padding: '5px 12px',
+                  borderRadius: 9,
+                  background: '#1e293b',
+                  border: '1px solid #0f172a',
+                  color: '#f8fafc',
                   fontSize: 12,
                   fontWeight: 800,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  boxShadow: '0 4px 12px rgba(194,65,12,0.35)',
+                  boxShadow: '0 4px 10px rgba(15,23,42,0.35)',
                 }}
               >
-                <Zap size={12} /> Build
+                <Zap size={12} /> Optimized Scheduler
               </button>
-            </span>
+
+              {isSchedulerMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    width: 280,
+                    borderRadius: 12,
+                    border: '1px solid #94a3b8',
+                    background: '#ffffff',
+                    boxShadow: '0 16px 34px rgba(15,23,42,0.26)',
+                    padding: 10,
+                    zIndex: 50,
+                  }}
+                >
+                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Scheduler Actions</p>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <button onClick={() => { setScheduleBuilderMode('batch'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Plan Week</button>
+                    <button onClick={() => { setScheduleBuilderMode('single'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Book One Session</button>
+                    <button onClick={() => { openOptimizerFromCurrentSchedule('daily'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #67e8f9', background: '#ecfeff', color: '#0e7490', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Day (Max Pack)</button>
+                    <button onClick={() => { openOptimizerFromCurrentSchedule('weekly'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Week (Max Pack)</button>
+                  </div>
+
+                  <div style={{ marginTop: 8, borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', padding: 8 }}>
+                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: '#334155', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Constraints Used</p>
+                    <p style={{ margin: 0, fontSize: 11, color: '#0f172a', lineHeight: 1.5 }}>Primary objective is max session packing. Subject fit, student availability, tutor availability/time-off, no double-booking, and seat limits are enforced.</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </>
         }
       />
@@ -609,7 +795,36 @@ export default function MasterDeployment() {
       />
 
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
+            {infoToast && (
+              <div className="fixed bottom-6 left-1/2 z-60 flex min-w-75 max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-2xl">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </div>
+                <p className="flex-1 text-sm font-medium text-slate-700">{infoToast}</p>
+                <button onClick={() => setInfoToast(null)} className="shrink-0 text-slate-400 hover:text-slate-600">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            )}
       {isTutorModalOpen && <TutorManagementModal tutors={tutors} onClose={() => setIsTutorModalOpen(false)} onRefetch={refetch} />}
+
+      <ScheduleOptimizerController
+        students={students}
+        tutors={tutors}
+        localSessions={localSessions}
+        allSeatsForBuilder={allSeatsForBuilder}
+        onOpenProposal={openPreview}
+        onNoSuggestions={(scope) => {
+          const msg = scope === 'daily'
+            ? 'No available swaps today — sessions are already as packed as availability allows.'
+            : 'No available swaps this week — the schedule is already at maximum consolidation.';
+          setInfoToast(msg);
+          setTimeout(() => setInfoToast(null), 4500);
+        }}
+        onBindRun={(run) => {
+          optimizerRunRef.current = run;
+        }}
+      />
 
       <OptimizationPreview
         proposal={proposal}
@@ -632,6 +847,7 @@ export default function MasterDeployment() {
           allAvailableSeats={allSeatsForBuilder}
           weekStart={weekStartIso}
           weekEnd={weekEndIso}
+          initialMode={scheduleBuilderMode}
           onConfirm={handleScheduleBuilderConfirm}
           onClose={() => setIsScheduleBuilderOpen(false)}
         />

@@ -33,7 +33,7 @@ const MAX_CAPACITY = 3;
 const isTutorAvailable = (tutor: any, dow: number, time: string) =>
   tutor.availability_blocks?.includes(`${dow}-${time}`);
 
-const inputCls = "w-full rounded-xl border border-[#94a3b8] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0f172a] shadow-[0_1px_2px_rgba(15,23,42,0.06)] outline-none transition-all placeholder:text-[#64748b] focus:border-[#dc2626] focus:ring-4 focus:ring-[#fee2e2]";
+const inputCls = "w-full rounded-lg border border-[#94a3b8] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0f172a] shadow-[0_1px_2px_rgba(15,23,42,0.06)] outline-none transition-all placeholder:text-[#64748b] focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff]";
 const fieldCardCls = "rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)]";
 const fieldLabelCls = "text-[9px] font-black uppercase tracking-[0.22em] text-[#64748b]";
 const fieldValueCls = "mt-2 text-sm font-semibold text-[#0f172a]";
@@ -188,7 +188,7 @@ function StudentRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<'contact' | 'sessions'>('contact');
-  const [isEditing, setIsEditing] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [draft, setDraft] = useState(student);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -234,7 +234,7 @@ function StudentRow({
       dad_phone: draft.dad_phone || null,
       bluebook_url: draft.bluebook_url || null,
     }).eq('id', student.id);
-    if (!error) { onRefetch(); setIsEditing(false); logEvent('student_edited', { studentName: draft.name }); }
+    if (!error) { onRefetch(); setShowEditModal(false); logEvent('student_edited', { studentName: draft.name }); }
     setSaving(false);
   };
 
@@ -366,7 +366,7 @@ function StudentRow({
           <button onClick={() => setShowBooking(true)}
             className="rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-all"
             style={{ background: '#dc2626', boxShadow: '0 8px 18px rgba(220,38,38,0.24)' }}>Book</button>
-          <button onClick={() => { setIsEditing(true); setExpanded(true); setTab('contact'); }}
+          <button onClick={() => { setDraft(student); setShowEditModal(true); }}
             className="rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#334155] transition-all"
             style={{ background: '#e2e8f0', border: '1px solid #94a3b8' }}>Edit</button>
           <button onClick={handleDelete}
@@ -392,7 +392,7 @@ function StudentRow({
             ))}
           </div>
 
-          <div className="p-4">
+          <div className="p-4 max-h-[62vh] overflow-y-auto">
             {tab === 'contact' && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -404,9 +404,7 @@ function StudentRow({
                   ].map(({ label, field, type, value }) => (
                     <div key={field} className={fieldCardCls}>
                       <label className={fieldLabelCls}>{label}</label>
-                      {isEditing
-                        ? <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
-                        : <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>}
+                      <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
                     </div>
                   ))}
                 </div>
@@ -420,9 +418,7 @@ function StudentRow({
                     ].map(({ label, field, type, value }) => (
                       <div key={field} className={fieldCardCls}>
                         <label className={fieldLabelCls}>{label}</label>
-                        {isEditing
-                          ? <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
-                          : <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>}
+                        <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
                       </div>
                     ))}
                   </div>
@@ -437,36 +433,21 @@ function StudentRow({
                     ].map(({ label, field, type, value }) => (
                       <div key={field} className={fieldCardCls}>
                         <label className={fieldLabelCls}>{label}</label>
-                        {isEditing
-                          ? <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
-                          : <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>}
+                        <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
                   <p className="mb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Bluebook</p>
-                  {isEditing
-                    ? <input type="url" value={draft.bluebook_url ?? ''} onChange={e => setDraft((p: any) => ({ ...p, bluebook_url: e.target.value }))} className={`${inputCls} mt-2`} placeholder="https://..." />
-                    : student.bluebook_url
-                      ? <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.14em]"
-                          style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#166534' }}>
-                          <ExternalLink size={11} /> Open Bluebook
-                        </a>
-                      : <p className="text-xs italic text-[#94a3b8]">No Bluebook linked</p>}
+                  {student.bluebook_url
+                    ? <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.14em]"
+                        style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#166534' }}>
+                        <ExternalLink size={11} /> Open Bluebook
+                      </a>
+                    : <p className="text-xs italic text-[#94a3b8]">No Bluebook linked</p>}
                 </div>
-                {isEditing && (
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => { setIsEditing(false); setDraft(student); }}
-                      className="rounded-xl border border-[#94a3b8] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#334155]" style={{ background: '#e2e8f0' }}>Cancel</button>
-                    <button onClick={handleUpdate} disabled={saving}
-                      className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-50"
-                      style={{ background: '#dc2626', boxShadow: '0 12px 24px rgba(220,38,38,0.24)' }}>
-                      {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
@@ -519,6 +500,84 @@ function StudentRow({
           style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
           <BookingForm prefilledSlot={null} onConfirm={handleConfirmBooking} onCancel={() => setShowBooking(false)}
             enrollCat={enrollCat} setEnrollCat={setEnrollCat} allAvailableSeats={allAvailableSeats} studentDatabase={[student]} />
+        </div>
+      )}
+
+      {showEditModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.64)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+            <div className="flex items-center justify-between border-b border-[#e2e8f0] bg-[#f8fafc] px-5 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#64748b]">Student Contact Edit</p>
+                <p className="mt-1 text-sm font-black text-[#0f172a]">{student.name}</p>
+              </div>
+              <button onClick={() => { setShowEditModal(false); setDraft(student); }} className="rounded-lg border border-[#cbd5e1] bg-white p-2 text-[#64748b]">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="max-h-[72vh] space-y-4 overflow-y-auto p-5">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  { label: 'Student Email', field: 'email', type: 'email' },
+                  { label: 'Student Phone', field: 'phone', type: 'tel' },
+                  { label: 'Grade', field: 'grade', type: 'text' },
+                  { label: 'Hours Left', field: 'hours_left', type: 'number' },
+                ].map(({ label, field, type }) => (
+                  <div key={field} className={fieldCardCls}>
+                    <label className={fieldLabelCls}>{label}</label>
+                    <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-[#cbd5e1] bg-[#f8fafc] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Mom</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {[
+                    { label: 'Name', field: 'mom_name', type: 'text' },
+                    { label: 'Email', field: 'mom_email', type: 'email' },
+                    { label: 'Phone', field: 'mom_phone', type: 'tel' },
+                  ].map(({ label, field, type }) => (
+                    <div key={field} className={fieldCardCls}>
+                      <label className={fieldLabelCls}>{label}</label>
+                      <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#cbd5e1] bg-[#f8fafc] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+                <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Dad</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {[
+                    { label: 'Name', field: 'dad_name', type: 'text' },
+                    { label: 'Email', field: 'dad_email', type: 'email' },
+                    { label: 'Phone', field: 'dad_phone', type: 'tel' },
+                  ].map(({ label, field, type }) => (
+                    <div key={field} className={fieldCardCls}>
+                      <label className={fieldLabelCls}>{label}</label>
+                      <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={`${inputCls} mt-2`} placeholder={label} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
+                <label className={fieldLabelCls}>Bluebook URL</label>
+                <input type="url" value={draft.bluebook_url ?? ''} onChange={e => setDraft((p: any) => ({ ...p, bluebook_url: e.target.value }))} className={`${inputCls} mt-2`} placeholder="https://..." />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-[#e2e8f0] bg-white px-5 py-4">
+              <button onClick={() => { setShowEditModal(false); setDraft(student); }} className="rounded-xl border border-[#94a3b8] px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#334155]" style={{ background: '#e2e8f0' }}>
+                Cancel
+              </button>
+              <button onClick={handleUpdate} disabled={saving} className="flex items-center gap-1.5 rounded-md px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-50" style={{ background: '#4f46e5', boxShadow: '0 12px 24px rgba(79,70,229,0.24)' }}>
+                {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>
@@ -631,21 +690,21 @@ export default function StudentAdminPage() {
   };
 
   return (
-    <div className="h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe5f0 0%, #edf2f7 26%, #f6f8fb 100%)', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+    <div className="student-admin h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe5f0 0%, #edf2f7 26%, #f6f8fb 100%)', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
       <div className="h-full overflow-y-auto overscroll-contain">
 
       {/* Top bar */}
-      <div className="sticky top-0 z-40 border-b border-[rgba(148,163,184,0.24)] backdrop-blur-xl" style={{ background: 'rgba(15,23,42,0.88)' }}>
+      <div className="sticky top-0 z-40 border-b border-[#e2e8f0] backdrop-blur-xl" style={{ background: 'rgba(255,255,255,0.92)' }}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[rgba(255,255,255,0.12)] bg-[rgba(220,38,38,0.18)]">
-              <GraduationCap size={18} style={{ color: '#fda4af' }} />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#c7d2fe] bg-[#eef2ff]">
+              <GraduationCap size={18} style={{ color: '#4f46e5' }} />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#fda4af]">Student Admin</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#4f46e5]">Student Admin</p>
               <div className="flex items-center gap-2">
-                <span className="text-base font-black text-white">Students</span>
-                {!loading && <span className="rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.08)] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#e2e8f0]">{students.length}</span>}
+                <span className="text-base font-black text-[#0f172a]">Students</span>
+                {!loading && <span className="rounded-full border border-[#c7d2fe] bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">{students.length}</span>}
               </div>
             </div>
           </div>
@@ -659,13 +718,13 @@ export default function StudentAdminPage() {
               </button>
             )}
             <button onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] transition-all"
-              style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.14)', color: '#e2e8f0' }}>
+              className="flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] transition-all"
+              style={{ background: '#ffffff', borderColor: '#cbd5e1', color: '#334155' }}>
               <Upload size={11} /> Import CSV
             </button>
             <button onClick={() => setAdding(a => !a)}
-              className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all"
-              style={{ background: adding ? '#334155' : '#dc2626', boxShadow: adding ? 'none' : '0 12px 24px rgba(220,38,38,0.24)' }}>
+              className="flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all"
+              style={{ background: adding ? '#334155' : '#4f46e5', boxShadow: adding ? 'none' : '0 12px 24px rgba(79,70,229,0.24)' }}>
               {adding ? <X size={11} /> : <Plus size={11} />}
               {adding ? 'Cancel' : 'Add Student'}
             </button>
@@ -703,19 +762,19 @@ export default function StudentAdminPage() {
         <div className="relative rounded-xl border border-[#cbd5e1] bg-white p-2 shadow-[0_18px_38px_rgba(15,23,42,0.08)]">
           <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…"
-            className="w-full rounded-[18px] border border-[#cbd5e1] bg-[#f8fafc] py-3 pl-10 pr-10 text-sm font-medium text-[#0f172a] outline-none transition-all placeholder:text-[#64748b] focus:border-[#dc2626] focus:ring-4 focus:ring-[#fee2e2]" />
+            className="w-full rounded-lg border border-[#cbd5e1] bg-[#f8fafc] py-3 pl-10 pr-10 text-sm font-medium text-[#0f172a] outline-none transition-all placeholder:text-[#64748b] focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff]" />
           {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8]"><X size={13} /></button>}
         </div>
 
         {/* Add student form */}
         {adding && (
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ background: '#0f172a', borderBottom: '1px solid #1e293b' }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#fda4af]">New Student</p>
-                <p className="mt-1 text-xs font-medium text-[#cbd5e1]">Clear sections, stronger labels, and better field contrast.</p>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#dc2626]">New Student</p>
+                <p className="mt-1 text-xs font-medium text-[#64748b]">Clear sections, stronger labels, and better field contrast.</p>
               </div>
-              <button onClick={() => setAdding(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] text-[#e2e8f0]"><X size={14} /></button>
+              <button onClick={() => setAdding(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-[#e2e8f0] bg-white text-[#64748b]"><X size={14} /></button>
             </div>
             <div className="space-y-5 p-5">
               <div className="grid grid-cols-2 gap-3">
@@ -759,8 +818,8 @@ export default function StudentAdminPage() {
               </div>
               </div>
               <button onClick={handleCreate} disabled={!newStudent.name || creating}
-                className="w-full rounded-lg py-3 text-sm font-black uppercase tracking-[0.2em] text-white disabled:opacity-40"
-                style={{ background: '#dc2626', boxShadow: '0 16px 30px rgba(220,38,38,0.24)' }}>
+                className="w-full rounded-md py-3 text-sm font-black uppercase tracking-[0.2em] text-white disabled:opacity-40"
+                style={{ background: '#4f46e5', boxShadow: '0 16px 30px rgba(79,70,229,0.24)' }}>
                 {creating ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Register Student'}
               </button>
             </div>
@@ -777,15 +836,15 @@ export default function StudentAdminPage() {
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
             {/* Table header */}
             <div className="grid items-center px-0"
-              style={{ gridTemplateColumns: '32px 34px minmax(140px,2.2fr) minmax(56px,0.75fr) minmax(88px,1fr) minmax(88px,1fr) minmax(68px,0.8fr) minmax(108px,1fr)', background: '#0f172a', borderBottom: '1px solid #1e293b', height: 40 }}>
+              style={{ gridTemplateColumns: '32px 34px minmax(140px,2.2fr) minmax(56px,0.75fr) minmax(88px,1fr) minmax(88px,1fr) minmax(68px,0.8fr) minmax(108px,1fr)', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', height: 40 }}>
               <div className="flex items-center justify-center">
-                <button onClick={toggleAll} className="text-[#cbd5e1] hover:text-[#fda4af] transition-colors">
+                <button onClick={toggleAll} className="text-[#94a3b8] hover:text-[#dc2626] transition-colors">
                   {allSelected ? <CheckSquare size={13} style={{ color: '#dc2626' }} /> : <Square size={13} />}
                 </button>
               </div>
               <div />
               {['Student', 'Sessions', 'Booking', 'Attendance', 'Next', 'Actions'].map(h => (
-                <div key={h} className={`text-[9px] font-black uppercase tracking-[0.2em] text-[#cbd5e1] ${h === 'Actions' ? 'text-right pr-3' : ''}`}>{h}</div>
+                <div key={h} className={`text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b] ${h === 'Actions' ? 'text-right pr-3' : ''}`}>{h}</div>
               ))}
             </div>
             {/* Rows */}
@@ -812,6 +871,11 @@ export default function StudentAdminPage() {
 
       {showImport && <CSVImportModal onClose={() => setShowImport(false)} onImported={fetchData} />}
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
+      <style>{`
+        .student-admin button {
+          border-radius: 8px !important;
+        }
+      `}</style>
     </div>
   );
 }
