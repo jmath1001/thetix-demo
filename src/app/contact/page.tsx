@@ -502,8 +502,10 @@ export default function ContactCenter() {
         </div>
 
         {editingTemplate && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(4px)' }}>
-            <div className="w-full max-w-3xl rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #dbe3ee', boxShadow: '0 24px 64px rgba(15,23,42,0.35)' }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.65)', backdropFilter: 'blur(4px)' }}
+            onClick={e => { if (e.target === e.currentTarget) cancelEdit(); }}>
+            <div className="w-full max-w-3xl rounded-xl overflow-hidden" style={{ background: 'white', border: '1px solid #dbe3ee', boxShadow: '0 24px 64px rgba(15,23,42,0.35)' }}
+              onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 py-4" style={{ background: '#0f172a' }}>
                 <div className="flex items-center gap-2.5">
                   <Mail size={15} color="rgba(255,255,255,0.9)" />

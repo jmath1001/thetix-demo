@@ -127,8 +127,10 @@ export function CSVImportModal({ onClose, onImported }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}>
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden"
+        onClick={e => e.stopPropagation()}
         style={{ maxWidth: 600, maxHeight: '88vh', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
 
         {/* Header */}

@@ -49,8 +49,10 @@ export default function OptimizationPreview({
   if (!proposal) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
-      <div className="w-full max-w-6xl overflow-hidden rounded-[28px] border border-slate-200 bg-white/95 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.6)] ring-1 ring-slate-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+      onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="w-full max-w-6xl overflow-hidden rounded-[28px] border border-slate-200 bg-white/95 shadow-[0_30px_90px_-40px_rgba(15,23,42,0.6)] ring-1 ring-slate-100 flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}>
         
         <div className="border-b border-slate-200 bg-white/90 px-6 py-5 backdrop-blur-md sm:px-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

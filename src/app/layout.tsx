@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 
@@ -18,16 +19,19 @@ export const metadata: Metadata = {
   description: "Tutor scheduling and management",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const navCollapsed = cookieStore.get('navbarCollapsed')?.value === 'true';
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <div className="app-shell">
-          <Navbar />
+          <Navbar initialCollapsed={navCollapsed} />
           <main className="app-main w-full">
             {children}
           </main>

@@ -46,8 +46,8 @@ function addWeeks(d: string, w: number) {
 }
 function endDateFromWeeks(start: string, weeks: number) { return addWeeks(start, weeks - 1); }
 function dowFromIso(d: string) { const dt = new Date(d + 'T00:00:00'); return dt.getDay() === 0 ? 7 : dt.getDay(); }
-function alignDateToIsoDow(dateIso: string, targetDow: number) {
-  const cursor = new Date(dateIso + 'T00:00:00');
+function alignDateToIsoDow(startIso: string, targetDow: number) {
+  const cursor = new Date(startIso + 'T00:00:00');
   while (dowFromIso(toISODate(cursor)) !== targetDow) {
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -721,8 +721,10 @@ export default function RecurringManager() {
       </div>
 
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #c7d2fe' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCreate(false); }}>
+          <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #c7d2fe' }}
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4" style={{ background: '#0f172a' }}>
               <div>
                 <p className="text-sm font-black text-white">Create Recurring Series</p>
@@ -815,8 +817,10 @@ export default function RecurringManager() {
 
       {/* Series edit modal */}
       {editingSeries && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #c7d2fe' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) closeEdit(); }}>
+          <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #c7d2fe' }}
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4" style={{ background: '#4f46e5' }}>
               <div>
                 <p className="text-sm font-black text-white">Edit Series</p>
@@ -946,8 +950,10 @@ export default function RecurringManager() {
 
       {/* Single session edit modal */}
       {singleEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #e2e8f0' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) closeSingleEdit(); }}>
+          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #e2e8f0' }}
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4" style={{ background: '#1e293b' }}>
               <div>
                 <p className="text-sm font-black text-white">{singleEdit.confirmCancel ? 'Cancel Session?' : 'Edit Session'}</p>

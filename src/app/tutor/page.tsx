@@ -302,96 +302,155 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-1 pr-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-1.5 pr-3" onClick={e => e.stopPropagation()}>
           <button onClick={() => { setIsEditing(true); setExpanded(true); setTab('details'); }}
-            className="rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#334155] transition-all"
-            style={{ background: '#e2e8f0', border: '1px solid #94a3b8' }}>Edit</button>
-          <button onClick={() => { setConfirmDelete(true); }}
-            className={`p-1 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
+            className="rounded-md border px-2.5 py-1.5 text-[10px] font-bold transition-all"
+            style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
+            Edit
+          </button>
+          <button onClick={() => setConfirmDelete(true)}
+            className={`p-1.5 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
             {confirmDelete ? '?' : <Trash2 size={11} />}
           </button>
-          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8]">
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8] hover:text-[#475569] transition-colors">
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         </div>
       </div>
 
       {/* Expanded panel */}
       {expanded && (
-        <div style={{ borderBottom: '1px solid #dbe4ee', background: '#f8fbff', borderLeft: '4px solid #dc2626' }}>
-          <div className="flex gap-0 px-5" style={{ background: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+        <div style={{ borderBottom: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
+          {/* Tab bar */}
+          <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             {(['details', 'timeoff'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className="-mb-px mr-6 border-b-2 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors"
-                style={tab === t ? { color: '#7f1d1d', borderColor: '#dc2626' } : { color: '#475569', borderColor: 'transparent' }}>
-                {t === 'details' ? 'Details & Availability' : `Time Off${timeOffCount > 0 ? ` (${timeOffCount})` : ''}`}
+                className="relative mr-6 py-3 text-[11px] font-bold transition-colors"
+                style={tab === t
+                  ? { color: '#4f46e5', borderBottom: '2px solid #4f46e5', marginBottom: -1 }
+                  : { color: '#94a3b8', borderBottom: '2px solid transparent', marginBottom: -1 }}>
+                {t === 'details' ? 'Details & Availability' : `Time Off${timeOffCount > 0 ? ` · ${timeOffCount}` : ''}`}
               </button>
             ))}
-          </div>
-
-          <div className="p-5 max-h-[62vh] overflow-y-auto">
-            {isEditing && tab === 'details' && (
-              <div className="sticky top-0 z-20 -mx-5 mb-5 border-b border-[#cbd5e1] bg-[#f8fbff] px-5 py-3">
-                <div className="flex justify-end gap-3">
+            <div className="ml-auto flex items-center gap-2 pb-2 pt-2">
+              {isEditing ? (
+                <>
                   <button onClick={() => { setIsEditing(false); setDraft(tutor); }}
-                    className="rounded-xl border border-[#94a3b8] px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#334155]"
-                    style={{ background: '#e2e8f0' }}>
+                    className="rounded-md border px-3 py-1.5 text-[10px] font-bold transition-all"
+                    style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
                     Cancel
                   </button>
                   <button onClick={async () => { setSaving(true); await onSave(draft); setSaving(false); setIsEditing(false); }} disabled={!dirty || saving}
-                    className="flex items-center gap-2 rounded-md px-5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-50"
-                    style={{ background: '#4f46e5', boxShadow: '0 12px 24px rgba(79,70,229,0.24)' }}>
-                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+                    className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40 transition-all"
+                    style={{ background: '#4f46e5' }}>
+                    {saving ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save
                   </button>
-                </div>
-              </div>
-            )}
+                </>
+              ) : (
+                <button onClick={() => { setIsEditing(true); setTab('details'); }}
+                  className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[10px] font-bold transition-all"
+                  style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
+                  Edit Tutor
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="px-6 py-5 max-h-[62vh] overflow-y-auto">
             {tab === 'details' ? (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className={fieldCardCls}>
-                    <label className={fieldLabelCls}>Name</label>
-                    {isEditing
-                      ? <input type="text" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} className={`${inputCls} mt-2`} />
-                      : <p className="mt-2 text-sm font-semibold text-[#0f172a]">{draft.name || <span className="text-[#94a3b8] italic text-xs">—</span>}</p>}
+              <div className="space-y-6">
+                {/* Contact info row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Identity */}
+                  <div>
+                    <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Profile</p>
+                    <div className="space-y-2.5">
+                      {isEditing ? (
+                        <div className={fieldCardCls}>
+                          <label className={fieldLabelCls}>Name</label>
+                          <input type="text" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} className={`${inputCls} mt-1.5`} />
+                        </div>
+                      ) : (
+                        <p className="text-[13px] font-bold text-[#0f172a]">{draft.name || <span className="italic text-[#94a3b8]">Unnamed</span>}</p>
+                      )}
+                      {isEditing ? (
+                        <div className="flex gap-2 mt-1">
+                          {(['math', 'english'] as const).map(c => (
+                            <button key={c} onClick={() => setDraft({ ...draft, cat: c })}
+                              className="flex-1 rounded-md py-2 text-[10px] font-bold uppercase tracking-[0.12em] transition-all"
+                              style={draft.cat === c
+                                ? { background: '#4f46e5', color: 'white', border: '1.5px solid #4f46e5' }
+                                : { background: 'white', color: '#475569', border: '1.5px solid #cbd5e1' }}>
+                              {c === 'math' ? 'Math / Sci' : 'Eng / Hist'}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="inline-block rounded-md px-2.5 py-1 text-[10px] font-bold"
+                          style={{ background: catBg, color: catColor }}>{catLabel}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className={fieldCardCls}>
-                    <label className={fieldLabelCls}>Category</label>
+
+                  {/* Contact */}
+                  <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
+                    <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Contact</p>
                     {isEditing ? (
-                      <div className="mt-2 flex gap-2">
-                        {(['math', 'english'] as const).map(c => (
-                          <button key={c} onClick={() => setDraft({ ...draft, cat: c })}
-                            className="flex-1 rounded-xl py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all"
-                            style={draft.cat === c
-                              ? { background: '#dc2626', color: 'white', border: '1.5px solid #dc2626', boxShadow: '0 10px 20px rgba(220,38,38,0.18)' }
-                              : { background: 'white', color: '#475569', border: '1.5px solid #cbd5e1' }}>
-                            {c === 'math' ? 'Math / Sci' : 'Eng / Hist'}
-                          </button>
+                      <div className="space-y-3">
+                        <div className={fieldCardCls}>
+                          <label className={fieldLabelCls}>Email</label>
+                          <input type="email" value={draft.email ?? ''} onChange={e => setDraft({ ...draft, email: e.target.value })} className={`${inputCls} mt-1.5`} placeholder="tutor@email.com" />
+                        </div>
+                        <div className={fieldCardCls}>
+                          <label className={fieldLabelCls}>Phone</label>
+                          <input type="tel" value={draft.phone ?? ''} onChange={e => setDraft({ ...draft, phone: e.target.value })} className={`${inputCls} mt-1.5`} placeholder="(555) 000-0000" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {draft.email ? (
+                          <div className="flex items-center gap-2.5">
+                            <Mail size={12} style={{ color: '#94a3b8' }} className="shrink-0" />
+                            <span className="text-[12px] font-medium text-[#334155] truncate">{draft.email}</span>
+                          </div>
+                        ) : null}
+                        {draft.phone ? (
+                          <div className="flex items-center gap-2.5">
+                            <Phone size={12} style={{ color: '#94a3b8' }} className="shrink-0" />
+                            <span className="text-[12px] font-medium text-[#334155]">{draft.phone}</span>
+                          </div>
+                        ) : null}
+                        {!draft.email && !draft.phone && (
+                          <p className="text-[11px] italic text-[#cbd5e1]">No contact on file</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Subjects preview */}
+                  <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
+                    <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Subjects · {draft.subjects.length}</p>
+                    {draft.subjects.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {draft.subjects.map(s => (
+                          <span key={s} className="rounded-md px-2 py-0.5 text-[10px] font-semibold"
+                            style={{ background: '#dbeafe', color: '#1d4ed8' }}>{s}</span>
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-2 text-sm font-semibold text-[#0f172a]">{catLabel}</p>
+                      <p className="text-[11px] italic text-[#cbd5e1]">No subjects assigned</p>
+                    )}
+                    {!isEditing && draft.availabilityBlocks.length > 0 && (
+                      <p className="mt-3 text-[10px] text-[#64748b]">
+                        <span className="font-bold text-[#0f172a]">{draft.availabilityBlocks.length}</span> availability slots
+                      </p>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className={fieldCardCls}>
-                    <label className={fieldLabelCls}>Email</label>
-                    {isEditing
-                      ? <input type="email" value={draft.email ?? ''} onChange={e => setDraft({ ...draft, email: e.target.value })} className={`${inputCls} mt-2`} />
-                      : <p className="mt-2 text-sm font-semibold text-[#0f172a]">{draft.email || <span className="text-[#94a3b8] italic text-xs">—</span>}</p>}
-                  </div>
-                  <div className={fieldCardCls}>
-                    <label className={fieldLabelCls}>Phone</label>
-                    {isEditing
-                      ? <input type="tel" value={draft.phone ?? ''} onChange={e => setDraft({ ...draft, phone: e.target.value })} className={`${inputCls} mt-2`} />
-                      : <p className="mt-2 text-sm font-semibold text-[#0f172a]">{draft.phone || <span className="text-[#94a3b8] italic text-xs">—</span>}</p>}
-                  </div>
-                </div>
-
-                {isEditing ? (
-                  <>
+                {/* Edit-mode full controls */}
+                {isEditing && (
+                  <div className="space-y-5 pt-2 border-t border-[#e2e8f0]">
                     <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} />
                     <AvailabilityGrid
                       blocks={draft.availabilityBlocks}
@@ -401,28 +460,8 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
                         availability: Array.from(new Set(b.map(x => parseInt(x.split('-')[0])))).sort((a, b) => a - b),
                       })}
                     />
-                  </>
-                ) : (
-                  <>
-                    {draft.subjects.length > 0 && (
-                      <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-                        <p className="mb-2.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Subjects</p>
-                        <div className="flex flex-wrap gap-2">
-                          {draft.subjects.map(s => (
-                            <span key={s} className="rounded-lg bg-[#dbeafe] px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#1d4ed8]">{s}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {draft.availabilityBlocks.length > 0 && (
-                      <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-                        <p className="mb-2.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Availability</p>
-                        <p className="text-sm font-semibold text-[#0f172a]">{draft.availabilityBlocks.length} time slots scheduled</p>
-                      </div>
-                    )}
-                  </>
+                  </div>
                 )}
-
               </div>
             ) : (
               <TimeOffPanel tutor={tutor} timeOffList={timeOffList} onRefetch={onRefetch} />

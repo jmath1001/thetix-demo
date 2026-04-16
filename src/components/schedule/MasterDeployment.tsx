@@ -36,6 +36,8 @@ import { CommandBar } from '@/components/CommandBar';
 import { ScheduleBuilder } from '@/components/ScheduleBuilder';
 import { ScheduleOptimizerController, type OptimizerScope } from '@/components/optimizer/ScheduleOptimizerController';
 
+const SCHEDULE_VIEW_STORAGE_KEY = 'schedule:viewMode';
+
 export default function MasterDeployment() {
   const searchParams = useSearchParams();
   const lastHandledActionRef = useRef<string | null>(null);
@@ -63,7 +65,13 @@ export default function MasterDeployment() {
   const [bookingToast, setBookingToast] = useState<BookingConfirmData | null>(null);
   const [isTutorModalOpen, setIsTutorModalOpen] = useState(false);
   const [selectedTutorFilter, setSelectedTutorFilter] = useState<string | null>(null);
-  const [todayView, setTodayView] = useState(true);
+  const [todayView, setTodayView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const stored = window.localStorage.getItem(SCHEDULE_VIEW_STORAGE_KEY);
+    if (stored === 'today') return true;
+    if (stored === 'week') return false;
+    return false;
+  });
   const [modalTab, setModalTab] = useState<'attendance' | 'confirmation' | 'notes'>('attendance');
   const [bulkRemoveMode, setBulkRemoveMode] = useState(false);
   const [selectedRemovals, setSelectedRemovals] = useState<Record<string, { sessionId: string; studentId: string; name: string }>>({});
@@ -234,6 +242,11 @@ export default function MasterDeployment() {
       document.documentElement.style.overflow = '';
       document.body.style.background = '';
     };
+  }, [todayView]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SCHEDULE_VIEW_STORAGE_KEY, todayView ? 'today' : 'week');
   }, [todayView]);
 
   const tutorPaletteMap = useMemo(() => {
@@ -751,33 +764,39 @@ export default function MasterDeployment() {
       )}
 
       {isEnrollModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,14,8,0.75)', backdropFilter: 'blur(8px)' }}>
-          <BookingForm
-            prefilledSlot={null}
-            onConfirm={handleConfirmBooking}
-            onCancel={closeAllModals}
-            enrollCat={enrollCat}
-            setEnrollCat={setEnrollCat}
-            allAvailableSeats={allAvailableSeats}
-            studentDatabase={students}
-            initialStudentId={aiPrefilledStudentId}
-            sessions={localSessions}
-          />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,14,8,0.75)', backdropFilter: 'blur(8px)' }}
+          onClick={e => { if (e.target === e.currentTarget) closeAllModals(); }}>
+          <div onClick={e => e.stopPropagation()}>
+            <BookingForm
+              prefilledSlot={null}
+              onConfirm={handleConfirmBooking}
+              onCancel={closeAllModals}
+              enrollCat={enrollCat}
+              setEnrollCat={setEnrollCat}
+              allAvailableSeats={allAvailableSeats}
+              studentDatabase={students}
+              initialStudentId={aiPrefilledStudentId}
+              sessions={localSessions}
+            />
+          </div>
         </div>
       )}
       {gridSlotToBook && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,14,8,0.75)', backdropFilter: 'blur(8px)' }}>
-          <BookingForm
-            prefilledSlot={gridSlotToBook}
-            onConfirm={handleConfirmBooking}
-            onCancel={closeAllModals}
-            enrollCat={enrollCat}
-            setEnrollCat={setEnrollCat}
-            allAvailableSeats={allAvailableSeats}
-            studentDatabase={students}
-            initialStudentId={aiPrefilledStudentId}
-            sessions={localSessions}
-          />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,14,8,0.75)', backdropFilter: 'blur(8px)' }}
+          onClick={e => { if (e.target === e.currentTarget) closeAllModals(); }}>
+          <div onClick={e => e.stopPropagation()}>
+            <BookingForm
+              prefilledSlot={gridSlotToBook}
+              onConfirm={handleConfirmBooking}
+              onCancel={closeAllModals}
+              enrollCat={enrollCat}
+              setEnrollCat={setEnrollCat}
+              allAvailableSeats={allAvailableSeats}
+              studentDatabase={students}
+              initialStudentId={aiPrefilledStudentId}
+              sessions={localSessions}
+            />
+          </div>
         </div>
       )}
 

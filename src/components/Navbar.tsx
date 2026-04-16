@@ -24,8 +24,12 @@ const ACCENT_BG   = '#eef2ff';
 const LOGO_RED    = '#dc2626';
 const LOGO_RED_DARK = '#b91c1c';
 
-export function Navbar() {
-  const [collapsed, setCollapsed] = useState(false);
+function setNavCookie(value: boolean) {
+  document.cookie = `navbarCollapsed=${value};path=/;max-age=31536000`;
+}
+
+export function Navbar({ initialCollapsed = false }: { initialCollapsed?: boolean }) {
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
   const pathname = usePathname();
   const current = pathname || '/';
 
@@ -78,7 +82,7 @@ export function Navbar() {
                 {CENTER_NAME}
               </span>
               <button
-                onClick={() => setCollapsed(true)}
+                onClick={() => { setCollapsed(true); setNavCookie(true); }}
                 title="Full View"
                 className="flex items-center justify-center rounded-lg shrink-0"
                 style={{ width: 28, height: 28, color: '#9ca3af', background: 'transparent', border: 'none', cursor: 'pointer', transition: 'color 0.15s, background 0.15s' }}
@@ -95,7 +99,7 @@ export function Navbar() {
         {collapsed && (
           <div className="flex justify-center px-2 pt-2.5">
             <button
-              onClick={() => setCollapsed(false)}
+              onClick={() => { setCollapsed(false); setNavCookie(false); }}
               title="Expand sidebar"
               className="flex items-center justify-center rounded-lg"
               style={{ width: 40, height: 30, color: '#9ca3af', background: 'transparent', border: 'none', cursor: 'pointer', transition: 'color 0.15s, background 0.15s' }}

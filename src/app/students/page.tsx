@@ -357,135 +357,200 @@ function StudentRow({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-1 pr-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-1.5 pr-3" onClick={e => e.stopPropagation()}>
           <Link href={`/students/${student.id}`}
-            className="inline-flex rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#7f1d1d] transition-all"
-            style={{ background: '#fee2e2', border: '1px solid #fca5a5' }}>
+            className="inline-flex items-center rounded-md px-2.5 py-1.5 text-[10px] font-bold transition-all"
+            style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569' }}>
             History
           </Link>
           <button onClick={() => setShowBooking(true)}
-            className="rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-all"
-            style={{ background: '#dc2626', boxShadow: '0 8px 18px rgba(220,38,38,0.24)' }}>Book</button>
-          <button onClick={() => { setDraft(student); setShowEditModal(true); }}
-            className="rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#334155] transition-all"
-            style={{ background: '#e2e8f0', border: '1px solid #94a3b8' }}>Edit</button>
+            className="rounded-md px-2.5 py-1.5 text-[10px] font-bold text-white transition-all"
+            style={{ background: '#4f46e5' }}>
+            Book
+          </button>
           <button onClick={handleDelete}
-            className={`p-1 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
+            className={`p-1.5 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
             {confirmDelete ? '?' : <Trash2 size={11} />}
           </button>
-          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8]">
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8] hover:text-[#475569] transition-colors">
+            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         </div>
       </div>
 
       {/* Expanded panel */}
       {expanded && (
-        <div style={{ borderBottom: '1px solid #dbe4ee', background: '#f8fbff', borderLeft: '4px solid #dc2626' }}>
-          <div className="flex gap-0 px-4" style={{ background: '#e2e8f0', borderBottom: '1px solid #cbd5e1' }}>
+        <div style={{ borderBottom: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
+          {/* Tab bar */}
+          <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             {(['contact', 'sessions'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className="-mb-px mr-5 border-b-2 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-colors"
-                style={tab === t ? { color: '#7f1d1d', borderColor: '#dc2626' } : { color: '#475569', borderColor: 'transparent' }}>
-                {t === 'sessions' ? `Sessions (${allStudentSessions.length})` : 'Contact'}
+                className="relative mr-6 py-3 text-[11px] font-bold transition-colors"
+                style={tab === t
+                  ? { color: '#4f46e5', borderBottom: '2px solid #4f46e5', marginBottom: -1 }
+                  : { color: '#94a3b8', borderBottom: '2px solid transparent', marginBottom: -1 }}>
+                {t === 'sessions' ? `Sessions${allStudentSessions.length > 0 ? ` · ${allStudentSessions.length}` : ''}` : 'Contact Info'}
               </button>
             ))}
+            <div className="ml-auto flex items-center gap-2 pb-2 pt-2">
+              <button onClick={() => { setDraft(student); setShowEditModal(true); }}
+                className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[10px] font-bold transition-all"
+                style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
+                Edit Info
+              </button>
+              <button onClick={() => setShowBooking(true)}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10px] font-bold text-white transition-all"
+                style={{ background: '#4f46e5' }}>
+                + Book Session
+              </button>
+            </div>
           </div>
 
-          <div className="p-4 max-h-[62vh] overflow-y-auto">
+          <div className="px-6 py-5 max-h-[62vh] overflow-y-auto">
             {tab === 'contact' && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Student Email', field: 'email', type: 'email', value: student.email },
-                    { label: 'Student Phone', field: 'phone', type: 'tel', value: student.phone },
-                    { label: 'Grade', field: 'grade', type: 'text', value: student.grade },
-                    { label: 'Hours Left', field: 'hours_left', type: 'number', value: student.hours_left },
-                  ].map(({ label, field, type, value }) => (
-                    <div key={field} className={fieldCardCls}>
-                      <label className={fieldLabelCls}>{label}</label>
-                      <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Mom</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {[
-                      { label: 'Name', field: 'mom_name', type: 'text', value: student.mom_name },
-                      { label: 'Email', field: 'mom_email', type: 'email', value: student.mom_email },
-                      { label: 'Phone', field: 'mom_phone', type: 'tel', value: student.mom_phone },
-                    ].map(({ label, field, type, value }) => (
-                      <div key={field} className={fieldCardCls}>
-                        <label className={fieldLabelCls}>{label}</label>
-                        <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Student */}
+                <div>
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Student</p>
+                  <div className="space-y-2.5">
+                    {student.grade && (
+                      <div className="flex items-center gap-2.5">
+                        <GraduationCap size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                        <span className="text-[12px] font-semibold text-[#334155]">Grade {student.grade}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Dad</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {[
-                      { label: 'Name', field: 'dad_name', type: 'text', value: student.dad_name },
-                      { label: 'Email', field: 'dad_email', type: 'email', value: student.dad_email },
-                      { label: 'Phone', field: 'dad_phone', type: 'tel', value: student.dad_phone },
-                    ].map(({ label, field, type, value }) => (
-                      <div key={field} className={fieldCardCls}>
-                        <label className={fieldLabelCls}>{label}</label>
-                        <p className={fieldValueCls}>{value || <span className="text-xs italic text-[#94a3b8]">—</span>}</p>
+                    )}
+                    {student.email ? (
+                      <div className="flex items-center gap-2.5">
+                        <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                        <span className="text-[12px] font-medium text-[#334155] truncate">{student.email}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-[#cbd5e1] bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-                  <p className="mb-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b]">Bluebook</p>
-                  {student.bluebook_url
-                    ? <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.14em]"
-                        style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#166534' }}>
-                        <ExternalLink size={11} /> Open Bluebook
+                    ) : null}
+                    {student.phone ? (
+                      <div className="flex items-center gap-2.5">
+                        <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                        <span className="text-[12px] font-medium text-[#334155]">{student.phone}</span>
+                      </div>
+                    ) : null}
+                    {!student.email && !student.phone && !student.grade && (
+                      <p className="text-[11px] italic text-[#cbd5e1]">No info on file</p>
+                    )}
+                    {student.bluebook_url && (
+                      <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold transition-all"
+                        style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }}>
+                        <ExternalLink size={10} /> Bluebook
                       </a>
-                    : <p className="text-xs italic text-[#94a3b8]">No Bluebook linked</p>}
+                    )}
+                  </div>
+                </div>
+
+                {/* Mom */}
+                <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Mother</p>
+                  {(student.mom_name || student.mom_email || student.mom_phone) ? (
+                    <div className="space-y-2.5">
+                      {student.mom_name && (
+                        <div className="flex items-center gap-2.5">
+                          <User size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-semibold text-[#0f172a]">{student.mom_name}</span>
+                        </div>
+                      )}
+                      {student.mom_email && (
+                        <div className="flex items-center gap-2.5">
+                          <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-medium text-[#334155] truncate">{student.mom_email}</span>
+                        </div>
+                      )}
+                      {student.mom_phone && (
+                        <div className="flex items-center gap-2.5">
+                          <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-medium text-[#334155]">{student.mom_phone}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] italic text-[#cbd5e1]">Not on file</p>
+                  )}
+                </div>
+
+                {/* Dad */}
+                <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Father</p>
+                  {(student.dad_name || student.dad_email || student.dad_phone) ? (
+                    <div className="space-y-2.5">
+                      {student.dad_name && (
+                        <div className="flex items-center gap-2.5">
+                          <User size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-semibold text-[#0f172a]">{student.dad_name}</span>
+                        </div>
+                      )}
+                      {student.dad_email && (
+                        <div className="flex items-center gap-2.5">
+                          <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-medium text-[#334155] truncate">{student.dad_email}</span>
+                        </div>
+                      )}
+                      {student.dad_phone && (
+                        <div className="flex items-center gap-2.5">
+                          <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
+                          <span className="text-[12px] font-medium text-[#334155]">{student.dad_phone}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] italic text-[#cbd5e1]">Not on file</p>
+                  )}
                 </div>
               </div>
             )}
 
             {tab === 'sessions' && (
-              <div className="space-y-1.5 max-h-105 overflow-y-auto pr-1">
-                {allStudentSessions.length === 0 && <p className="text-xs text-[#94a3b8] italic">No sessions yet</p>}
+              <div className="space-y-1.5 pr-1">
+                {allStudentSessions.length === 0 && (
+                  <p className="py-6 text-center text-xs italic text-[#94a3b8]">No sessions on record yet</p>
+                )}
                 {allStudentSessions.map((s, i) => {
                   const d = new Date(s.date + 'T00:00:00');
-                  const statusColors: Record<string, { bg: string; text: string }> = {
-                    present: { bg: '#f0fdf4', text: '#16a34a' },
-                    confirmed: { bg: '#f0fdf4', text: '#16a34a' },
-                    'no-show': { bg: '#fef2f2', text: '#dc2626' },
-                  };
-                  const sc = statusColors[s.status] ?? { bg: '#f8fafc', text: '#64748b' };
+                  const isPresent = s.status === 'present' || s.status === 'confirmed';
+                  const isNoShow = s.status === 'no-show';
+                  const dotColor = isPresent ? '#16a34a' : isNoShow ? '#dc2626' : s.isPast ? '#f59e0b' : '#4f46e5';
+                  const label = isPresent ? 'Present' : isNoShow ? 'No-show' : s.isPast ? 'Unmarked' : 'Upcoming';
+                  const labelBg = isPresent ? '#f0fdf4' : isNoShow ? '#fef2f2' : s.isPast ? '#fffbeb' : '#eef2ff';
+                  const labelColor = isPresent ? '#15803d' : isNoShow ? '#dc2626' : s.isPast ? '#b45309' : '#4f46e5';
                   return (
-                    <div key={i} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                      style={{ background: s.isPast ? '#f8fafc' : '#ffffff', border: '1px solid #dbe4ee' }}>
-                      <div className="text-center w-8 shrink-0">
-                        <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
-                        <p className="text-sm font-black leading-tight" style={{ color: s.isPast ? '#94a3b8' : '#0f172a' }}>{d.getDate()}</p>
+                    <div key={i} className="flex items-center gap-4 rounded-lg px-4 py-3 transition-colors"
+                      style={{ background: '#fff', border: '1px solid #e2e8f0' }}>
+                      <div className="shrink-0 text-center w-10">
+                        <p className="text-[9px] font-bold uppercase leading-none" style={{ color: '#94a3b8' }}>
+                          {d.toLocaleDateString('en-US', { month: 'short' })}
+                        </p>
+                        <p className="text-[15px] font-black leading-snug" style={{ color: s.isPast ? '#94a3b8' : '#0f172a' }}>
+                          {d.getDate()}
+                        </p>
                       </div>
+                      <div className="w-px self-stretch" style={{ background: '#e2e8f0' }} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate" style={{ color: s.isPast ? '#475569' : '#0f172a' }}>{s.topic}</p>
-                        <p className="text-[10px] text-[#94a3b8]">{s.tutorName} · {s.blockLabel}</p>
+                        <p className="text-[12px] font-semibold truncate" style={{ color: s.isPast ? '#64748b' : '#0f172a' }}>
+                          {s.topic || <span className="italic text-[#94a3b8]">No topic</span>}
+                        </p>
+                        <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>
+                          {s.tutorName} · {s.blockLabel}
+                        </p>
                       </div>
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
-                        style={{ background: sc.bg, color: sc.text }}>
-                        {s.status === 'present' || s.status === 'confirmed' ? 'Present' : s.status === 'no-show' ? 'No-show' : s.isPast ? 'Unmarked' : 'Upcoming'}
+                      <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                        style={{ background: labelBg, color: labelColor }}>
+                        {label}
                       </span>
+                      <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
                     </div>
                   );
                 })}
                 {allStudentSessions.length > 0 && (
                   <div className="pt-2 text-center">
                     <Link href={`/students/${student.id}`}
-                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.16em]"
-                      style={{ color: '#7f1d1d', background: '#fff1f2', border: '1px solid #fecdd3' }}>
-                      Full History <ChevronRight size={10} />
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] transition-all"
+                      style={{ color: '#4f46e5', background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                      View Full History <ChevronRight size={10} />
                     </Link>
                   </div>
                 )}
@@ -497,15 +562,20 @@ function StudentRow({
 
       {showBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}>
-          <BookingForm prefilledSlot={null} onConfirm={handleConfirmBooking} onCancel={() => setShowBooking(false)}
-            enrollCat={enrollCat} setEnrollCat={setEnrollCat} allAvailableSeats={allAvailableSeats} studentDatabase={[student]} />
+          style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowBooking(false); }}>
+          <div onClick={e => e.stopPropagation()}>
+            <BookingForm prefilledSlot={null} onConfirm={handleConfirmBooking} onCancel={() => setShowBooking(false)}
+              enrollCat={enrollCat} setEnrollCat={setEnrollCat} allAvailableSeats={allAvailableSeats} studentDatabase={[student]} />
+          </div>
         </div>
       )}
 
       {showEditModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.64)', backdropFilter: 'blur(4px)' }}>
-          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.64)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) { setShowEditModal(false); setDraft(student); } }}>
+          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-[#cbd5e1] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]"
+            onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#e2e8f0] bg-[#f8fafc] px-5 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#64748b]">Student Contact Edit</p>

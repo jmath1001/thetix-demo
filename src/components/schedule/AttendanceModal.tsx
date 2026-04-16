@@ -468,8 +468,9 @@ function ModalContent({
 
       {/* RECURRING SERIES MODAL */}
       {showRecurringModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 24, maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowRecurringModal(false); }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0f172a', margin: 0 }}>Make Recurring</h3>
               <button onClick={() => setShowRecurringModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
@@ -591,16 +592,19 @@ export function AttendanceModal(props: AttendanceModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50" style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(8px)' }}>
-      <div className="hidden md:flex items-center justify-center h-full p-6">
+    <div className="fixed inset-0 z-50" style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(8px)' }}
+      onMouseDown={e => { if (e.target === e.currentTarget) setSelectedSession(null); }}>
+      <div className="hidden md:flex items-center justify-center h-full p-6"
+        onMouseDown={e => { if (e.target === e.currentTarget) setSelectedSession(null); }}>
         <div className="w-full rounded-2xl overflow-hidden flex flex-col"
+          onMouseDown={e => e.stopPropagation()}
           style={{ maxWidth: 440, maxHeight: 'min(680px, 92vh)', background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.8)', boxShadow: '0 24px 48px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.5)' }}>
           <ModalContent {...contentProps} />
         </div>
       </div>
       <div className="md:hidden flex flex-col h-full">
         <div className="flex-1" onClick={() => setSelectedSession(null)} />
-        <div className="rounded-t-2xl flex flex-col" style={{ maxHeight: '92vh', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.8)', boxShadow: '0 -8px 32px rgba(0,0,0,0.12)' }}>
+        <div className="rounded-t-2xl flex flex-col" onMouseDown={e => e.stopPropagation()} style={{ maxHeight: '92vh', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.8)', boxShadow: '0 -8px 32px rgba(0,0,0,0.12)' }}>
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <div className="w-8 h-1 rounded-full bg-[#e2e8f0]" />
           </div>

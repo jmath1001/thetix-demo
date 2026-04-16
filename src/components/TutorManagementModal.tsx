@@ -275,8 +275,10 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(28,25,23,0.5)', backdropFilter: 'blur(4px)' }}>
-      <div className="w-full max-w-2xl rounded-2xl flex flex-col overflow-hidden" style={{ background: 'white', border: '1px solid #e7e3dd', boxShadow: '0 24px 64px rgba(0,0,0,0.15)', maxHeight: '90vh' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(28,25,23,0.5)', backdropFilter: 'blur(4px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-2xl rounded-2xl flex flex-col overflow-hidden" style={{ background: 'white', border: '1px solid #e7e3dd', boxShadow: '0 24px 64px rgba(0,0,0,0.15)', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}>
 
         <div className="px-6 py-5 flex items-center justify-between border-b" style={{ borderColor: '#f0ece8' }}>
           <div>
