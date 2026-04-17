@@ -658,6 +658,8 @@ export default function MasterDeployment() {
               sessions={[...localSessions, ...(nextWeekSessions ?? [])]}
               students={students}
               tutors={tutors}
+              timeOff={timeOff}
+              onDataChanged={refetch}
               onBookingAction={handleAIBookingAction}
               onOpenProposal={openPreview}
               onOpenAttendanceModal={(session) => setSelectedSession(session)}

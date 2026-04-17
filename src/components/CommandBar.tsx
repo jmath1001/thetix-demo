@@ -12,7 +12,9 @@ interface CommandBarProps {
   sessions: any[]
   students: any[]
   tutors: any[]
+  timeOff?: any[]
   allAvailableSeats: any[]
+  onDataChanged?: () => void | Promise<void>
   onBookingAction: (params: {
     studentId?: string
     slotDate?: string
@@ -26,6 +28,27 @@ interface CommandBarProps {
   nextWeekStart?: string
 }
 
+type PendingAction = {
+  capability: 'create_time_off_range' | 'update_student_contact' | 'move_session_with_conflict_check'
+  params: any
+}
+
+type CapabilityPreview = {
+  type: 'capability_preview'
+  capability: PendingAction['capability']
+  summary: string
+  risk: 'low' | 'medium' | 'high'
+  requiresConfirmation: boolean
+  preview: any
+  pendingAction: PendingAction
+}
+
+type ActionApplied = {
+  type: 'action_applied'
+  summary: string
+  detail?: string
+}
+
 type Result =
   | { type: 'answer'; text: string }
   | { type: 'slots'; slotIndices: number[]; reason: string }
@@ -33,6 +56,8 @@ type Result =
   | { type: 'student_contact'; studentId: string }
   | { type: 'student_sessions'; studentId: string }
   | { type: 'student_profile'; studentId: string }
+  | CapabilityPreview
+  | ActionApplied
   | { type: 'error'; text: string }
 
 const PLACEHOLDERS = [
@@ -431,11 +456,13 @@ function StudentProfileCard({ student, sessions, tutors, onOpenAttendanceModal, 
 
 // ── Main CommandBar ───────────────────────────────────────────────────────────
 export function CommandBar({
-  sessions = [], students = [], tutors = [], allAvailableSeats = [],
+  sessions = [], students = [], tutors = [], timeOff = [], allAvailableSeats = [],
+  onDataChanged,
   onBookingAction, onOpenProposal, onOpenAttendanceModal,
 }: CommandBarProps) {
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isExecuting, setIsExecuting] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [placeholderIdx, setPlaceholderIdx] = useState(0)
@@ -503,15 +530,39 @@ export function CommandBar({
     students: students.map(s => ({
       id: s.id, name: s.name, subject: s.subject, grade: s.grade,
       hoursLeft: s.hoursLeft, email: s.email, phone: s.phone,
+      parent_name: s.parent_name,
+      parent_email: s.parent_email,
+      parent_phone: s.parent_phone,
       mom_name: s.mom_name, mom_email: s.mom_email, mom_phone: s.mom_phone,
       dad_name: s.dad_name, dad_email: s.dad_email, dad_phone: s.dad_phone,
+      bluebook_url: s.bluebook_url,
+    })),
+    tutors: tutors.map(t => ({ id: t.id, name: t.name, subjects: t.subjects ?? [] })),
+    sessions: sessions.map(session => ({
+      id: session.id,
+      date: session.date,
+      tutorId: session.tutorId,
+      time: session.time,
+      students: (session.students ?? []).map((st: any) => ({
+        rowId: st.rowId,
+        id: st.id,
+        name: st.name,
+        topic: st.topic,
+        status: st.status,
+      })),
+    })),
+    timeOff: timeOff.map(entry => ({
+      id: entry.id,
+      tutorId: entry.tutorId,
+      date: entry.date,
+      note: entry.note,
     })),
     availableSeats: allAvailableSeats.map(s => ({
       tutor: { name: s.tutor.name, id: s.tutor.id, subjects: s.tutor.subjects ?? [] },
       dayName: s.dayName, date: s.date, time: s.time,
       seatsLeft: s.seatsLeft, block: s.block,
     })),
-  }), [students, allAvailableSeats])
+  }), [students, tutors, sessions, timeOff, allAvailableSeats])
 
   const runQuery = useCallback(async (q: string) => {
     if (!q.trim()) return
@@ -520,7 +571,7 @@ export function CommandBar({
       const res = await fetch('/api/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, context: buildContext() }),
+        body: JSON.stringify({ query: q, context: buildContext(), mode: 'draft' }),
       })
       const data: Result = await res.json()
       if (data.type === 'action' && (data as any).action === 'open_booking') {
@@ -535,6 +586,31 @@ export function CommandBar({
       setLoading(false)
     }
   }, [buildContext, onBookingAction])
+
+  const confirmPendingAction = useCallback(async () => {
+    if (!result || result.type !== 'capability_preview') return
+    setIsExecuting(true)
+    try {
+      const res = await fetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'execute',
+          pendingAction: result.pendingAction,
+          context: buildContext(),
+        }),
+      })
+      const data: Result = await res.json()
+      setResult(data)
+      if (data.type === 'action_applied') {
+        await Promise.resolve(onDataChanged?.())
+      }
+    } catch {
+      setResult({ type: 'error', text: 'Failed to apply command.' })
+    } finally {
+      setIsExecuting(false)
+    }
+  }, [result, buildContext, onDataChanged])
 
   const showDropdown = !!(result || loading || (isFocused && !query))
 
@@ -689,6 +765,116 @@ export function CommandBar({
               <div style={{ padding: '20px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                 <CheckCircle2 size={16} style={{ color: C.green, flexShrink: 0, marginTop: 2 }} />
                 <span style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6 }}>{result.text}</span>
+              </div>
+            )}
+
+            {/* Capability preview */}
+            {result?.type === 'capability_preview' && (
+              <div style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: C.textPrimary }}>Review changes</div>
+                  <Pill
+                    color={result.risk === 'high' ? C.accent : result.risk === 'medium' ? C.amber : C.green}
+                    bg={result.risk === 'high' ? C.accentSoft : result.risk === 'medium' ? C.amberSoft : C.greenSoft}
+                    border={result.risk === 'high' ? C.accentBorder : result.risk === 'medium' ? '#fde68a' : C.greenBorder}
+                  >
+                    {result.risk.toUpperCase()} RISK
+                  </Pill>
+                </div>
+                <div style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.5, marginBottom: 12 }}>{result.summary}</div>
+
+                {result.preview?.kind === 'time_off_range' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.tutorName}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>
+                      {result.preview.startDate} to {result.preview.endDate}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                      <Pill color={C.green} bg={C.greenSoft} border={C.greenBorder}>{(result.preview.toInsertDates ?? []).length} to add</Pill>
+                      <Pill color={C.textSecondary} bg={C.surface} border={C.border}>{(result.preview.alreadyBlockedDates ?? []).length} already blocked</Pill>
+                      <Pill color={C.amber} bg={C.amberSoft} border={'#fde68a'}>{(result.preview.impactedSessions ?? []).length} sessions impacted</Pill>
+                    </div>
+                    {(result.preview.impactedSessions ?? []).slice(0, 5).map((impact: any, idx: number) => (
+                      <div key={idx} style={{ marginTop: 8, fontSize: 11, color: C.textSecondary }}>
+                        {impact.date} {impact.time} - {impact.studentCount} student{impact.studentCount === 1 ? '' : 's'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {result.preview?.kind === 'student_contact_diff' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.studentName}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3, textTransform: 'capitalize' }}>
+                      {String(result.preview.field ?? '').replaceAll('_', ' ')}
+                    </div>
+                    <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Before</div>
+                        <div style={{ marginTop: 3, fontSize: 12, color: C.textSecondary }}>{result.preview.beforeValue || 'Empty'}</div>
+                      </div>
+                      <div style={{ border: `1.5px solid ${C.greenBorder}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: C.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>After</div>
+                        <div style={{ marginTop: 3, fontSize: 12, color: C.textPrimary }}>{result.preview.afterValue || 'Empty'}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {result.preview?.kind === 'session_move' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.studentName}</div>
+                    <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>From</div>
+                        <div style={{ marginTop: 3, fontSize: 12, color: C.textSecondary }}>{result.preview.fromTutorName}</div>
+                        <div style={{ marginTop: 2, fontSize: 11, color: C.textMuted }}>{result.preview.fromDate} {result.preview.fromTime}</div>
+                      </div>
+                      <div style={{ border: `1.5px solid ${C.greenBorder}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: C.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>To</div>
+                        <div style={{ marginTop: 3, fontSize: 12, color: C.textPrimary }}>{result.preview.toTutorName}</div>
+                        <div style={{ marginTop: 2, fontSize: 11, color: C.textMuted }}>{result.preview.toDate} {result.preview.toTime}</div>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+                      Target session currently has {result.preview.targetSessionCurrentCount ?? 0} student{(result.preview.targetSessionCurrentCount ?? 0) === 1 ? '' : 's'}.
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={confirmPendingAction}
+                  disabled={isExecuting}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 9,
+                    border: 'none',
+                    background: '#1e293b',
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: isExecuting ? 'default' : 'pointer',
+                    opacity: isExecuting ? 0.75 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  {isExecuting ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Confirm and apply
+                </button>
+              </div>
+            )}
+
+            {/* Action applied */}
+            {result?.type === 'action_applied' && (
+              <div style={{ padding: '20px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <CheckCircle2 size={16} style={{ color: C.green, flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <div style={{ fontSize: 13, color: C.textPrimary, fontWeight: 700 }}>{result.summary}</div>
+                  {result.detail && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>{result.detail}</div>}
+                </div>
               </div>
             )}
 
