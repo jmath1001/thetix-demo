@@ -37,6 +37,94 @@ const inputCls = "w-full rounded-lg border border-[#94a3b8] bg-white px-3.5 py-2
 const fieldCardCls = "rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)]";
 const fieldLabelCls = "block text-[9px] font-black uppercase tracking-[0.22em] text-[#64748b]";
 
+function toDateValue(isoDate: string) {
+  return new Date(`${isoDate}T00:00:00`);
+}
+
+function toISODate(d: Date) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateLabel(isoDate: string) {
+  return toDateValue(isoDate).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatDateRangeLabel(startDate: string, endDate: string) {
+  if (startDate === endDate) return formatDateLabel(startDate);
+
+  const start = toDateValue(startDate);
+  const end = toDateValue(endDate);
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+
+  if (sameMonth) {
+    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { day: 'numeric' })}`;
+  }
+
+  return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
+function enumerateDateRange(startDate: string, endDate: string) {
+  const start = toDateValue(startDate);
+  const end = toDateValue(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [];
+
+  const dates: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    dates.push(toISODate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function areConsecutiveDays(left: string, right: string) {
+  const next = toDateValue(left);
+  next.setDate(next.getDate() + 1);
+  return toISODate(next) === right;
+}
+
+function summarizeAvailability(blocks: string[]) {
+  const sortedDays = Array.from(new Set(blocks.map(block => Number.parseInt(block.split('-')[0], 10))))
+    .filter(day => Number.isFinite(day))
+    .sort((left, right) => left - right);
+
+  return {
+    slotCount: blocks.length,
+    dayCount: sortedDays.length,
+    dayLabels: ACTIVE_DAYS_INFO.filter(day => sortedDays.includes(day.dow)).map(day => day.label),
+  };
+}
+
+function groupTimeOffEntries(entries: TimeOff[]) {
+  const sorted = [...entries].sort((left, right) => left.date.localeCompare(right.date));
+
+  return sorted.reduce<Array<{ ids: string[]; startDate: string; endDate: string; note: string; totalDays: number }>>((groups, entry) => {
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup.note === (entry.note ?? '') && areConsecutiveDays(lastGroup.endDate, entry.date)) {
+      lastGroup.ids.push(entry.id);
+      lastGroup.endDate = entry.date;
+      lastGroup.totalDays += 1;
+      return groups;
+    }
+
+    groups.push({
+      ids: [entry.id],
+      startDate: entry.date,
+      endDate: entry.date,
+      note: entry.note ?? '',
+      totalDays: 1,
+    });
+    return groups;
+  }, []);
+}
+
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
@@ -135,68 +223,151 @@ function AvailabilityGrid({ blocks, onChange }: { blocks: string[]; onChange: (b
 function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
   tutor: TutorWithContact; timeOffList: TimeOff[]; onRefetch: () => void;
 }) {
-  const [date, setDate] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const tutorTimeOff = timeOffList.filter(t => t.tutor_id === tutor.id).sort((a, b) => a.date.localeCompare(b.date));
+  const groupedTimeOff = groupTimeOffEntries(tutorTimeOff);
+  const todayIso = toISODate(new Date());
+  const upcomingTimeOff = groupedTimeOff.find(entry => entry.endDate >= todayIso) ?? null;
+  const longestRange = groupedTimeOff.reduce((longest, entry) => Math.max(longest, entry.totalDays), 0);
+  const requestedDates = startDate ? enumerateDateRange(startDate, endDate || startDate) : [];
+  const existingDateSet = new Set(tutorTimeOff.map(entry => entry.date));
+  const overlappingDates = requestedDates.filter(date => existingDateSet.has(date)).length;
 
   const handleAdd = async () => {
-    if (!date) return;
+    if (!startDate) return;
+    const finalEndDate = endDate || startDate;
+    const datesToInsert = enumerateDateRange(startDate, finalEndDate).filter(date => !existingDateSet.has(date));
+
+    if (datesToInsert.length === 0) {
+      setError('That entire range is already blocked off.');
+      return;
+    }
+
+    setError(null);
     setSaving(true);
-    await supabase.from(TIME_OFF).insert({ tutor_id: tutor.id, date, note });
+    const { error: insertError } = await supabase.from(TIME_OFF).insert(
+      datesToInsert.map(date => ({ tutor_id: tutor.id, date, note: note.trim() }))
+    );
     setSaving(false);
-    setDate(''); setNote(''); onRefetch();
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    setStartDate('');
+    setEndDate('');
+    setNote('');
+    onRefetch();
   };
 
-  const handleDelete = async (id: string) => {
-    await supabase.from(TIME_OFF).delete().eq('id', id);
+  const handleDelete = async (ids: string[]) => {
+    await supabase.from(TIME_OFF).delete().in('id', ids);
     onRefetch();
   };
 
   return (
     <div className="space-y-4">
-      <div className="grid items-end gap-3 md:grid-cols-[1fr_2fr_auto]">
-        <div className={fieldCardCls}>
-          <label className={fieldLabelCls}>Date</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-[#cbd5e1] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Blocked days</p>
+          <p className="mt-2 text-2xl font-black text-[#0f172a]">{tutorTimeOff.length}</p>
+          <p className="mt-1 text-[11px] text-[#64748b]">Individual dates currently unavailable</p>
         </div>
-        <div className={fieldCardCls}>
-          <label className={fieldLabelCls}>Reason (optional)</label>
-          <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Sick, vacation" className={inputCls} />
+        <div className="rounded-2xl border border-[#cbd5e1] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Next time off</p>
+          <p className="mt-2 text-sm font-black text-[#0f172a]">{upcomingTimeOff ? formatDateRangeLabel(upcomingTimeOff.startDate, upcomingTimeOff.endDate) : 'None scheduled'}</p>
+          <p className="mt-1 text-[11px] text-[#64748b]">{upcomingTimeOff ? `${upcomingTimeOff.totalDays} day${upcomingTimeOff.totalDays === 1 ? '' : 's'} blocked` : 'This tutor is fully bookable right now.'}</p>
         </div>
-        <button onClick={handleAdd} disabled={!date || saving}
-          className="mb-0.5 flex items-center gap-1.5 rounded-md px-4 py-2.5 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
-          style={{ background: date ? '#4f46e5' : '#e2e8f0', color: date ? 'white' : '#94a3b8', cursor: date ? 'pointer' : 'not-allowed', boxShadow: date ? '0 12px 24px rgba(79,70,229,0.22)' : 'none' }}>
-          {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} />} Add
-        </button>
+        <div className="rounded-2xl border border-[#cbd5e1] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Longest range</p>
+          <p className="mt-2 text-2xl font-black text-[#0f172a]">{longestRange || 0}</p>
+          <p className="mt-1 text-[11px] text-[#64748b]">Consecutive days in one time-off block</p>
+        </div>
       </div>
 
-      {tutorTimeOff.length === 0 ? (
+      <div className="rounded-3xl border border-[#cbd5e1] bg-[linear-gradient(135deg,#ffffff_0%,#f8fbff_55%,#eef2ff_100%)] p-5 shadow-[0_18px_36px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#4f46e5]">Schedule time off</p>
+            <h3 className="mt-2 text-lg font-black text-[#0f172a]">Block a single day or an entire range</h3>
+            <p className="mt-1 max-w-xl text-[12px] text-[#64748b]">The schedule still consumes individual dates, but you can now create them in bulk from one range.</p>
+          </div>
+          {requestedDates.length > 0 && (
+            <div className="rounded-2xl border border-[#c7d2fe] bg-white px-4 py-3 text-right shadow-[0_10px_22px_rgba(79,70,229,0.1)]">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#6366f1]">Pending block</p>
+              <p className="mt-1 text-sm font-black text-[#0f172a]">{formatDateRangeLabel(startDate, endDate || startDate)}</p>
+              <p className="mt-1 text-[11px] text-[#64748b]">{requestedDates.length} requested day{requestedDates.length === 1 ? '' : 's'}{overlappingDates > 0 ? ` · ${overlappingDates} already blocked` : ''}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_1.7fr_auto]">
+          <div className={fieldCardCls}>
+            <label className={fieldLabelCls}>From</label>
+            <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); if (!endDate) setEndDate(e.target.value); setError(null); }} className={`${inputCls} mt-1.5`} />
+          </div>
+          <div className={fieldCardCls}>
+            <label className={fieldLabelCls}>To</label>
+            <input type="date" min={startDate || undefined} value={endDate} onChange={e => { setEndDate(e.target.value); setError(null); }} className={`${inputCls} mt-1.5`} />
+          </div>
+          <div className={fieldCardCls}>
+            <label className={fieldLabelCls}>Reason (optional)</label>
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder="Vacation, exams, sick day, conference" className={`${inputCls} mt-1.5`} />
+          </div>
+          <button onClick={handleAdd} disabled={!startDate || saving || requestedDates.length === 0}
+            className="flex items-center justify-center gap-1.5 rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-95"
+            style={{
+              background: startDate ? '#4f46e5' : '#e2e8f0',
+              color: startDate ? 'white' : '#94a3b8',
+              cursor: startDate ? 'pointer' : 'not-allowed',
+              boxShadow: startDate ? '0 12px 24px rgba(79,70,229,0.22)' : 'none',
+            }}>
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={13} />} Add range
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-4 rounded-2xl border border-[#fda4af] bg-[#fff1f2] px-4 py-3 text-[12px] font-medium text-[#991b1b]">
+            {error}
+          </div>
+        )}
+      </div>
+
+      {groupedTimeOff.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-[#cbd5e1] bg-[#f8fafc] py-10 text-center">
           <CalendarOff size={18} className="mx-auto mb-2 text-[#cbd5e1]" />
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">No time off scheduled</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {tutorTimeOff.map(entry => (
-            <div key={entry.id} className="flex items-center justify-between rounded-lg px-4 py-3"
-              style={{ background: '#ffffff', border: '1px solid #cbd5e1', boxShadow: '0 10px 24px rgba(15,23,42,0.06)' }}>
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: '#fff1f2' }}>
-                  <CalendarOff size={12} style={{ color: '#dc2626' }} />
+        <div className="space-y-3">
+          {groupedTimeOff.map(entry => (
+            <div key={`${entry.startDate}-${entry.endDate}-${entry.note}`} className="rounded-[22px] border border-[#cbd5e1] bg-white px-4 py-4 shadow-[0_14px_30px_rgba(15,23,42,0.06)]">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-11 w-11 items-center justify-center rounded-2xl" style={{ background: '#fff1f2' }}>
+                    <CalendarOff size={14} style={{ color: '#dc2626' }} />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-black text-[#0f172a]">{formatDateRangeLabel(entry.startDate, entry.endDate)}</p>
+                      <span className="rounded-full bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#4338ca]">
+                        {entry.totalDays} day{entry.totalDays === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-[#64748b]">{entry.note || 'No reason added'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-[#0f172a]">
-                    {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </p>
-                  {entry.note && <p className="text-[10px] text-[#64748b]">{entry.note}</p>}
-                </div>
+                <button onClick={() => handleDelete(entry.ids)}
+                  className="flex h-10 items-center justify-center gap-2 rounded-2xl border border-[#fecaca] px-4 text-[10px] font-black uppercase tracking-[0.16em] text-[#dc2626] transition-all hover:bg-[#fff1f2]">
+                  <X size={13} /> Remove range
+                </button>
               </div>
-              <button onClick={() => handleDelete(entry.id)}
-                className="flex h-8 w-8 items-center justify-center rounded-xl text-[#94a3b8] transition-all hover:bg-[#fff1f2] hover:text-[#dc2626]">
-                <X size={13} />
-              </button>
             </div>
           ))}
         </div>
@@ -227,100 +398,117 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
     JSON.stringify(tutor.availabilityBlocks) !== JSON.stringify(draft.availabilityBlocks);
 
   const timeOffCount = timeOffList.filter(t => t.tutor_id === tutor.id).length;
+  const availabilitySummary = summarizeAvailability(draft.availabilityBlocks);
+  const upcomingTimeOff = timeOffList
+    .filter(t => t.tutor_id === tutor.id)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .find(entry => entry.date >= toISODate(new Date()));
   const catLabel = draft.cat === 'math' ? 'Math / Sci' : 'Eng / Hist';
   const catColor = draft.cat === 'math' ? '#1d4ed8' : '#be185d';
   const catBg = draft.cat === 'math' ? '#dbeafe' : '#fce7f3';
 
   return (
     <>
-      {/* Main row */}
-      <div className="grid items-center transition-all"
+      <div className="overflow-hidden rounded-3xl border shadow-[0_18px_40px_rgba(15,23,42,0.08)] transition-all"
         style={{
-          gridTemplateColumns: '32px 34px minmax(150px,2.2fr) minmax(86px,0.9fr) minmax(140px,1.3fr) minmax(120px,1.2fr) 70px 110px',
-          borderBottom: expanded ? 'none' : '1px solid #dbe4ee',
-          background: selected ? '#fff1f2' : expanded ? '#f8fbff' : '#fff',
-          minHeight: 58,
+          borderColor: selected ? '#fda4af' : expanded ? '#c7d2fe' : '#dbe4ee',
+          background: selected
+            ? 'linear-gradient(135deg, #fff8f8 0%, #ffffff 55%)'
+            : expanded
+              ? 'linear-gradient(135deg, #ffffff 0%, #f8fbff 58%, #eef2ff 100%)'
+              : '#ffffff',
         }}>
+        <div className="p-4 md:p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 flex-1 gap-3">
+              <div className="pt-1" onClick={e => e.stopPropagation()}>
+                <button onClick={onToggle} className="rounded-xl border border-[#cbd5e1] bg-white p-2 text-[#64748b] transition-colors hover:border-[#fda4af] hover:text-[#dc2626]">
+                  {selected ? <CheckSquare size={15} style={{ color: '#dc2626' }} /> : <Square size={15} />}
+                </button>
+              </div>
 
-        {/* Checkbox */}
-        <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
-          <button onClick={onToggle} className="text-[#64748b] hover:text-[#dc2626] transition-colors">
-            {selected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
-          </button>
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-black text-white"
+                style={{ background: '#dc2626', boxShadow: '0 12px 20px rgba(220,38,38,0.18)' }}>{initials(draft.name)}</div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 cursor-pointer" onClick={() => !isEditing && setExpanded(e => !e)}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isEditing ? (
+                        <input type="text" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })}
+                          className={`${inputCls} max-w-sm`} placeholder="Full name" autoFocus onClick={e => e.stopPropagation()} />
+                      ) : (
+                        <h3 className="truncate text-lg font-black text-[#0f172a]">{draft.name || 'Unnamed tutor'}</h3>
+                      )}
+                      <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ background: catBg, color: catColor }}>
+                        {catLabel}
+                      </span>
+                      {dirty && <span className="rounded-full bg-[#fef3c7] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#b45309]">Unsaved</span>}
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {draft.subjects.length > 0 ? draft.subjects.slice(0, 4).map(subject => (
+                        <span key={subject} className="rounded-full border border-[#dbeafe] bg-[#eff6ff] px-2.5 py-1 text-[10px] font-bold text-[#1d4ed8]">
+                          {subject}
+                        </span>
+                      )) : (
+                        <span className="rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-2.5 py-1 text-[10px] font-semibold text-[#94a3b8]">No subjects assigned</span>
+                      )}
+                      {draft.subjects.length > 4 && (
+                        <span className="rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-2.5 py-1 text-[10px] font-semibold text-[#64748b]">+{draft.subjects.length - 4} more</span>
+                      )}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[12px] text-[#475569]">
+                      <span className="flex items-center gap-1.5">
+                        <Mail size={12} className="text-[#94a3b8]" /> {draft.email || 'No email on file'}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Phone size={12} className="text-[#94a3b8]" /> {draft.phone || 'No phone on file'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => { setIsEditing(true); setExpanded(true); setTab('details'); }}
+                      className="rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-all"
+                      style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
+                      Edit tutor
+                    </button>
+                    <button onClick={() => setConfirmDelete(true)}
+                      className={`rounded-xl border p-2 transition-all ${confirmDelete ? 'border-[#fecaca] bg-red-50 text-red-500' : 'border-[#e2e8f0] text-[#94a3b8] hover:border-[#fecaca] hover:text-red-400'}`}>
+                      {confirmDelete ? '?' : <Trash2 size={12} />}
+                    </button>
+                    <button onClick={() => setExpanded(e => !e)} className="rounded-xl border border-[#e2e8f0] p-2 text-[#94a3b8] transition-colors hover:text-[#475569]">
+                      {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Availability</p>
+                    <p className="mt-1 text-sm font-black text-[#0f172a]">{availabilitySummary.slotCount} slots across {availabilitySummary.dayCount || 0} day{availabilitySummary.dayCount === 1 ? '' : 's'}</p>
+                    <p className="mt-1 text-[11px] text-[#64748b]">{availabilitySummary.dayLabels.length > 0 ? availabilitySummary.dayLabels.join(' • ') : 'No weekly availability set'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Time off</p>
+                    <p className="mt-1 text-sm font-black text-[#0f172a]">{timeOffCount} blocked day{timeOffCount === 1 ? '' : 's'}</p>
+                    <p className="mt-1 text-[11px] text-[#64748b]">{upcomingTimeOff ? `Next: ${formatDateLabel(upcomingTimeOff.date)}` : 'No upcoming blocks'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Profile status</p>
+                    <p className="mt-1 text-sm font-black text-[#0f172a]">{draft.subjects.length > 0 && availabilitySummary.slotCount > 0 ? 'Ready for scheduling' : 'Needs setup'}</p>
+                    <p className="mt-1 text-[11px] text-[#64748b]">{draft.subjects.length > 0 && availabilitySummary.slotCount > 0 ? 'Subjects and weekly slots are in place.' : 'Add subjects and availability for cleaner scheduling.'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Avatar */}
-        <div className="flex items-center justify-center">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl text-[10px] font-black text-white shrink-0"
-            style={{ background: '#dc2626' }}>{initials(draft.name)}</div>
-        </div>
-
-        {/* Name */}
-        <div className="flex items-center gap-2 min-w-0 cursor-pointer pr-2" onClick={() => !isEditing && setExpanded(e => !e)}>
-          {isEditing ? (
-            <input type="text" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })}
-              className={inputCls} placeholder="Full name" autoFocus onClick={e => e.stopPropagation()} />
-          ) : (
-            <span className="text-[13px] font-black text-[#0f172a] truncate">{draft.name || 'Unnamed'}</span>
-          )}
-        </div>
-
-        {/* Category */}
-        <div className="flex items-center">
-            <span className="rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em] whitespace-nowrap"
-            style={{ background: catBg, color: catColor }}>
-            {catLabel}
-          </span>
-        </div>
-
-        {/* Subjects */}
-        <div>
-          {draft.subjects.length > 0 ? (
-            <span className="text-[10px] text-[#64748b] truncate block">{draft.subjects.slice(0, 2).join(', ')}{draft.subjects.length > 2 ? `, +${draft.subjects.length - 2}` : ''}</span>
-          ) : (
-            <span className="text-[10px] text-[#cbd5e1] italic">No subjects</span>
-          )}
-        </div>
-
-        {/* Contact */}
-        <div>
-          {draft.email ? (
-            <span className="text-[10px] text-[#64748b] truncate flex items-center gap-1"><Mail size={9} /> {draft.email}</span>
-          ) : (
-            <span className="text-[10px] text-[#cbd5e1] italic">No contact</span>
-          )}
-        </div>
-
-        {/* Time off count */}
-        <div className="flex items-center justify-center">
-          {timeOffCount > 0 ? (
-            <span className="rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.16em]"
-              style={{ background: '#fef3c7', color: '#d97706' }}>{timeOffCount}</span>
-          ) : (
-            <span className="text-[10px] text-[#cbd5e1]">—</span>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-1.5 pr-3" onClick={e => e.stopPropagation()}>
-          <button onClick={() => { setIsEditing(true); setExpanded(true); setTab('details'); }}
-            className="rounded-md border px-2.5 py-1.5 text-[10px] font-bold transition-all"
-            style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
-            Edit
-          </button>
-          <button onClick={() => setConfirmDelete(true)}
-            className={`p-1.5 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
-            {confirmDelete ? '?' : <Trash2 size={11} />}
-          </button>
-          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8] hover:text-[#475569] transition-colors">
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Expanded panel */}
-      {expanded && (
-        <div style={{ borderBottom: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
+        {expanded && (
+        <div style={{ borderTop: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
           {/* Tab bar */}
           <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             {(['details', 'timeoff'] as const).map(t => (
@@ -468,7 +656,8 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, onSave, onDelete, on
             )}
           </div>
         </div>
-      )}
+        )}
+      </div>
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmDelete(false)}>
           <div className="max-w-sm rounded-xl border border-[#cbd5e1] bg-white p-5 shadow-[0_24px_50px_rgba(15,23,42,0.22)]" onClick={e => e.stopPropagation()}>
@@ -560,6 +749,8 @@ export default function TutorManagementPage() {
   };
 
   const allSelected = tutors.length > 0 && tutors.every(t => selected.has(t.id));
+  const tutorsWithContact = tutors.filter(t => t.email || t.phone).length;
+  const tutorsWithTimeOff = new Set(timeOffList.map(entry => entry.tutor_id)).size;
   const toggleAll = () => {
     if (allSelected) { setSelected(new Set()); }
     else { setSelected(new Set(tutors.map(t => t.id))); }
@@ -613,6 +804,24 @@ export default function TutorManagementPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-5 py-5 space-y-4">
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          <div className="rounded-[22px] border border-[#cbd5e1] bg-white px-5 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Tutor roster</p>
+            <p className="mt-2 text-2xl font-black text-[#0f172a]">{tutors.length}</p>
+            <p className="mt-1 text-[11px] text-[#64748b]">Active tutor profiles in this workspace.</p>
+          </div>
+          <div className="rounded-[22px] border border-[#cbd5e1] bg-white px-5 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Reachable tutors</p>
+            <p className="mt-2 text-2xl font-black text-[#0f172a]">{tutorsWithContact}</p>
+            <p className="mt-1 text-[11px] text-[#64748b]">Tutors with email or phone on file.</p>
+          </div>
+          <div className="rounded-[22px] border border-[#cbd5e1] bg-white px-5 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Time-off coverage</p>
+            <p className="mt-2 text-2xl font-black text-[#0f172a]">{tutorsWithTimeOff}</p>
+            <p className="mt-1 text-[11px] text-[#64748b]">Tutors with at least one blocked date scheduled.</p>
+          </div>
+        </div>
 
         {error && (
           <div className="flex items-center gap-2 rounded-lg p-3 text-sm shadow-[0_12px_26px_rgba(15,23,42,0.08)]"
@@ -710,22 +919,25 @@ export default function TutorManagementPage() {
             <p className="text-xs text-[#cbd5e1] mt-1">Add one above to get started</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
-            {/* Table header - hidden on mobile */}
-            <div className="hidden md:grid px-4 py-3" style={{ gridTemplateColumns: '32px 34px minmax(150px,2.2fr) minmax(86px,0.9fr) minmax(140px,1.3fr) minmax(120px,1.2fr) 70px 110px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              <div className="flex items-center justify-center">
-                <button onClick={toggleAll} className="text-[#94a3b8] hover:text-[#dc2626] transition-colors">
-                  {allSelected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
-                </button>
+          <div className="space-y-3">
+            <div className="flex flex-col gap-3 rounded-[22px] border border-[#cbd5e1] bg-white px-5 py-4 shadow-[0_16px_34px_rgba(15,23,42,0.08)] md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Bulk actions</p>
+                <p className="mt-1 text-sm font-black text-[#0f172a]">Select tutors first, then delete in one pass.</p>
               </div>
-              {['', 'Name', 'Category', 'Subjects', 'Contact', 'Time Off', 'Actions'].map((h, i) => (
-                <div key={i} className={`flex items-center text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b] ${h === 'Actions' ? 'justify-end pr-3' : ''}`}>{h}</div>
-              ))}
+              <div className="flex items-center gap-2">
+                <button onClick={toggleAll} className="flex items-center gap-2 rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569] transition-all hover:bg-white">
+                  {allSelected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
+                  {allSelected ? 'Clear selection' : 'Select all'}
+                </button>
+                <span className="rounded-full bg-[#eef2ff] px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">
+                  {selected.size} selected
+                </span>
+              </div>
             </div>
 
-            {/* Table rows */}
-            <div style={{ background: '#fff' }}>
-              {tutors.map((t, i) => (
+            <div className="space-y-3">
+              {tutors.map(t => (
                 <TutorRow
                   key={t.id}
                   tutor={t}

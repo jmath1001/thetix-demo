@@ -146,7 +146,7 @@ function SidePanel({
   const statusStyle = (status: string) => {
     if (status === 'present')  return { bg: '#dbeafe', border: '#93c5fd', dot: '#2563eb', label: '✓ Present' };
     if (status === 'no-show')  return { bg: '#fee2e2', border: '#fca5a5', dot: '#dc2626', label: '✕ No-show' };
-    return                            { bg: '#dbeafe', border: '#7dd3fc', dot: '#0284c7', label: '→ Unmarked' };
+    return                            { bg: '#ffffff', border: '#cbd5e1', dot: '#64748b', label: '→ Unmarked' };
   };
 
   return (
@@ -230,14 +230,23 @@ function SidePanel({
                 { key: 'all',      label: 'All',     dot: '#10b981' },
                 { key: 'present',  label: '✓',    dot: '#2563eb' },
                 { key: 'no-show',  label: '✕', dot: '#dc2626' },
-                { key: 'unmarked', label: '?',       dot: '#0284c7' },
+                { key: 'unmarked', label: '?',       dot: '#64748b' },
               ] as const).map(f => (
                 <button
                   key={f.key}
                   onClick={() => setAttFilter(f.key)}
                   className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[9px] font-black transition-all"
                   style={attFilter === f.key
-                    ? { background: f.key === 'present' ? '#dbeafe' : f.key === 'no-show' ? '#fee2e2' : '#dbeafe', color: f.key === 'present' ? '#2563eb' : f.key === 'no-show' ? '#dc2626' : '#0284c7', border: '1.5px solid' + (f.key === 'present' ? '#93c5fd' : f.key === 'no-show' ? '#fca5a5' : '#7dd3fc'), boxShadow: f.key === 'present' ? '0 2px 4px rgba(37,99,235,0.1)' : f.key === 'no-show' ? '0 2px 4px rgba(220,38,38,0.1)' : '0 2px 4px rgba(2,132,199,0.1)' }
+                    ? {
+                        background: f.key === 'present' ? '#dbeafe' : f.key === 'no-show' ? '#fee2e2' : '#ffffff',
+                        color: f.key === 'present' ? '#2563eb' : f.key === 'no-show' ? '#dc2626' : '#475569',
+                        border: '1.5px solid' + (f.key === 'present' ? '#93c5fd' : f.key === 'no-show' ? '#fca5a5' : '#cbd5e1'),
+                        boxShadow: f.key === 'present'
+                          ? '0 2px 4px rgba(37,99,235,0.1)'
+                          : f.key === 'no-show'
+                            ? '0 2px 4px rgba(220,38,38,0.1)'
+                            : '0 2px 4px rgba(71,85,105,0.1)'
+                      }
                     : { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}>
                   <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: f.dot, opacity: attFilter === f.key ? 1 : 0.5 }} />
                   {f.label}
@@ -527,13 +536,27 @@ export function TodayView({
 
   const attendanceBadge = (status: string) => {
     if (status === 'present') {
-      return { label: 'PRESENT', bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
+      return { label: 'PRESENT', bg: '#dcfce7', color: '#166534', border: '#86efac' };
     }
     if (status === 'no-show') {
       return { label: 'NO-SHOW', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return null;
   };
+
+  const attendanceSortRank = (status: string) => {
+    if (status === 'scheduled') return 0;
+    if (status === 'present') return 1;
+    if (status === 'no-show') return 2;
+    return 3;
+  };
+
+  const orderStudentsForDisplay = (students: any[]) =>
+    [...students].sort((left, right) => {
+      const rankDiff = attendanceSortRank(left.status) - attendanceSortRank(right.status);
+      if (rankDiff !== 0) return rankDiff;
+      return String(left.name ?? '').localeCompare(String(right.name ?? ''));
+    });
 
   // ── inline form (desktop) ─────────────────────────────────────────────────
 
@@ -945,7 +968,7 @@ export function TodayView({
                                   <div className="flex flex-col gap-1.5 min-h-[100px]">
 
                                     {/* booked students */}
-                                    {hasStudents && !isOnTimeOff && session!.students.map((student: any) => (
+                                    {hasStudents && !isOnTimeOff && orderStudentsForDisplay(session!.students).map((student: any) => (
                                       <div key={student.rowId || student.id}
                                         className="p-2.5 rounded-xl cursor-pointer transition-all hover:shadow-md"
                                         draggable={!!student.rowId}
@@ -964,7 +987,7 @@ export function TodayView({
                                         onDragEnd={() => setDraggingTopic(null)}
                                         style={
                                           student.status === 'no-show'  ? { background: '#f8fafc', border: '1.5px solid #94a3b8', opacity: 0.65, boxShadow: '0 4px 10px rgba(148,163,184,0.16), inset 0 0 0 1px rgba(148,163,184,0.2)' }
-                                          : student.status === 'present' ? { background: '#dbeafe', border: '1.5px solid #2563eb', boxShadow: '0 6px 14px rgba(37,99,235,0.16), 0 1px 0 rgba(37,99,235,0.18), inset 0 0 0 1px rgba(255,255,255,0.5)' }
+                                          : student.status === 'present' ? { background: '#dcfce7', border: '1.5px solid #16a34a', boxShadow: '0 6px 14px rgba(22,163,74,0.14), 0 1px 0 rgba(22,163,74,0.18), inset 0 0 0 1px rgba(255,255,255,0.5)' }
                                           :                               { background: palette.bg, border: `1.5px solid ${palette.border}`, boxShadow: '0 5px 12px rgba(99,102,241,0.1), 0 1px 0 rgba(17,24,39,0.12)' }
                                         }
                                         onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
@@ -998,7 +1021,7 @@ export function TodayView({
                                               }}
                                               className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-all"
                                               style={student.status === 'present'
-                                                ? { background: '#2563eb', border: '1.5px solid #2563eb' }
+                                                ? { background: '#059669', border: '1.5px solid #059669' }
                                                 : { background: 'white', border: '1.5px solid #d1d5db' }}>
                                               {student.status === 'present' && <Check size={11} strokeWidth={3} color="white" />}
                                             </button>
@@ -1103,7 +1126,7 @@ export function TodayView({
                                 <div className="space-y-1" style={{ minHeight: 64 }}>
                                   {hasStudents && !isOnTimeOff && (
                                     <>
-                                      {session!.students.map((student: any) => (
+                                      {orderStudentsForDisplay(session!.students).map((student: any) => (
                                         <div key={student.rowId || student.id}
                                           className="flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg transition-all"
                                           draggable={!!student.rowId}

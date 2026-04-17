@@ -11,6 +11,7 @@ const RECURRING_TABLE = `${p}_recurring_series`
 const SESSIONS_TABLE  = `${p}_sessions`
 const SS_TABLE        = `${p}_session_students`
 const STUDENTS_TABLE  = `${p}_students`
+const TIME_OFF_TABLE  = `${p}_tutor_time_off`
 const MAX_CAPACITY    = 3
 
 function toISODate(d: Date): string {
@@ -77,11 +78,28 @@ export async function POST(req: NextRequest) {
 
     let createdRows = 0
     let linkedRows = 0
+    let skippedTimeOffRows = 0
 
     for (let w = 0; w < totalWeeks; w++) {
       const d = new Date(startDate + 'T00:00:00')
       d.setDate(d.getDate() + w * 7)
       const isoDate = toISODate(d)
+
+      const { data: offDay, error: offDayErr } = await supabase
+        .from(TIME_OFF_TABLE)
+        .select('id')
+        .eq('tutor_id', tutorId)
+        .eq('date', isoDate)
+        .maybeSingle()
+
+      if (offDayErr) {
+        return NextResponse.json({ error: offDayErr.message }, { status: 500 })
+      }
+
+      if (offDay) {
+        skippedTimeOffRows += 1
+        continue
+      }
 
       const { data: sessionsAtTime, error: sessionsAtTimeErr } = await supabase
         .from(SESSIONS_TABLE)
@@ -188,7 +206,7 @@ export async function POST(req: NextRequest) {
       createdRows += 1
     }
 
-    return NextResponse.json({ success: true, seriesId, createdRows, linkedRows })
+    return NextResponse.json({ success: true, seriesId, createdRows, linkedRows, skippedTimeOffRows })
   } catch (err) {
     console.error('Recurring series error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
