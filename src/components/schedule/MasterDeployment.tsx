@@ -598,12 +598,14 @@ export default function MasterDeployment() {
 
     if (action === 'optimize-daily') {
       openOptimizerFromCurrentSchedule('daily');
+      logEvent('auto_book_used', { action: 'optimize_day', source: 'url_action' });
       lastHandledActionRef.current = key;
       return;
     }
 
     if (action === 'optimize-weekly') {
       openOptimizerFromCurrentSchedule('weekly');
+      logEvent('auto_book_used', { action: 'optimize_week', source: 'url_action' });
       lastHandledActionRef.current = key;
     }
   }, [openOptimizerFromCurrentSchedule, searchParams]);
@@ -669,7 +671,13 @@ export default function MasterDeployment() {
             />
             <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
-                onClick={() => setIsSchedulerMenuOpen(prev => !prev)}
+                onClick={() => {
+                  const nextOpen = !isSchedulerMenuOpen;
+                  setIsSchedulerMenuOpen(nextOpen);
+                  if (nextOpen) {
+                    logEvent('auto_book_used', { action: 'menu_open', source: 'schedule_header' });
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -722,10 +730,10 @@ export default function MasterDeployment() {
                 >
                   <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Auto Book Actions</p>
                   <div style={{ display: 'grid', gap: 6 }}>
-                    <button onClick={() => { setScheduleBuilderMode('batch'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Batch Book</button>
-                    <button onClick={() => { setScheduleBuilderMode('single'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Single Book</button>
-                    <button onClick={() => { openOptimizerFromCurrentSchedule('daily'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #67e8f9', background: '#ecfeff', color: '#0e7490', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Day</button>
-                    <button onClick={() => { openOptimizerFromCurrentSchedule('weekly'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Week</button>
+                    <button onClick={() => { logEvent('auto_book_used', { action: 'batch_book', source: 'schedule_header' }); setScheduleBuilderMode('batch'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Batch Book</button>
+                    <button onClick={() => { logEvent('auto_book_used', { action: 'single_book', source: 'schedule_header' }); setScheduleBuilderMode('single'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Single Book</button>
+                    <button onClick={() => { logEvent('auto_book_used', { action: 'optimize_day', source: 'schedule_header' }); openOptimizerFromCurrentSchedule('daily'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #67e8f9', background: '#ecfeff', color: '#0e7490', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Day</button>
+                    <button onClick={() => { logEvent('auto_book_used', { action: 'optimize_week', source: 'schedule_header' }); openOptimizerFromCurrentSchedule('weekly'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Week</button>
                   </div>
 
                   <div style={{ marginTop: 8, borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', padding: 8 }}>

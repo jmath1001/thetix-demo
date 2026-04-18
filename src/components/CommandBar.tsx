@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { toISODate, dayOfWeek } from '@/lib/useScheduleData'
 import { getSessionsForDay } from '@/components/constants'
+import { logEvent } from '@/lib/analytics'
 
 interface CommandBarProps {
   sessions: any[]
@@ -477,6 +478,7 @@ export function CommandBar({
   const [showPlaceholderCaret, setShowPlaceholderCaret] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const lastLoggedSearchRef = useRef('')
 
   // Typing placeholder animation while idle
   useEffect(() => {
@@ -531,6 +533,23 @@ export function CommandBar({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed) return
+
+    const timeout = window.setTimeout(() => {
+      if (trimmed === lastLoggedSearchRef.current) return
+      lastLoggedSearchRef.current = trimmed
+      logEvent('command_search_input', {
+        query: trimmed,
+        length: trimmed.length,
+        source: 'command_bar',
+      })
+    }, 500)
+
+    return () => window.clearTimeout(timeout)
+  }, [query])
+
   const buildContext = useCallback(() => ({
     today: toISODate(new Date()),
     students: students.map(s => ({
@@ -577,13 +596,19 @@ export function CommandBar({
   }), [students, tutors, sessions, timeOff, allAvailableSeats])
 
   const runQuery = useCallback(async (q: string) => {
-    if (!q.trim()) return
+    const trimmed = q.trim()
+    if (!trimmed) return
+    logEvent('command_search_submitted', {
+      query: trimmed,
+      length: trimmed.length,
+      source: 'command_bar',
+    })
     setLoading(true); setResult(null)
     try {
       const res = await fetch('/api/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q, context: buildContext(), mode: 'draft' }),
+        body: JSON.stringify({ query: trimmed, context: buildContext(), mode: 'draft' }),
       })
       const data: Result = await res.json()
       if (data.type === 'action' && (data as any).action === 'open_booking') {

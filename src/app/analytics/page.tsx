@@ -8,6 +8,7 @@ import { toISODate, dayOfWeek, getCentralTimeNow, getWeekStart } from '@/lib/use
 type Event = { id: string; event_name: string; properties: Record<string, any>; created_at: string; };
 type SessionStudent = { status: string; date: string; };
 type OperationType = 'addition' | 'confirmation' | 'reschedule' | 'deletion' | 'other';
+type InsightRange = 'all' | '7d' | '30d';
 
 function getWeekKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -68,6 +69,9 @@ const FRIENDLY: Record<string, string> = {
   recurring_series_edited: 'Series edited',
   recurring_session_edited: 'Single session edited',
   recurring_session_cancelled: 'Single session cancelled',
+  auto_book_used: 'Auto Book used',
+  command_search_input: 'Command search input',
+  command_search_submitted: 'Command search submitted',
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -92,6 +96,22 @@ const SOURCE_COLORS: Record<string, string> = {
   confirm_link: '#2563eb',
   schedule_nav: '#475569',
   optimizer: '#7c3aed',
+};
+
+const AUTO_BOOK_ACTION_LABELS: Record<string, string> = {
+  menu_open: 'Menu opened',
+  batch_book: 'Batch Book',
+  single_book: 'Single Book',
+  optimize_day: 'Optimize Day',
+  optimize_week: 'Optimize Week',
+};
+
+const AUTO_BOOK_ACTION_COLORS: Record<string, string> = {
+  menu_open: '#475569',
+  batch_book: '#16a34a',
+  single_book: '#2563eb',
+  optimize_day: '#0ea5e9',
+  optimize_week: '#7c3aed',
 };
 
 const ATTEND_COLORS: Record<string, string> = {
@@ -204,6 +224,7 @@ export default function AnalyticsPage() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState<string | null>(null);
+  const [insightRange, setInsightRange] = useState<InsightRange>('30d');
 
   const fetchData = async () => {
     setLoading(true);
@@ -270,6 +291,56 @@ export default function AnalyticsPage() {
   }, [events]);
 
   const maxBookingSource = bookingSources[0]?.[1] ?? 1;
+
+  const insightEvents = useMemo(() => {
+    if (insightRange === 'all') return events;
+
+    const days = insightRange === '7d' ? 7 : 30;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return events.filter(event => new Date(event.created_at) >= cutoff);
+  }, [events, insightRange]);
+
+  // ── Auto Book + search bar insights ───────────────────────────────────────
+  const autoBookInsights = useMemo(() => {
+    const autoBookEvents = insightEvents.filter(e => e.event_name === 'auto_book_used');
+    const actionCounts: Record<string, number> = {};
+    autoBookEvents.forEach(event => {
+      const action = String(event.properties?.action ?? 'unknown');
+      actionCounts[action] = (actionCounts[action] ?? 0) + 1;
+    });
+
+    const topActions = Object.entries(actionCounts).sort((left, right) => right[1] - left[1]);
+
+    const inputEvents = insightEvents.filter(e => e.event_name === 'command_search_input');
+    const submitEvents = insightEvents.filter(e => e.event_name === 'command_search_submitted');
+
+    const queryCounts: Record<string, number> = {};
+    submitEvents.forEach(event => {
+      const query = String(event.properties?.query ?? '').trim();
+      if (!query) return;
+      queryCounts[query] = (queryCounts[query] ?? 0) + 1;
+    });
+
+    const topQueries = Object.entries(queryCounts)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 8);
+
+    const lastSubmittedQuery = submitEvents
+      .map(event => String(event.properties?.query ?? '').trim())
+      .find(query => query.length > 0) ?? null;
+
+    return {
+      autoBookTotal: autoBookEvents.length,
+      topActions,
+      maxActionCount: topActions[0]?.[1] ?? 1,
+      commandSearchInputs: inputEvents.length,
+      commandSearchSubmits: submitEvents.length,
+      uniqueSubmittedQueries: Object.keys(queryCounts).length,
+      topQueries,
+      lastSubmittedQuery,
+    };
+  }, [insightEvents]);
 
   // ── Attendance source breakdown ────────────────────────────────────────────
   const attendanceSources = useMemo(() => {
@@ -461,6 +532,77 @@ export default function AnalyticsPage() {
                 </p>
               </div>
             )}
+        </Section>
+
+        <Section title="Auto Book + Search Insights" sub="Tracks Auto Book actions and command-bar search behavior">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-[10px] text-[#94a3b8]">Range applied to this section only</p>
+            <div className="flex gap-1">
+              {([
+                { key: '7d', label: '7d' },
+                { key: '30d', label: '30d' },
+                { key: 'all', label: 'All' },
+              ] as { key: InsightRange; label: string }[]).map(option => (
+                <button key={option.key} onClick={() => setInsightRange(option.key)}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
+                  style={insightRange === option.key
+                    ? { background: '#1d4ed8', color: 'white' }
+                    : { background: '#f8fafc', color: '#94a3b8' }}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <KPI label="Auto Book Uses" value={autoBookInsights.autoBookTotal} color="#1d4ed8" icon={<Users size={13}/>}/>
+            <KPI label="Search Inputs" value={autoBookInsights.commandSearchInputs} color="#0ea5e9" icon={<Activity size={13}/>}/>
+            <KPI label="Search Submits" value={autoBookInsights.commandSearchSubmits} color="#7c3aed" icon={<CheckCircle2 size={13}/>}/>
+            <KPI label="Unique Queries" value={autoBookInsights.uniqueSubmittedQueries} color="#16a34a" icon={<BarChart2 size={13}/>}/>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Auto Book Actions</p>
+              {autoBookInsights.topActions.length === 0 ? (
+                <p className="text-xs text-[#94a3b8] italic">No Auto Book events yet</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {autoBookInsights.topActions.map(([action, count]) => (
+                    <HBar
+                      key={action}
+                      label={AUTO_BOOK_ACTION_LABELS[action] ?? action}
+                      value={count}
+                      max={autoBookInsights.maxActionCount}
+                      count={count}
+                      color={AUTO_BOOK_ACTION_COLORS[action] ?? '#94a3b8'}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Top Search Queries</p>
+              {autoBookInsights.topQueries.length === 0 ? (
+                <p className="text-xs text-[#94a3b8] italic">No command searches submitted yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {autoBookInsights.topQueries.map(([query, count]) => (
+                    <div key={query} className="flex items-center justify-between gap-3 rounded-lg border border-[#f1f5f9] bg-[#fafafa] px-3 py-2">
+                      <span className="text-xs font-semibold text-[#1e293b] truncate">{query}</span>
+                      <span className="text-[10px] font-black text-[#64748b] shrink-0">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-[10px] text-[#94a3b8] mt-3">
+                Latest submitted query:{' '}
+                <span className="font-semibold text-[#475569]">{autoBookInsights.lastSubmittedQuery ?? 'None yet'}</span>
+              </p>
+            </div>
+          </div>
         </Section>
 
         {/* ── Where attendance is being marked ── */}

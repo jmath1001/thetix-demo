@@ -40,7 +40,10 @@ export type EventName =
   | 'recurring_session_edited'
   | 'recurring_session_cancelled'
   | 'student_edited'
-  | 'week_cleared_non_recurring';
+  | 'week_cleared_non_recurring'
+  | 'auto_book_used'
+  | 'command_search_input'
+  | 'command_search_submitted';
 
 export async function logEvent(
   event_name: EventName,
