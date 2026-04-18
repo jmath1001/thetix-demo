@@ -22,6 +22,8 @@ export type CommandTutor = {
   id: string
   name: string
   subjects?: string[]
+  availability?: number[]
+  availabilityBlocks?: string[]
 }
 
 export type CommandSessionStudent = {
@@ -76,6 +78,9 @@ export type CapabilityKey =
   | 'create_time_off_range'
   | 'update_student_contact'
   | 'move_session_with_conflict_check'
+  | 'book_student_with_optimization'
+  | 'delete_student_booking_with_optimization'
+  | 'manage_tutor_schedule'
 
 export type PendingAction = {
   capability: CapabilityKey

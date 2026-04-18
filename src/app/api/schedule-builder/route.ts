@@ -70,7 +70,16 @@ function studentAvailable(availabilityBlocks: string[], dayNum: number, time: st
 // a new time would create a gap. C2 session times: 11:00, 13:30, 15:30, 17:30, 19:30
 // A gap = two assigned times with an unassigned time between them.
 
-const SESSION_ORDER = ['11:00', '13:30', '15:30', '17:30', '19:30']
+// All possible session start times per day-of-week
+const SESSION_TIMES_BY_DOW: Record<number, string[]> = {
+  1: ['13:30', '15:30', '17:30', '19:30'],
+  2: ['13:30', '15:30', '17:30', '19:30'],
+  3: ['13:30', '15:30', '17:30', '19:30'],
+  4: ['13:30', '15:30', '17:30', '19:30'],
+  6: ['09:30', '11:30', '13:30', '15:30'],
+}
+// Flat ordered list for gap detection (all unique times across all days, ordered)
+const SESSION_ORDER = ['09:30', '11:30', '13:30', '15:30', '17:30', '19:30']
 
 function wouldCreateGap(
   existingTimesOnDay: string[],
@@ -165,13 +174,16 @@ export async function POST(req: NextRequest) {
   // key: "tutorId-date" → string[]
   const tutorDayAssigned: Record<string, string[]> = {}
 
-  // Track all available times per tutor+day (for gap feasibility check)
-  // key: "tutorId-date" → string[]
+  // Track all session times per tutor+day for gap feasibility.
+  // Use the full schedule for the given day-of-week so that existing full sessions
+  // (which have seatsLeft=0 and are absent from availableSeats) are not treated as gaps.
   const tutorDayAvailable: Record<string, string[]> = {}
   for (const s of availableSeats) {
     const key = `${s.tutorId}-${s.date}`
-    if (!tutorDayAvailable[key]) tutorDayAvailable[key] = []
-    if (!tutorDayAvailable[key].includes(s.time)) tutorDayAvailable[key].push(s.time)
+    if (!tutorDayAvailable[key]) {
+      // Seed with all theoretically valid session times for this dow
+      tutorDayAvailable[key] = [...(SESSION_TIMES_BY_DOW[s.dayNum] ?? [])]
+    }
   }
 
   // Track days booked per student in THIS run (for spread preference)

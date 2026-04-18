@@ -427,6 +427,15 @@ export function WeekView({
           t.availability.includes(dow) &&
           (selectedTutorFilter === null || t.id === selectedTutorFilter)
         );
+        const activeTutorIdSet = new Set(activeTutors.map(t => t.id));
+        const visibleDaySessions = sessions
+          .filter(s => s.date === isoDate && activeTutorIdSet.has(s.tutorId));
+        const dayStudentCount = visibleDaySessions
+          .reduce((total, session) => total + (session.students ?? []).filter((st: any) => st.status !== 'cancelled').length, 0);
+        const scheduledSessionCount = visibleDaySessions.filter(
+          (session) => (session.students ?? []).some((st: any) => st.status !== 'cancelled')
+        ).length;
+        const studentsPerSession = scheduledSessionCount > 0 ? (dayStudentCount / scheduledSessionCount) : 0;
         const daySessions = getSessionsForDay(dow);
 
         return (
@@ -446,6 +455,16 @@ export function WeekView({
                       style={{ background: '#e2e8f0', border: '1px solid #cbd5e1', color: '#334155' }}>Today</span>
                   )}
                 </span>
+              </div>
+              <div className="px-3.5 py-2 rounded-xl"
+                style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)', border: '1.5px solid #cbd5e1', minWidth: 180 }}>
+                <p className="text-[10px] font-black uppercase tracking-[0.11em]" style={{ color: '#64748b' }}>Students / Session</p>
+                <p className="text-sm font-bold" style={{ color: '#0f172a', marginTop: 2 }}>
+                  {dayStudentCount} students in {scheduledSessionCount} sessions
+                  <span className="ml-2 text-xs font-semibold" style={{ color: '#334155' }}>
+                    ({studentsPerSession.toFixed(1)} per session)
+                  </span>
+                </p>
               </div>
               <div className="h-px grow rounded-full"
                 style={{ background: 'linear-gradient(90deg, #cbd5e1, transparent)' }} />

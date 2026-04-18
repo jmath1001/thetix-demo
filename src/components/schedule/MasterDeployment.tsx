@@ -21,7 +21,7 @@ import {
 } from '@/lib/useScheduleData';
 import { BookingForm, BookingToast } from '@/components/BookingForm';
 import { TutorManagementModal } from '@/components/TutorManagementModal';
-import OptimizationPreview from '@/components/OptimizationPreview';
+import OptimizationPreview from '../OptimizationPreview';
 import { useOptimizer } from '@/hooks/useOptimizer';
 import type { PrefilledSlot, BookingConfirmData } from '@/components/BookingForm';
 
@@ -663,7 +663,7 @@ export default function MasterDeployment() {
               onBookingAction={handleAIBookingAction}
               onOpenProposal={openPreview}
               onOpenAttendanceModal={(session) => setSelectedSession(session)}
-              allAvailableSeats={allAvailableSeats}
+              allAvailableSeats={allSeatsForBuilder}
               weekStart={weekStartIso}
               nextWeekStart={toISODate(nextWeekStart)}
             />
@@ -673,20 +673,36 @@ export default function MasterDeployment() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6,
-                  padding: '5px 12px',
-                  borderRadius: 9,
-                  background: '#1e293b',
-                  border: '1px solid #0f172a',
-                  color: '#f8fafc',
+                  gap: 8,
+                  padding: '7px 14px',
+                  borderRadius: 11,
+                  background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
+                  border: '1px solid #1d4ed8',
+                  color: '#ffffff',
                   fontSize: 12,
                   fontWeight: 800,
+                  letterSpacing: '0.01em',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  boxShadow: '0 4px 10px rgba(15,23,42,0.35)',
+                  boxShadow: '0 10px 20px rgba(37,99,235,0.32), 0 2px 6px rgba(14,116,144,0.3)',
+                  transition: 'transform 120ms ease, box-shadow 120ms ease',
                 }}
               >
-                <Zap size={12} /> Optimized Scheduler
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(255,255,255,0.22)',
+                    border: '1px solid rgba(255,255,255,0.38)',
+                  }}
+                >
+                  <Zap size={11} />
+                </span>
+                <span>Auto Book</span>
               </button>
 
               {isSchedulerMenuOpen && (
@@ -704,7 +720,7 @@ export default function MasterDeployment() {
                     zIndex: 50,
                   }}
                 >
-                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Scheduler Actions</p>
+                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Auto Book Actions</p>
                   <div style={{ display: 'grid', gap: 6 }}>
                     <button onClick={() => { setScheduleBuilderMode('batch'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Batch Book</button>
                     <button onClick={() => { setScheduleBuilderMode('single'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Single Book</button>
@@ -823,6 +839,7 @@ export default function MasterDeployment() {
         students={students}
         tutors={tutors}
         localSessions={localSessions}
+        activeDates={activeDates}
         allSeatsForBuilder={allSeatsForBuilder}
         onOpenProposal={openPreview}
         onNoSuggestions={(scope) => {

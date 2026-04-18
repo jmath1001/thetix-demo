@@ -18,6 +18,7 @@ interface ScheduleOptimizerControllerProps {
   students: any[]
   tutors: any[]
   localSessions: any[]
+  activeDates: Date[]
   allSeatsForBuilder: Seat[]
   onOpenProposal: (proposal: any) => void
   onNoSuggestions: (scope: OptimizerScope) => void
@@ -50,6 +51,7 @@ export function ScheduleOptimizerController({
   students,
   tutors,
   localSessions,
+  activeDates,
   allSeatsForBuilder,
   onOpenProposal,
   onNoSuggestions,
@@ -57,6 +59,10 @@ export function ScheduleOptimizerController({
 }: ScheduleOptimizerControllerProps) {
   const runOptimizer = useCallback((scope: OptimizerScope = 'weekly') => {
     const todayIso = toISODate(getCentralTimeNow())
+    const scopedDates = new Set(activeDates.map(d => toISODate(d)))
+    const sortedScopeDates = [...scopedDates].sort()
+    const weekStart = sortedScopeDates[0] ?? null
+    const weekEnd = sortedScopeDates[sortedScopeDates.length - 1] ?? null
 
     const studentById = new Map(students.map((s: any) => [s.id, s]))
     const tutorById = new Map(tutors.map((t: any) => [t.id, t]))
@@ -75,6 +81,7 @@ export function ScheduleOptimizerController({
 
     localSessions.forEach((session: any) => {
       if (!session?.date || session.date < todayIso) return
+      if (!scopedDates.has(session.date)) return
 
       const dayNum = dayOfWeek(session.date)
       const activeRows = (session.students ?? []).filter((st: any) => st.status !== 'cancelled')
@@ -100,7 +107,8 @@ export function ScheduleOptimizerController({
         busyByStudent.set(st.id, busy)
       })
 
-      const movableRows = activeRows.filter((st: any) => st.status === 'scheduled' && st.id && st.rowId && !st.seriesId)
+      // Any non-cancelled, non-recurring row is movable for optimization.
+      const movableRows = activeRows.filter((st: any) => st.id && st.rowId && !st.seriesId)
       rowsBySession.set(
         key,
         movableRows.map((st: any) => ({
@@ -242,7 +250,20 @@ export function ScheduleOptimizerController({
     if (scope === 'weekly') {
       const unbookedStudents = students
         .filter((student: any) => !bookedStudentIds.has(student.id) && !!student.subject)
-        .slice(0, 10)
+        .sort((a: any, b: any) => {
+          const candidateCount = (student: any) => fillSeats.filter((seat: Seat) => {
+            const key = `${seat.tutor.id}|${seat.date}|${seat.time}`
+            if ((remainingByKey.get(key) ?? 0) <= 0) return false
+            if ((sessionCounts.get(key) ?? 0) <= 0) return false
+            if (!subjectMatch(student.subject, seat.tutor.subjects ?? [])) return false
+            if ((student.availabilityBlocks?.length ?? 0) > 0 && !student.availabilityBlocks.includes(`${seat.dayNum}-${seat.time}`)) return false
+            const busy = busyByStudent.get(student.id) ?? new Set<string>()
+            if (busy.has(`${seat.date}|${seat.time}`)) return false
+            return true
+          }).length
+
+          return candidateCount(a) - candidateCount(b)
+        })
 
       for (const student of unbookedStudents) {
         const rankedTargets = fillSeats.filter((seat: Seat) => {
@@ -314,14 +335,30 @@ export function ScheduleOptimizerController({
       scope === 'daily'
         ? 'Primary objective: maximize packing density today by merging under-filled slots so sessions run as full as possible. Recurring series are preserved and not moved.'
         : 'Primary objective: maximize packing density this week by collapsing thin slots, filling open seats, and maximizing students per session. Recurring series are preserved and not moved.'
+    const ratioDelta = after.ratio - before.ratio
 
     onOpenProposal({
       type: 'proposal',
       title: `${scopeLabel} Optimization Suggestions`,
-      reasoning: `${scopeReasoning} Proposed ${movedCount} move${movedCount === 1 ? '' : 's'} and ${placedCount} placement${placedCount === 1 ? '' : 's'} while respecting availability and subject constraints (${before.ratio.toFixed(2)} -> ${after.ratio.toFixed(2)} students/session).`,
+      scope,
+      context: {
+        weekStart,
+        weekEnd,
+        dates: sortedScopeDates,
+      },
+      metrics: {
+        studentsPerSessionBefore: before.ratio,
+        studentsPerSessionAfter: after.ratio,
+        studentsPerSessionDelta: ratioDelta,
+        activeSessionsBefore: before.activeSessions,
+        activeSessionsAfter: after.activeSessions,
+        totalStudentsBefore: before.totalStudents,
+        totalStudentsAfter: after.totalStudents,
+      },
+      reasoning: `${scopeReasoning} Proposed ${movedCount} move${movedCount === 1 ? '' : 's'} and ${placedCount} placement${placedCount === 1 ? '' : 's'} while respecting availability and subject constraints.`,
       changes,
     })
-  }, [allSeatsForBuilder, localSessions, onNoSuggestions, onOpenProposal, students, tutors])
+  }, [activeDates, allSeatsForBuilder, localSessions, onNoSuggestions, onOpenProposal, students, tutors])
 
   useEffect(() => {
     onBindRun(runOptimizer)

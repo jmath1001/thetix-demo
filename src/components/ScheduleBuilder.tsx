@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { X, Sparkles, Loader2, Check, AlertTriangle, ChevronDown, RotateCcw, Calendar, User, Clock, ArrowRight, Plus, Trash2 } from 'lucide-react'
 import type { Student, Tutor } from '@/lib/useScheduleData'
 import { SchedulePreviewGrid } from '@/components/SchedulePreviewGrid'
@@ -274,6 +274,23 @@ export function ScheduleBuilder({
   const [persistedAvailability, setPersistedAvailability] = useState<Record<string, string[]>>({})
   const [availabilityOpenFor, setAvailabilityOpenFor] = useState<string | null>(null)
   const [savingAvailability, setSavingAvailability] = useState<Set<string>>(new Set())
+  const [dirtyAvailability, setDirtyAvailability] = useState<Set<string>>(new Set())
+  const persistedAvailabilityRef = useRef<Record<string, string[]>>({})
+  const availabilitySaveVersionRef = useRef<Record<string, number>>({})
+
+  const normalizeBlocks = useCallback((blocks: string[]) => {
+    return Array.from(new Set(blocks)).sort()
+  }, [])
+
+  const hasAvailabilityChanges = useCallback((studentId: string, nextBlocks: string[]) => {
+    const current = normalizeBlocks(nextBlocks)
+    const saved = normalizeBlocks(persistedAvailabilityRef.current[studentId] ?? [])
+    if (current.length !== saved.length) return true
+    for (let i = 0; i < current.length; i++) {
+      if (current[i] !== saved[i]) return true
+    }
+    return false
+  }, [normalizeBlocks])
 
   useEffect(() => {
     const next: Record<string, string[]> = {}
@@ -281,6 +298,7 @@ export function ScheduleBuilder({
       next[s.id] = [...(s.availabilityBlocks ?? [])]
     })
     setPersistedAvailability(next)
+    persistedAvailabilityRef.current = next
   }, [students])
 
   // Existing bookings this week by student
@@ -636,6 +654,9 @@ export function ScheduleBuilder({
   }, [students, availabilityOpenFor, persistedAvailability])
 
   const saveStudentAvailability = useCallback(async (studentId: string, availabilityBlocks: string[]) => {
+    const saveVersion = (availabilitySaveVersionRef.current[studentId] ?? 0) + 1
+    availabilitySaveVersionRef.current[studentId] = saveVersion
+
     const res = await fetch('/api/student-availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -653,8 +674,48 @@ export function ScheduleBuilder({
       throw new Error(message)
     }
 
-    setPersistedAvailability(prev => ({ ...prev, [studentId]: [...availabilityBlocks] }))
+    // Only let the latest in-flight save for this student win.
+    if (availabilitySaveVersionRef.current[studentId] !== saveVersion) return
+
+    setPersistedAvailability(prev => {
+      const next = { ...prev, [studentId]: [...availabilityBlocks] }
+      persistedAvailabilityRef.current = next
+      return next
+    })
   }, [])
+
+  const persistAvailabilityChange = useCallback(async (studentId: string, availabilityBlocks: string[]) => {
+    setSavingAvailability(s => new Set([...s, studentId]))
+    try {
+      await saveStudentAvailability(studentId, availabilityBlocks)
+    } catch (err) {
+      console.error('Failed to save availability:', err)
+      const fallback = [...(persistedAvailabilityRef.current[studentId] ?? [])]
+      setStudentAvailability(sa => ({
+        ...sa,
+        [studentId]: fallback,
+      }))
+      alert((err as Error).message || 'Failed to save availability.')
+    } finally {
+      setSavingAvailability(s => {
+        const next = new Set(s)
+        next.delete(studentId)
+        return next
+      })
+    }
+  }, [saveStudentAvailability])
+
+  const saveAvailabilityEdits = useCallback(async (studentId: string) => {
+    const blocksToSave = [...(studentAvailability[studentId] ?? persistedAvailabilityRef.current[studentId] ?? [])]
+    await persistAvailabilityChange(studentId, blocksToSave)
+    if (!hasAvailabilityChanges(studentId, blocksToSave)) {
+      setDirtyAvailability(prev => {
+        const next = new Set(prev)
+        next.delete(studentId)
+        return next
+      })
+    }
+  }, [hasAvailabilityChanges, persistAvailabilityChange, studentAvailability])
 
   const toggleAvailabilityBlock = useCallback((studentId: string, dow: number, time: string) => {
     const key = `${dow}-${time}`
@@ -663,57 +724,30 @@ export function ScheduleBuilder({
       const next = current.includes(key)
         ? current.filter(b => b !== key)
         : [...current, key]
-      
-      // Save to DB with loading state
-      setSavingAvailability(s => new Set([...s, studentId]))
-      ;(async () => {
-        try {
-          await saveStudentAvailability(studentId, next)
-        } catch (err) {
-          console.error('Failed to save availability:', err)
-          setStudentAvailability(sa => ({
-            ...sa,
-            [studentId]: [...(persistedAvailability[studentId] ?? [])],
-          }))
-          alert((err as Error).message || 'Failed to save availability.')
-        } finally {
-          setSavingAvailability(s => {
-            const next = new Set(s)
-            next.delete(studentId)
-            return next
-          })
-        }
-      })()
-      
+      const isDirty = hasAvailabilityChanges(studentId, next)
+      setDirtyAvailability(prevDirty => {
+        const nextDirty = new Set(prevDirty)
+        if (isDirty) nextDirty.add(studentId)
+        else nextDirty.delete(studentId)
+        return nextDirty
+      })
       return { ...prev, [studentId]: next }
     })
-  }, [persistedAvailability, saveStudentAvailability])
+  }, [hasAvailabilityChanges])
 
   const resetAvailability = useCallback((studentId: string) => {
-    const originalBlocks = [...(persistedAvailability[studentId] ?? [])]
+    const originalBlocks = [...(persistedAvailabilityRef.current[studentId] ?? [])]
     
     setStudentAvailability(prev => ({
       ...prev,
       [studentId]: originalBlocks,
     }))
-
-    // Save reset to DB with loading state
-    setSavingAvailability(sa => new Set([...sa, studentId]))
-    ;(async () => {
-      try {
-        await saveStudentAvailability(studentId, originalBlocks)
-      } catch (err) {
-        console.error('Failed to save availability:', err)
-        alert((err as Error).message || 'Failed to reset availability.')
-      } finally {
-        setSavingAvailability(sa => {
-          const next = new Set(sa)
-          next.delete(studentId)
-          return next
-        })
-      }
-    })()
-  }, [persistedAvailability, saveStudentAvailability])
+    setDirtyAvailability(prev => {
+      const next = new Set(prev)
+      next.delete(studentId)
+      return next
+    })
+  }, [])
 
   const addSubjectRow = useCallback((studentId: string) => {
     setStudentNeeds(prev => {
@@ -1183,6 +1217,8 @@ export function ScheduleBuilder({
                 const needs      = studentNeeds[student.id] ?? []
                 const hasEmpty   = needs.some(n => !n.subject)
                 const activeAvailability = studentAvailability[student.id] ?? student.availabilityBlocks ?? []
+                const hasUnsavedAvailability = dirtyAvailability.has(student.id)
+                const isSavingAvailability = savingAvailability.has(student.id)
 
                 return (
                   <div key={student.id} style={{ borderBottom: '1px solid #f1f5f9', background: isSelected ? 'white' : 'white', transition: 'background 0.1s', borderLeft: isSelected ? '3px solid #7c3aed' : '3px solid transparent' }}>
@@ -1206,6 +1242,7 @@ export function ScheduleBuilder({
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {isBooked && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>Booked</span>}
                         {activeAvailability.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd' }}>{activeAvailability.length} avail blocks</span>}
+                        {hasUnsavedAvailability && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' }}>Unsaved</span>}
                         {isSelected && hasEmpty && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>Pick subject</span>}
                         {isSelected && !hasEmpty && needs.length > 0 && (
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
@@ -1225,12 +1262,24 @@ export function ScheduleBuilder({
                             style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #c4b5fd', background: '#f5f3ff', color: '#6d28d9', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                             {availabilityOpenFor === student.id ? 'Hide availability' : 'Edit availability'}
                           </button>
-                          <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); resetAvailability(student.id) }}
-                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #cbd5e1', background: 'white', color: '#475569', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                            Reset
-                          </button>
+                          {availabilityOpenFor === student.id && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); resetAvailability(student.id) }}
+                                disabled={isSavingAvailability || !hasUnsavedAvailability}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #cbd5e1', background: 'white', color: '#475569', fontSize: 11, fontWeight: 600, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
+                                Discard
+                              </button>
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); void saveAvailabilityEdits(student.id) }}
+                                disabled={isSavingAvailability || !hasUnsavedAvailability}
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #6d28d9', background: '#7c3aed', color: 'white', fontSize: 11, fontWeight: 700, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
+                                {isSavingAvailability ? 'Saving...' : 'Save availability'}
+                              </button>
+                            </>
+                          )}
                         </div>
 
                         {availabilityOpenFor === student.id && (
@@ -1240,10 +1289,15 @@ export function ScheduleBuilder({
                                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                                   <th style={{ textAlign: 'left', fontSize: 10, fontWeight: 800, color: '#64748b', padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <span>Session</span>
-                                    {savingAvailability.has(student.id) && (
+                                    {isSavingAvailability && (
                                       <span style={{ fontSize: 9, color: '#7c3aed', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
                                         <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7c3aed', animation: 'pulse 1.5s infinite' }} />
                                         saving
+                                      </span>
+                                    )}
+                                    {!isSavingAvailability && hasUnsavedAvailability && (
+                                      <span style={{ fontSize: 9, color: '#92400e', fontWeight: 700 }}>
+                                        unsaved edits
                                       </span>
                                     )}
                                   </th>

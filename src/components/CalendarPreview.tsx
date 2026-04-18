@@ -98,6 +98,9 @@ export function CalendarPreview({
     return timeOff.some(t => t.tutorId === tutorId && t.date === date);
   };
 
+  const weekStart = activeDates.length > 0 ? toISODate(activeDates[0]) : null;
+  const weekEnd = activeDates.length > 0 ? toISODate(activeDates[activeDates.length - 1]) : null;
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
       {/* Header */}
@@ -106,7 +109,9 @@ export function CalendarPreview({
           <Calendar size={20} className="text-slate-600" />
           <div>
             <h3 className="text-lg font-semibold text-slate-900">Calendar Preview</h3>
-            <p className="text-sm text-slate-600">Upcoming week with proposed changes</p>
+            <p className="text-sm text-slate-600">
+              Week view {weekStart && weekEnd ? `(${weekStart} to ${weekEnd})` : ''} with proposed changes
+            </p>
           </div>
         </div>
       </div>

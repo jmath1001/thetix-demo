@@ -29,7 +29,13 @@ interface CommandBarProps {
 }
 
 type PendingAction = {
-  capability: 'create_time_off_range' | 'update_student_contact' | 'move_session_with_conflict_check'
+  capability:
+    | 'create_time_off_range'
+    | 'update_student_contact'
+    | 'move_session_with_conflict_check'
+    | 'book_student_with_optimization'
+    | 'delete_student_booking_with_optimization'
+    | 'manage_tutor_schedule'
   params: any
 }
 
@@ -537,7 +543,13 @@ export function CommandBar({
       dad_name: s.dad_name, dad_email: s.dad_email, dad_phone: s.dad_phone,
       bluebook_url: s.bluebook_url,
     })),
-    tutors: tutors.map(t => ({ id: t.id, name: t.name, subjects: t.subjects ?? [] })),
+    tutors: tutors.map(t => ({
+      id: t.id,
+      name: t.name,
+      subjects: t.subjects ?? [],
+      availability: t.availability ?? [],
+      availabilityBlocks: t.availabilityBlocks ?? [],
+    })),
     sessions: sessions.map(session => ({
       id: session.id,
       date: session.date,
@@ -839,6 +851,91 @@ export function CommandBar({
                     <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
                       Target session currently has {result.preview.targetSessionCurrentCount ?? 0} student{(result.preview.targetSessionCurrentCount ?? 0) === 1 ? '' : 's'}.
                     </div>
+                  </div>
+                )}
+
+                {result.preview?.kind === 'book_student_plan' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.studentName}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>
+                      Topic: {result.preview.topic || 'General'}
+                    </div>
+                    <div style={{ marginTop: 8, border: `1.5px solid ${C.greenBorder}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: C.green, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Selected Slot</div>
+                      <div style={{ marginTop: 3, fontSize: 12, color: C.textPrimary }}>
+                        {result.preview.selected?.tutorName} · {result.preview.selected?.date} {result.preview.selected?.time}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: C.textMuted }}>
+                        Seats left after optimization filter: {result.preview.selected?.seatsLeft}
+                      </div>
+                    </div>
+                    {(result.preview.alternatives ?? []).length > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+                        Alternatives: {(result.preview.alternatives ?? []).map((alt: any) => `${alt.tutorName} ${alt.date} ${alt.time}`).join(' | ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {result.preview?.kind === 'delete_booking_plan' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.studentName}</div>
+                    <div style={{ marginTop: 8, border: `1.5px solid ${C.accentBorder}`, borderRadius: 8, background: '#fff', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: C.accent, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Booking To Delete</div>
+                      <div style={{ marginTop: 3, fontSize: 12, color: C.textPrimary }}>
+                        {result.preview.selected?.tutorName} · {result.preview.selected?.date} {result.preview.selected?.time}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: C.textMuted }}>
+                        Session currently has {result.preview.selected?.sessionSize} student{result.preview.selected?.sessionSize === 1 ? '' : 's'}.
+                      </div>
+                    </div>
+                    {result.preview.matchesFound > 1 && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+                        {result.preview.matchesFound} matching bookings found. This selection is the next upcoming match.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {result.preview?.kind === 'tutor_schedule_view' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.tutorName}</div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: C.textMuted }}>
+                      Availability blocks: {(result.preview.availabilityBlocks ?? []).length}
+                    </div>
+                    {(result.preview.availabilityBlocks ?? []).slice(0, 8).map((block: string, idx: number) => (
+                      <div key={idx} style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>{block}</div>
+                    ))}
+                    <div style={{ marginTop: 10, fontSize: 11, color: C.textMuted }}>
+                      Time-off dates: {(result.preview.timeOffEntries ?? []).length}
+                    </div>
+                    {(result.preview.timeOffEntries ?? []).slice(0, 8).map((entry: any, idx: number) => (
+                      <div key={idx} style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>
+                        {entry.date}{entry.note ? ` - ${entry.note}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {result.preview?.kind === 'tutor_schedule_edit' && (
+                  <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: C.surface, padding: '12px 14px', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.textPrimary }}>{result.preview.tutorName}</div>
+                    <div style={{ marginTop: 6, fontSize: 11, color: C.textSecondary }}>
+                      Action: {String(result.preview.action ?? '').replaceAll('_', ' ')}
+                    </div>
+                    {result.preview.block && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>Block: {result.preview.block}</div>
+                    )}
+                    {result.preview.startDate && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: C.textSecondary }}>
+                        Range: {result.preview.startDate} to {result.preview.endDate}
+                      </div>
+                    )}
+                    {(result.preview.datesAffected ?? []).length > 0 && (
+                      <div style={{ marginTop: 4, fontSize: 11, color: C.textMuted }}>
+                        Dates affected: {(result.preview.datesAffected ?? []).length}
+                      </div>
+                    )}
                   </div>
                 )}
 

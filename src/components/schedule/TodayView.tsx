@@ -366,6 +366,15 @@ export function TodayView({
     t.availability.includes(todayDow) &&
     (selectedTutorFilter === null || t.id === selectedTutorFilter)
   );
+  const todayTutorIdSet = new Set(todayTutors.map(t => t.id));
+  const visibleTodaySessions = sessions.filter(s => s.date === todayIso && todayTutorIdSet.has(s.tutorId));
+  const todayStudentCount = visibleTodaySessions.reduce((total, session) => (
+    total + (session.students ?? []).filter((st: any) => st.status !== 'cancelled').length
+  ), 0);
+  const scheduledSessionCount = visibleTodaySessions.filter(
+    (session) => (session.students ?? []).some((st: any) => st.status !== 'cancelled')
+  ).length;
+  const studentsPerSession = scheduledSessionCount > 0 ? (todayStudentCount / scheduledSessionCount) : 0;
 
   const pendingStudents = sessions
     .filter(s => s.date === todayIso)
@@ -797,7 +806,7 @@ export function TodayView({
 
   if (isWeekend) {
   return (
-    <div className="max-w-[1600px] mx-auto p-2 md:p-6" style={{ background: '#fafafa', minHeight: '100%' }}>
+    <div className="max-w-400 mx-auto p-2 md:p-6" style={{ background: '#fafafa', minHeight: '100%' }}>
       <div className="flex justify-end mb-4">
         <div className="flex items-center gap-1">
           <button
@@ -866,6 +875,16 @@ export function TodayView({
   </button>
 </div>
           </div>
+          <div className="px-3.5 py-2 rounded-xl"
+            style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)', border: '1.5px solid #cbd5e1', minWidth: 180 }}>
+            <p className="text-[10px] font-black uppercase tracking-[0.11em]" style={{ color: '#64748b' }}>Students / Session</p>
+            <p className="text-sm font-bold" style={{ color: '#0f172a', marginTop: 2 }}>
+              {todayStudentCount} students in {scheduledSessionCount} sessions
+              <span className="ml-2 text-xs font-semibold" style={{ color: '#334155' }}>
+                ({studentsPerSession.toFixed(1)} per session)
+              </span>
+            </p>
+          </div>
           <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(90deg, #e5e7eb, transparent)' }} />
         </div>
 
@@ -883,6 +902,14 @@ export function TodayView({
               className="text-xs font-bold outline-none bg-transparent"
               style={{ color: '#374151', cursor: 'pointer' }} />
           </div>
+        </div>
+        <div className="md:hidden mb-3 px-3 py-2 rounded-xl"
+          style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)', border: '1.5px solid #cbd5e1' }}>
+          <p className="text-[10px] font-black uppercase tracking-[0.11em]" style={{ color: '#64748b' }}>Students / Session</p>
+          <p className="text-xs font-bold" style={{ color: '#0f172a', marginTop: 2 }}>
+            {todayStudentCount} students in {scheduledSessionCount} sessions
+            <span className="ml-2" style={{ color: '#334155' }}>({studentsPerSession.toFixed(1)} per session)</span>
+          </p>
         </div>
 
         {todayTutors.length === 0 ? (
@@ -965,7 +992,7 @@ export function TodayView({
                                   }}
                                   onDragOver={(e) => { if (!isOutside && dropState !== 'invalid') e.preventDefault(); }}
                                   onDrop={(e) => { if (!isOutside && dropState !== 'invalid') void handleDropOnSlot(e, tutor, todayIso, block.time); }}>
-                                  <div className="flex flex-col gap-1.5 min-h-[100px]">
+                                  <div className="flex flex-col gap-1.5 min-h-25">
 
                                     {/* booked students */}
                                     {hasStudents && orderStudentsForDisplay(session!.students).map((student: any) => (
@@ -1108,7 +1135,7 @@ export function TodayView({
                             const dropState   = dropStateFor(tutor, isOutside);
 
                             return (
-                              <div key={block.id} className="flex-shrink-0 w-40 p-1.5"
+                              <div key={block.id} className="shrink-0 w-40 p-1.5"
                                 style={{
                                   background: isOutside
                                     ? 'repeating-linear-gradient(45deg,#e9ebee,#e9ebee 4px,#dfe2e6 4px,#dfe2e6 8px)'

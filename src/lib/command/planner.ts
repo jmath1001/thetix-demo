@@ -59,6 +59,15 @@ function extractValue(query: string): string | null {
   return null
 }
 
+function extractTimeToken(query: string): string {
+  return query.match(/\b(\d{1,2}(?::\d{2})?\s?(?:am|pm)|\d{1,2}:\d{2})\b/i)?.[0] ?? ''
+}
+
+function extractDayToken(query: string): string {
+  const m = query.toLowerCase().match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/)
+  return m?.[0] ?? ''
+}
+
 function maybeDeterministicPlan(query: string, context: CommandContext): PlannedIntent | null {
   const lower = query.toLowerCase().trim()
   const students = context.students ?? []
@@ -117,22 +126,77 @@ function maybeDeterministicPlan(query: string, context: CommandContext): Planned
     }
   }
 
-  // Deterministic time-off parser.
-  if ((lower.includes('time off') || lower.includes('pto') || lower.includes('vacation')) && /(add|set|block|mark|put)/.test(lower)) {
+  // Unified tutor schedule management parser (availability + time off).
+  if (/(time off|pto|vacation|availability|available blocks|avail blocks)/.test(lower)) {
     const tutor = findByName(tutors, lower)
-    const dateTokens = extractDateTokens(lower)
-    if (tutor && dateTokens.length > 0) {
-      const startToken = dateTokens[0]
-      const endToken = dateTokens[1] ?? startToken
-      return {
-        type: 'capability',
-        capability: 'create_time_off_range',
-        params: {
-          tutorId: tutor.id,
-          startDate: startToken,
-          endDate: endToken,
-          note: extractQuotedValue(query) ?? '',
-        },
+    if (tutor) {
+      const dateTokens = extractDateTokens(lower)
+      const dayToken = extractDayToken(lower)
+      const normalizedTime = normalizeTimeToken(extractTimeToken(lower))
+
+      if (/(show|view|list|see|what|display)/.test(lower)) {
+        return {
+          type: 'capability',
+          capability: 'manage_tutor_schedule',
+          params: { action: 'view', tutorId: tutor.id },
+        }
+      }
+
+      if (/(add|set|enable|open)/.test(lower) && /availability/.test(lower) && dayToken && normalizedTime) {
+        return {
+          type: 'capability',
+          capability: 'manage_tutor_schedule',
+          params: {
+            action: 'add_availability',
+            tutorId: tutor.id,
+            day: dayToken,
+            time: normalizedTime,
+          },
+        }
+      }
+
+      if (/(remove|delete|clear|disable|close)/.test(lower) && /availability/.test(lower) && dayToken && normalizedTime) {
+        return {
+          type: 'capability',
+          capability: 'manage_tutor_schedule',
+          params: {
+            action: 'remove_availability',
+            tutorId: tutor.id,
+            day: dayToken,
+            time: normalizedTime,
+          },
+        }
+      }
+
+      if (/(add|set|block|mark|put)/.test(lower) && /(time off|pto|vacation)/.test(lower) && dateTokens.length > 0) {
+        const startToken = dateTokens[0]
+        const endToken = dateTokens[1] ?? startToken
+        return {
+          type: 'capability',
+          capability: 'manage_tutor_schedule',
+          params: {
+            action: 'add_time_off',
+            tutorId: tutor.id,
+            startDate: startToken,
+            endDate: endToken,
+            note: extractQuotedValue(query) ?? '',
+          },
+        }
+      }
+
+      if (/(remove|delete|clear|unblock)/.test(lower) && /(time off|pto|vacation)/.test(lower) && dateTokens.length > 0) {
+        const startToken = dateTokens[0]
+        const endToken = dateTokens[1] ?? startToken
+        return {
+          type: 'capability',
+          capability: 'manage_tutor_schedule',
+          params: {
+            action: 'remove_time_off',
+            tutorId: tutor.id,
+            startDate: startToken,
+            endDate: endToken,
+          },
+        }
       }
     }
   }
@@ -177,6 +241,50 @@ function maybeDeterministicPlan(query: string, context: CommandContext): Planned
     }
   }
 
+  // Deterministic booking parser.
+  if (/(book|schedule|enroll|add)\b/.test(lower) && /(student|session|slot|with|for)/.test(lower)) {
+    const student = findByName(students, lower)
+    if (student) {
+      const tutor = findByName(tutors, lower)
+      const dateTokens = extractDateTokens(lower)
+      const normalizedTime = normalizeTimeToken(extractTimeToken(lower))
+      const subjectMatch = lower.match(/\b(algebra|geometry|calculus|statistics|physics|chemistry|biology|math|english|reading|writing|sat|act)\b/)
+
+      return {
+        type: 'capability',
+        capability: 'book_student_with_optimization',
+        params: {
+          studentId: student.id,
+          ...(tutor ? { tutorId: tutor.id } : {}),
+          ...(dateTokens[0] ? { date: dateTokens[0] } : {}),
+          ...(normalizedTime ? { time: normalizedTime } : {}),
+          ...(subjectMatch?.[0] ? { topic: subjectMatch[0] } : {}),
+        },
+      }
+    }
+  }
+
+  // Deterministic booking deletion parser.
+  if (/(delete|remove|cancel|unbook|drop)\b/.test(lower) && /(student|booking|session|slot)/.test(lower)) {
+    const student = findByName(students, lower)
+    if (student) {
+      const tutor = findByName(tutors, lower)
+      const dateTokens = extractDateTokens(lower)
+      const normalizedTime = normalizeTimeToken(extractTimeToken(lower))
+
+      return {
+        type: 'capability',
+        capability: 'delete_student_booking_with_optimization',
+        params: {
+          studentId: student.id,
+          ...(tutor ? { tutorId: tutor.id } : {}),
+          ...(dateTokens[0] ? { date: dateTokens[0] } : {}),
+          ...(normalizedTime ? { time: normalizedTime } : {}),
+        },
+      }
+    }
+  }
+
   // Deterministic read-only student lookup.
   const namedStudent = findByName(students, lower)
   if (namedStudent && /contact|email|phone|parent/.test(lower)) {
@@ -209,7 +317,12 @@ function buildSystemPrompt(context: CommandContext): string {
   const tutors = context.tutors ?? []
   const sessions = context.sessions ?? []
   const studentIndex = students.map((s) => ({ id: s.id, name: s.name }))
-  const tutorIndex = tutors.map((t) => ({ id: t.id, name: t.name }))
+  const tutorIndex = tutors.map((t) => ({
+    id: t.id,
+    name: t.name,
+    availability: t.availability ?? [],
+    availabilityBlocks: t.availabilityBlocks ?? [],
+  }))
   const sessionIndex = sessions.slice(0, 120).map((s) => ({
     id: s.id,
     tutorId: s.tutorId,
@@ -234,11 +347,15 @@ Return one shape:
 {"type":"capability","capability":"create_time_off_range","params":{"tutorId":"<id>","startDate":"<date/day>","endDate":"<date/day>","note":"<optional>"}}
 {"type":"capability","capability":"update_student_contact","params":{"studentId":"<id>","field":"<email|phone|parent_name|parent_email|parent_phone|mom_name|mom_email|mom_phone|dad_name|dad_email|dad_phone|bluebook_url>","value":"<new value>"}}
 {"type":"capability","capability":"move_session_with_conflict_check","params":{"studentId":"<id>","rowId":"<optional>","fromTutorId":"<optional>","fromDate":"<optional>","fromTime":"<optional>","toTutorId":"<id>","toDate":"<date/day>","toTime":"<HH:mm>"}}
+{"type":"capability","capability":"book_student_with_optimization","params":{"studentId":"<id>","tutorId":"<optional>","date":"<optional date/day>","time":"<optional HH:mm>","topic":"<optional>"}}
+{"type":"capability","capability":"delete_student_booking_with_optimization","params":{"studentId":"<id>","tutorId":"<optional>","date":"<optional date/day>","time":"<optional HH:mm>"}}
+{"type":"capability","capability":"manage_tutor_schedule","params":{"action":"<view|add_time_off|remove_time_off|add_availability|remove_availability>","tutorId":"<id>","startDate":"<optional date/day>","endDate":"<optional date/day>","day":"<optional weekday token>","time":"<optional HH:mm>","note":"<optional>"}}
 {"type":"answer","text":"<brief answer>"}
 
 Rules:
 - Prefer IDs from STUDENTS/TUTORS, never names in params.
 - Use YYYY-MM-DD when explicit dates appear.
+- Use manage_tutor_schedule for tutor availability/time-off view and edits.
 - Keep params minimal and valid JSON.`
 }
 
