@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { AlertTriangle, ArrowRight, Sparkles, X } from 'lucide-react'
 import { getSessionsForDay } from '@/components/constants'
 import { dayOfWeek } from '@/lib/useScheduleData'
@@ -121,11 +121,6 @@ export function SchedulePreviewGrid({
   const unmatchedProposals = proposals.filter(p => !p.slot)
   const isSingleBookingPreview = proposals.length === 1
 
-  const allDates = Array.from(new Set([
-    ...placedProposals.map(p => p.slot!.date),
-    ...existingSessions.filter(s => s.students.length > 0).map(s => s.date),
-  ])).sort()
-
   const tutorMap: Record<string, AvailableSeat['tutor']> = {}
   for (const s of allAvailableSeats) tutorMap[s.tutor.id] = s.tutor
   for (const p of placedProposals) tutorMap[p.slot!.tutor.id] = p.slot!.tutor
@@ -138,28 +133,58 @@ export function SchedulePreviewGrid({
   const tutorColorMap: Record<string, typeof TUTOR_PALETTES[0]> = {}
   allTutorIds.forEach((id, i) => { tutorColorMap[id] = getTutorPreviewPalette(i) })
 
-  const getTutorsForDay = (date: string) => {
-    const ids = new Set<string>()
-    placedProposals.forEach(p => { if (p.slot!.date === date) ids.add(p.slot!.tutor.id) })
-    existingSessions.forEach(s => { if (s.date === date && s.students.length > 0) ids.add(s.tutorId) })
-    return Array.from(ids)
-  }
-
-  const getTimesForDay = (date: string) => {
-    // Use the canonical session blocks for each day.
-    return getSessionsForDay(dayOfWeek(date)).map(s => s.time)
-  }
-
-  const getProposalsAt = (tutorId: string, date: string, time: string) =>
-    placedProposals.filter(p => p.slot!.tutor.id === tutorId && p.slot!.date === date && p.slot!.time === time)
-
-  const getExistingAt = (tutorId: string, date: string, time: string) =>
-    existingSessions
-      .filter(s => s.tutorId === tutorId && s.date === date && s.time === time)
-      .flatMap(s => s.students)
-
-  const hasSeatAt = (tutorId: string, date: string, time: string) =>
-    allAvailableSeats.some(s => s.tutor.id === tutorId && s.date === date && s.time === time)
+  // For single booking, cache the swap options so they don't change when proposal is updated
+  const singleBookingSwapsCache = useMemo(() => {
+    if (!isSingleBookingPreview || placedProposals.length !== 1) return null
+    const p = placedProposals[0]
+    const studentBookedTimes = new Set<string>()
+    existingSessions.forEach(s => {
+      if (s.students.some(st => st.studentName === p.student.name)) {
+        studentBookedTimes.add(`${s.date}-${s.time}`)
+      }
+    })
+    
+    return allAvailableSeats
+      .map((s, i) => ({ seat: s, index: i }))
+      .filter(({ seat }) => {
+        const sub = p.subject.toLowerCase().trim()
+        const subjectMatch = seat.tutor.subjects.some(ts => {
+          const t = ts.toLowerCase().trim()
+          return t === sub || t.includes(sub) || sub.includes(t)
+        })
+        if (!subjectMatch) return false
+        if (seat.seatsLeft <= 0) return false
+        if (p.student.availabilityBlocks?.length) {
+          const key = `${seat.dayNum}-${seat.time}`
+          if (!p.student.availabilityBlocks.includes(key)) return false
+        }
+        if (studentBookedTimes.has(`${seat.date}-${seat.time}`)) return false
+        return !(seat.tutor.id === p.slot?.tutor.id && seat.date === p.slot?.date && seat.time === p.slot?.time)
+      })
+      .sort((a, b) => {
+        const aExisting = existingSessions
+          .filter(s => s.tutorId === a.seat.tutor.id && s.date === a.seat.date && s.time === a.seat.time)
+          .flatMap(s => s.students).length
+        const bExisting = existingSessions
+          .filter(s => s.tutorId === b.seat.tutor.id && s.date === b.seat.date && s.time === b.seat.time)
+          .flatMap(s => s.students).length
+        const aProposed = placedProposals.filter(pp =>
+          pp.needId !== p.needId && pp.slot &&
+          pp.slot.tutor.id === a.seat.tutor.id && pp.slot.date === a.seat.date && pp.slot.time === a.seat.time
+        ).length
+        const bProposed = placedProposals.filter(pp =>
+          pp.needId !== p.needId && pp.slot &&
+          pp.slot.tutor.id === b.seat.tutor.id && pp.slot.date === b.seat.date && pp.slot.time === b.seat.time
+        ).length
+        const aOccupied = aExisting + aProposed
+        const bOccupied = bExisting + bProposed
+        if (bOccupied !== aOccupied) return bOccupied - aOccupied
+        if (a.seat.seatsLeft !== b.seat.seatsLeft) return a.seat.seatsLeft - b.seat.seatsLeft
+        if (a.seat.date !== b.seat.date) return a.seat.date.localeCompare(b.seat.date)
+        return a.seat.time.localeCompare(b.seat.time)
+      })
+      .slice(0, 3)
+  }, [isSingleBookingPreview, placedProposals, existingSessions, allAvailableSeats])
 
   const getSwapOptions = (p: Proposal) => {
     // Check which times this student is already booked (in existing sessions or other proposals)
@@ -234,8 +259,55 @@ export function SchedulePreviewGrid({
         if (a.seat.date !== b.seat.date) return a.seat.date.localeCompare(b.seat.date)
         return a.seat.time.localeCompare(b.seat.time)
       })
-      .slice(0, 2)
+      .slice(0, 3)
   }
+
+  // Build allDates, including dates from swap alternatives in single booking mode
+  let allDates = Array.from(new Set([
+    ...placedProposals.map(p => p.slot!.date),
+    ...existingSessions.filter(s => s.students.length > 0).map(s => s.date),
+  ]))
+  
+  if (isSingleBookingPreview && singleBookingSwapsCache) {
+    singleBookingSwapsCache.forEach(({ seat }) => {
+      allDates.push(seat.date)
+    })
+    allDates = Array.from(new Set(allDates))
+  }
+  
+  allDates.sort()
+
+  const getTutorsForDay = (date: string) => {
+    const ids = new Set<string>()
+    placedProposals.forEach(p => { if (p.slot!.date === date) ids.add(p.slot!.tutor.id) })
+    existingSessions.forEach(s => { if (s.date === date && s.students.length > 0) ids.add(s.tutorId) })
+    
+    // For single booking: also include tutors from swap alternatives (use cached swaps)
+    if (isSingleBookingPreview && singleBookingSwapsCache) {
+      singleBookingSwapsCache.forEach(({ seat }) => {
+        if (seat.date === date) ids.add(seat.tutor.id)
+      })
+    }
+    
+    return Array.from(ids)
+  }
+
+  const getTimesForDay = (date: string) => {
+    // Use the canonical session blocks for each day.
+    return getSessionsForDay(dayOfWeek(date)).map(s => s.time)
+  }
+
+  const getProposalsAt = (tutorId: string, date: string, time: string) =>
+    placedProposals.filter(p => p.slot!.tutor.id === tutorId && p.slot!.date === date && p.slot!.time === time)
+
+  const getExistingAt = (tutorId: string, date: string, time: string) =>
+    existingSessions
+      .filter(s => s.tutorId === tutorId && s.date === date && s.time === time)
+      .flatMap(s => s.students)
+
+  const hasSeatAt = (tutorId: string, date: string, time: string) =>
+    allAvailableSeats.some(s => s.tutor.id === tutorId && s.date === date && s.time === time)
+
 
   if (allDates.length === 0 && unmatchedProposals.length === 0) {
     return <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 13 }}>No proposals to preview</div>
@@ -344,6 +416,17 @@ export function SchedulePreviewGrid({
                             const existing = getExistingAt(tutorId, date, time)
                             const hasAnything = proposed.length > 0 || existing.length > 0
                             const availableNow = hasSeatAt(tutorId, date, time)
+                            
+                            // For single booking: find if any swap option matches this cell
+                            let swapOptionMatch: { proposal: Proposal; swaps: ReturnType<typeof getSwapOptions>; optionIndex: number } | null = null
+                            if (isSingleBookingPreview && placedProposals.length === 1 && singleBookingSwapsCache) {
+                              const p = placedProposals[0]
+                              const swaps = singleBookingSwapsCache
+                              const matchingSwap = swaps.findIndex(({ seat }) => seat.tutor.id === tutorId && seat.date === date && seat.time === time)
+                              if (matchingSwap >= 0) {
+                                swapOptionMatch = { proposal: p, swaps, optionIndex: matchingSwap }
+                              }
+                            }
 
                             return (
                               <td key={time} style={{
@@ -359,7 +442,7 @@ export function SchedulePreviewGrid({
                               }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 80 }}>
 
-                                  {!hasAnything && availableNow && (
+                                  {!hasAnything && availableNow && !swapOptionMatch && (
                                     <div style={{
                                       marginTop: 4,
                                       alignSelf: 'flex-start',
@@ -375,6 +458,84 @@ export function SchedulePreviewGrid({
                                     }}>
                                       Available
                                     </div>
+                                  )}
+                                  
+                                  {/* Alternative options in single booking mode */}
+                                  {swapOptionMatch && (
+                                    <button
+                                      onClick={() => onSwap(swapOptionMatch.proposal.needId, swapOptionMatch.swaps[swapOptionMatch.optionIndex].index)}
+                                      style={{
+                                        padding: '7px 9px',
+                                        borderRadius: 10,
+                                        border: `2px dashed ${
+                                          swapOptionMatch.optionIndex === 0 ? '#a78bfa' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#fb923c' : 
+                                          '#10b981'
+                                        }`,
+                                        background: 
+                                          swapOptionMatch.optionIndex === 0 ? '#f3e8ff' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#fff7ed' : 
+                                          '#f0fdf4',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        transition: 'all 0.15s',
+                                      }}
+                                      onMouseEnter={e => {
+                                        e.currentTarget.style.borderStyle = 'solid'
+                                        e.currentTarget.style.background = 
+                                          swapOptionMatch.optionIndex === 0 ? '#ede9fe' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#ffedd5' : 
+                                          '#dcfce7'
+                                        e.currentTarget.style.transform = 'scale(1.02)'
+                                      }}
+                                      onMouseLeave={e => {
+                                        e.currentTarget.style.borderStyle = 'dashed'
+                                        e.currentTarget.style.background = 
+                                          swapOptionMatch.optionIndex === 0 ? '#f3e8ff' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#fff7ed' : 
+                                          '#f0fdf4'
+                                        e.currentTarget.style.transform = 'scale(1)'
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                                        <span style={{
+                                          fontSize: 11,
+                                          fontWeight: 900,
+                                          width: 24,
+                                          height: 24,
+                                          borderRadius: '50%',
+                                          background: 
+                                            swapOptionMatch.optionIndex === 0 ? '#a78bfa' : 
+                                            swapOptionMatch.optionIndex === 1 ? '#fb923c' : 
+                                            '#10b981',
+                                          color: 'white',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                        }}>
+                                          {swapOptionMatch.optionIndex + 2}
+                                        </span>
+                                        <span style={{ fontSize: 10, fontWeight: 700, color: 
+                                          swapOptionMatch.optionIndex === 0 ? '#6d28d9' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#92400e' : 
+                                          '#047857' 
+                                        }}>
+                                          {swapOptionMatch.proposal.student.name}
+                                        </span>
+                                      </div>
+                                      <div style={{
+                                        fontSize: 9,
+                                        fontWeight: 700,
+                                        color: 
+                                          swapOptionMatch.optionIndex === 0 ? '#6d28d9' : 
+                                          swapOptionMatch.optionIndex === 1 ? '#92400e' : 
+                                          '#047857',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.04em',
+                                      }}>
+                                        {swapOptionMatch.proposal.subject}
+                                      </div>
+                                    </button>
                                   )}
 
                                   {/* Existing booked students — same card style as WeekView, slightly muted */}
@@ -481,6 +642,20 @@ export function SchedulePreviewGrid({
                                                 )}
                                               </div>
                                             )}
+                                            {swaps.length === 0 && (
+                                              <div style={{
+                                                fontSize: 9,
+                                                fontWeight: 700,
+                                                padding: '6px 8px',
+                                                borderRadius: 6,
+                                                background: '#f3f4f6',
+                                                color: '#6b7280',
+                                                textAlign: 'center',
+                                                border: '1px solid #e5e7eb',
+                                              }}>
+                                                No other options
+                                              </div>
+                                            )}
                                             <button
                                               onClick={() => onRemove(p.needId)}
                                               style={{
@@ -493,38 +668,6 @@ export function SchedulePreviewGrid({
                                             </button>
                                           </div>
                                         </div>
-
-                                        {isSingleBookingPreview && swaps.length > 0 && (
-                                          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                            {swaps.map(({ seat, index }, optionIndex) => (
-                                              <button
-                                                key={`${p.needId}-inline-${index}`}
-                                                onClick={() => onSwap(p.needId, index)}
-                                                style={{
-                                                  fontSize: 10,
-                                                  fontWeight: 700,
-                                                  padding: '4px 8px',
-                                                  borderRadius: 8,
-                                                  border: `1.5px solid ${sc.ring}`,
-                                                  background: 'white',
-                                                  color: '#1e293b',
-                                                  cursor: 'pointer',
-                                                  display: 'inline-flex',
-                                                  alignItems: 'center',
-                                                  gap: 5,
-                                                }}
-                                                title={`Use option ${optionIndex + 2}: ${seat.dayName} ${seat.block?.label ?? seat.time} with ${seat.tutor.name}`}
-                                              >
-                                                <span style={{ fontSize: 9, fontWeight: 800, color: '#7c3aed' }}>Option {optionIndex + 2}</span>
-                                                <span>{seat.dayName}</span>
-                                                <span style={{ color: '#cbd5e1' }}>·</span>
-                                                <span>{seat.block?.label ?? seat.time}</span>
-                                                <span style={{ color: '#cbd5e1' }}>·</span>
-                                                <span style={{ color: '#7c3aed' }}>{seat.tutor.name}</span>
-                                              </button>
-                                            ))}
-                                          </div>
-                                        )}
                                       </div>
                                     )
                                   })}

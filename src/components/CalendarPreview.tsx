@@ -98,8 +98,16 @@ export function CalendarPreview({
     return timeOff.some(t => t.tutorId === tutorId && t.date === date);
   };
 
-  const weekStart = activeDates.length > 0 ? toISODate(activeDates[0]) : null;
-  const weekEnd = activeDates.length > 0 ? toISODate(activeDates[activeDates.length - 1]) : null;
+  // Use proposal's week range to filter displayed dates
+  const weekStart = proposal?.context?.weekStart;
+  const weekEnd = proposal?.context?.weekEnd;
+  const datesInWeek = React.useMemo(() => {
+    if (!weekStart || !weekEnd) return activeDates;
+    return activeDates.filter(date => {
+      const dateStr = toISODate(date);
+      return dateStr >= weekStart && dateStr <= weekEnd;
+    });
+  }, [activeDates, weekStart, weekEnd]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -130,14 +138,14 @@ export function CalendarPreview({
             </div>
             <div className="rounded-3xl bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Available tutor-days</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{activeDates.length * tutors.length}</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{datesInWeek.length * tutors.length}</p>
             </div>
           </div>
 
           {/* Days header */}
           <div className="grid grid-cols-[120px_repeat(5,1fr)] gap-2 mb-4">
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tutor</div>
-            {activeDates.map((date) => (
+            {datesInWeek.map((date) => (
               <div key={toISODate(date)} className="text-center">
                 <div className="text-sm font-semibold text-slate-900">
                   {new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date)}
@@ -164,7 +172,7 @@ export function CalendarPreview({
                 <span className="text-sm font-medium text-slate-900 truncate">{tutor.name}</span>
               </div>
 
-              {activeDates.map((date) => {
+              {datesInWeek.map((date) => {
                 const dateStr = toISODate(date);
                 const dow = dayOfWeek(dateStr);
                 

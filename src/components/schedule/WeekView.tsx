@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { PlusCircle, Check, X, Loader2, Trash2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { PlusCircle, Check, X, Loader2, Trash2, Search } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
@@ -90,6 +90,37 @@ export function WeekView({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [draggingTopic, setDraggingTopic] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [slotFilterQuery, setSlotFilterQuery] = useState('');
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !e.shiftKey) {
+        const active = document.activeElement;
+        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement;
+        if (!isTyping) {
+          e.preventDefault();
+          filterInputRef.current?.focus();
+          filterInputRef.current?.select();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [])
+
+  const normalizedSlotFilter = slotFilterQuery.trim().toLowerCase();
+  const hasSlotFilter = normalizedSlotFilter.length > 0;
+  const slotFilterTerms = useMemo(
+    () => normalizedSlotFilter.split(/\s+/).filter(Boolean),
+    [normalizedSlotFilter]
+  );
+
+  const slotTextMatchesFilter = useCallback((parts: Array<string | null | undefined>) => {
+    if (!hasSlotFilter) return true;
+    const searchable = parts.filter(Boolean).join(' ').toLowerCase();
+    return slotFilterTerms.every(term => searchable.includes(term));
+  }, [hasSlotFilter, slotFilterTerms]);
 
   const selectionKey = (sessionId: string, studentId: string) => `${sessionId}|${studentId}`;
   type DragStudentPayload = { rowId: string; studentId: string; fromSessionId: string; topic: string | null };
@@ -416,6 +447,63 @@ export function WeekView({
 
   return (
     <div className="mx-auto w-full p-2 md:p-4 space-y-6 md:space-y-8" style={{ maxWidth: 1600 }}>
+
+      {/* Live slot filter bar — single compact row, sticks under nav */}
+      <div className="sticky z-20 rounded-xl overflow-hidden"
+        style={{
+          top: 44,
+          border: hasSlotFilter ? '2px solid #6366f1' : '2px solid #c7d2fe',
+          boxShadow: hasSlotFilter ? '0 0 0 3px rgba(99,102,241,0.12), 0 2px 8px rgba(99,102,241,0.15)' : '0 1px 4px rgba(15,23,42,0.08)',
+        }}>
+        <div className="flex items-center" style={{ background: hasSlotFilter ? 'linear-gradient(90deg,#4f46e5,#7c3aed)' : 'linear-gradient(90deg,#312e81,#3730a3)' }}>
+          {/* Label */}
+          <div className="flex items-center gap-1.5 px-2.5 shrink-0 self-stretch">
+            <Search size={11} style={{ color: 'rgba(255,255,255,0.85)' }} />
+            <span className="text-[8px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.9)' }}>Filter Slots</span>
+          </div>
+          {/* Input */}
+          <div className="relative flex-1">
+            <input
+              ref={filterInputRef}
+              type="text"
+              value={slotFilterQuery}
+              onChange={(e) => setSlotFilterQuery(e.target.value)}
+              placeholder="Start typing — subject, student, tutor…"
+              className="w-full py-2 text-xs font-semibold outline-none"
+              style={{
+                background: hasSlotFilter ? '#f5f3ff' : 'white',
+                color: '#1f2937',
+                paddingLeft: 10,
+                paddingRight: slotFilterQuery ? 32 : 10,
+                borderLeft: '1px solid rgba(255,255,255,0.2)',
+              }}
+            />
+            {slotFilterQuery && (
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setSlotFilterQuery(''); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: '#6366f1', color: 'white' }}
+                aria-label="Clear filter"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+          {/* Right badge */}
+          {hasSlotFilter ? (
+            <span className="shrink-0 text-[9px] font-black px-2 mx-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,255,255,0.22)', color: 'white', whiteSpace: 'nowrap' }}>
+              live ✦
+            </span>
+          ) : (
+            <kbd className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mx-2"
+              style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', border: '1px solid rgba(255,255,255,0.18)', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>
+              Ctrl+F
+            </kbd>
+          )}
+        </div>
+      </div>
+
       {activeDates.map((date) => {
         const isoDate   = toISODate(date);
         const dow       = dayOfWeek(isoDate);
@@ -437,6 +525,44 @@ export function WeekView({
         ).length;
         const studentsPerSession = scheduledSessionCount > 0 ? (dayStudentCount / scheduledSessionCount) : 0;
         const daySessions = getSessionsForDay(dow);
+
+        const filteredActiveTutors = hasSlotFilter
+          ? activeTutors.filter((tutor) =>
+              daySessions.some((block) => {
+                const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
+                const activeStudents = (session?.students ?? []).filter((st: any) => st.status !== 'cancelled');
+                const studentBlob = activeStudents.map((st: any) => [st.name, st.topic, st.notes, st.grade ? `grade ${st.grade}` : ''].filter(Boolean).join(' ')).join(' ');
+                return slotTextMatchesFilter([
+                  tutor.name,
+                  tutor.cat,
+                  (tutor.subjects ?? []).join(' '),
+                  block.label,
+                  block.display,
+                  block.time,
+                  studentBlob,
+                ]);
+              })
+            )
+          : activeTutors;
+
+        const filteredDaySessions = hasSlotFilter
+          ? daySessions.filter((block) =>
+              filteredActiveTutors.some((tutor) => {
+                const session = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
+                const activeStudents = (session?.students ?? []).filter((st: any) => st.status !== 'cancelled');
+                const studentBlob = activeStudents.map((st: any) => [st.name, st.topic, st.notes, st.grade ? `grade ${st.grade}` : ''].filter(Boolean).join(' ')).join(' ');
+                return slotTextMatchesFilter([
+                  tutor.name,
+                  tutor.cat,
+                  (tutor.subjects ?? []).join(' '),
+                  block.label,
+                  block.display,
+                  block.time,
+                  studentBlob,
+                ]);
+              })
+            )
+          : daySessions;
 
         return (
           <div key={isoDate} className="space-y-2.5 md:space-y-3">
@@ -470,9 +596,11 @@ export function WeekView({
                 style={{ background: 'linear-gradient(90deg, #cbd5e1, transparent)' }} />
             </div>
 
-            {activeTutors.length === 0 ? (
+            {filteredActiveTutors.length === 0 ? (
               <div className="rounded-xl p-6 text-center border border-dashed" style={{ borderColor: '#e5e7eb' }}>
-                <p className="text-xs font-medium italic" style={{ color: '#9ca3af' }}>No tutors available</p>
+                <p className="text-xs font-medium italic" style={{ color: '#9ca3af' }}>
+                  {hasSlotFilter ? 'No slots match your filter' : 'No tutors available'}
+                </p>
               </div>
             ) : (
               <>
@@ -487,7 +615,7 @@ export function WeekView({
                             style={{ color: 'rgba(255,255,255,0.5)', borderRight: '1px solid rgba(255,255,255,0.08)', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#1f2937' }}>
                             Instructor
                           </th>
-                          {daySessions.map(block => (
+                          {filteredDaySessions.map(block => (
                             <th key={block.id} className="px-3 py-1.5 text-center"
                               style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 172, position: 'sticky', top: 0, background: '#1f2937', zIndex: 3 }}>
                               <div className="text-xs font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.9)' }}>{block.label}</div>
@@ -497,7 +625,7 @@ export function WeekView({
                         </tr>
                       </thead>
                       <tbody>
-                        {activeTutors.map(tutor => {
+                        {filteredActiveTutors.map(tutor => {
                           const palette = getTutorPaletteByIndex(tutorPaletteMap[tutor.id] ?? 0);
                           return (
                             <tr key={tutor.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
@@ -518,7 +646,7 @@ export function WeekView({
                                 </div>
                               </td>
 
-                              {daySessions.map(block => {
+                              {filteredDaySessions.map(block => {
                                 const session     = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
                                 const hasStudents = session && session.students.length > 0;
                                 const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate);
@@ -683,7 +811,7 @@ export function WeekView({
 
                 {/* Mobile cards */}
                 <div className="md:hidden space-y-2">
-                  {activeTutors.map(tutor => {
+                  {filteredActiveTutors.map(tutor => {
                     const palette = getTutorPaletteByIndex(tutorPaletteMap[tutor.id] ?? 0);
                     const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate);
                     return (
@@ -694,7 +822,7 @@ export function WeekView({
                         </div>
                         <div className="overflow-x-auto">
                           <div className="flex">
-                            {daySessions.map(block => {
+                            {filteredDaySessions.map(block => {
                               const session     = sessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
                               const hasStudents = session && session.students.length > 0;
                               const isFull      = hasStudents && session!.students.length >= MAX_CAPACITY;

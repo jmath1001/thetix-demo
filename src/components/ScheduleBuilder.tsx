@@ -915,7 +915,7 @@ export function ScheduleBuilder({
   }, [canGenerate, builderMode, singleSelectedStudent, singleSubject, allNeeds, allAvailableSeats, weekStart, weekEnd, bookedSlotsByStudent, buildSuggestionsForNeed, singleSessionBlocks])
 
   const swapSlot = useCallback((needId: string, slotIndex: number) => {
-    const slot = allAvailableSeats[slotIndex]
+    const slot = previewSeatPool[slotIndex]
     if (!slot) return { success: false, reason: 'Slot not found' }
 
     const proposal = proposals.find(p => p.needId === needId)
@@ -950,7 +950,7 @@ export function ScheduleBuilder({
     // Swap is valid
     setProposals(prev => prev.map(p => p.needId === needId ? { ...p, slot, status: 'matched', reason: 'Manually selected' } : p))
     return { success: true }
-  }, [allAvailableSeats, proposals, bookedSlotsByStudent, sessions])
+  }, [previewSeatPool, proposals, bookedSlotsByStudent, sessions])
 
   const computeRatioMetrics = useCallback((proposalList: Proposal[]) => {
     const counts: Record<string, number> = { ...existingSeatCounts }

@@ -1,6 +1,6 @@
 "use client"
-import { useState, useEffect, useCallback } from 'react';
-import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
@@ -353,6 +353,24 @@ export function TodayView({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [draggingTopic, setDraggingTopic] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [slotFilterQuery, setSlotFilterQuery] = useState('');
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && !e.shiftKey) {
+        const active = document.activeElement;
+        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement;
+        if (!isTyping) {
+          e.preventDefault();
+          filterInputRef.current?.focus();
+          filterInputRef.current?.select();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [])
 
   const todayIso  = toISODate(selectedDate);
   const todayDow  = dayOfWeek(todayIso);
@@ -366,6 +384,67 @@ export function TodayView({
     t.availability.includes(todayDow) &&
     (selectedTutorFilter === null || t.id === selectedTutorFilter)
   );
+  const normalizedSlotFilter = slotFilterQuery.trim().toLowerCase();
+  const hasSlotFilter = normalizedSlotFilter.length > 0;
+  const slotFilterTerms = useMemo(
+    () => normalizedSlotFilter.split(/\s+/).filter(Boolean),
+    [normalizedSlotFilter]
+  );
+
+  const todaySessionByTutorTime = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const session of sessions) {
+      if (session.date === todayIso) {
+        map.set(`${session.tutorId}|${session.time}`, session);
+      }
+    }
+    return map;
+  }, [sessions, todayIso]);
+
+  const slotTextMatchesFilter = useCallback((parts: Array<string | null | undefined>) => {
+    if (!hasSlotFilter) return true;
+    const searchable = parts.filter(Boolean).join(' ').toLowerCase();
+    return slotFilterTerms.every(term => searchable.includes(term));
+  }, [hasSlotFilter, slotFilterTerms]);
+
+  const doesSlotMatchFilter = useCallback((tutor: Tutor, block: any, session: any) => {
+    const activeStudents = (session?.students ?? []).filter((st: any) => st.status !== 'cancelled');
+    const studentBlob = activeStudents
+      .map((st: any) => [st.name, st.topic, st.notes, st.grade ? `grade ${st.grade}` : '', st.status].filter(Boolean).join(' '))
+      .join(' ');
+
+    return slotTextMatchesFilter([
+      tutor.name,
+      tutor.cat,
+      (tutor.subjects ?? []).join(' '),
+      block.label,
+      block.display,
+      block.time,
+      activeStudents.length > 0 ? 'booked occupied session' : 'available open slot',
+      studentBlob,
+    ]);
+  }, [slotTextMatchesFilter]);
+
+  const filteredTodayTutors = useMemo(() => {
+    if (!hasSlotFilter) return todayTutors;
+    return todayTutors.filter((tutor) =>
+      daySessions.some((block) => {
+        const session = todaySessionByTutorTime.get(`${tutor.id}|${block.time}`);
+        return doesSlotMatchFilter(tutor, block, session);
+      })
+    );
+  }, [hasSlotFilter, todayTutors, daySessions, todaySessionByTutorTime, doesSlotMatchFilter]);
+
+  const filteredDaySessions = useMemo(() => {
+    if (!hasSlotFilter) return daySessions;
+    return daySessions.filter((block) =>
+      filteredTodayTutors.some((tutor) => {
+        const session = todaySessionByTutorTime.get(`${tutor.id}|${block.time}`);
+        return doesSlotMatchFilter(tutor, block, session);
+      })
+    );
+  }, [hasSlotFilter, daySessions, filteredTodayTutors, todaySessionByTutorTime, doesSlotMatchFilter]);
+
   const todayTutorIdSet = new Set(todayTutors.map(t => t.id));
   const visibleTodaySessions = sessions.filter(s => s.date === todayIso && todayTutorIdSet.has(s.tutorId));
   const todayStudentCount = visibleTodaySessions.reduce((total, session) => (
@@ -885,7 +964,50 @@ export function TodayView({
               </span>
             </p>
           </div>
-          <div className="h-px flex-1 rounded-full" style={{ background: 'linear-gradient(90deg, #e5e7eb, transparent)' }} />
+          {/* Filter — lives in header row, zero extra height */}
+          <div className="relative flex-1 min-w-0" data-inline-form>
+            <div className="flex items-center gap-1.5 rounded-xl overflow-hidden"
+              style={hasSlotFilter
+                ? { border: '2px solid #6366f1', boxShadow: '0 0 0 3px rgba(99,102,241,0.12), 0 2px 8px rgba(99,102,241,0.15)' }
+                : { border: '2px solid #c7d2fe', boxShadow: '0 1px 4px rgba(99,102,241,0.08)' }
+              }>
+              <div className="flex items-center gap-1.5 px-2.5 shrink-0 self-stretch"
+                style={{ background: hasSlotFilter ? 'linear-gradient(90deg,#4f46e5,#7c3aed)' : 'linear-gradient(90deg,#312e81,#3730a3)' }}>
+                <Search size={11} style={{ color: 'rgba(255,255,255,0.85)' }} />
+                <span className="text-[8px] font-black uppercase tracking-widest whitespace-nowrap" style={{ color: 'rgba(255,255,255,0.9)' }}>Filter Slots</span>
+              </div>
+              <input
+                ref={filterInputRef}
+                type="text"
+                value={slotFilterQuery}
+                onChange={(e) => setSlotFilterQuery(e.target.value)}
+                placeholder="Start typing — subject, student, tutor…"
+                className="flex-1 py-1.5 text-xs font-semibold outline-none bg-white min-w-0"
+                style={{ color: '#1f2937', paddingLeft: 8, paddingRight: slotFilterQuery ? 28 : 8 }}
+              />
+              {slotFilterQuery ? (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setSlotFilterQuery(''); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{ background: '#6366f1', color: 'white' }}
+                  aria-label="Clear filter"
+                >
+                  <X size={10} />
+                </button>
+              ) : (
+                <kbd className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mr-1.5"
+                  style={{ background: '#eef2ff', color: '#818cf8', border: '1px solid #c7d2fe', fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
+                  Ctrl+F
+                </kbd>
+              )}
+              {hasSlotFilter && (
+                <span className="shrink-0 text-[9px] font-black px-2 mr-1 py-0.5 rounded-full"
+                  style={{ background: '#ede9fe', color: '#6d28d9', whiteSpace: 'nowrap' }}>
+                  {filteredTodayTutors.length}/{todayTutors.length} tutors
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Day header — mobile */}
@@ -912,9 +1034,48 @@ export function TodayView({
           </p>
         </div>
 
-        {todayTutors.length === 0 ? (
+        {/* Slot filter bar — mobile only (desktop lives in header row) */}
+        <div className="md:hidden mb-3 shrink-0 rounded-xl overflow-hidden"
+          style={hasSlotFilter
+            ? { border: '2px solid #6366f1', boxShadow: '0 0 0 3px rgba(99,102,241,0.12)' }
+            : { border: '2px solid #e2e8f0' }}>
+          <div className="flex items-center"
+            style={{ background: hasSlotFilter ? 'linear-gradient(90deg,#4f46e5,#7c3aed)' : '#1e293b', padding: '6px 10px' }}>
+            <Search size={10} style={{ color: 'rgba(255,255,255,0.7)', marginRight: 6 }} />
+            <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.8)', flex: 1 }}>Quick Filter</span>
+            {hasSlotFilter && (
+              <span className="text-[8px] font-black px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                {filteredTodayTutors.length}/{todayTutors.length} tutors
+              </span>
+            )}
+          </div>
+          <div className="relative" style={{ background: hasSlotFilter ? '#f5f3ff' : '#f8fafc' }}>
+            <input
+              type="text"
+              value={slotFilterQuery}
+              onChange={(e) => setSlotFilterQuery(e.target.value)}
+              placeholder="Subject, student, tutor…"
+              className="w-full py-2 text-xs font-semibold outline-none bg-transparent"
+              style={{ color: '#1f2937', paddingLeft: 12, paddingRight: slotFilterQuery ? 32 : 12 }}
+            />
+            {slotFilterQuery && (
+              <button
+                onMouseDown={(e) => { e.preventDefault(); setSlotFilterQuery(''); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: '#6366f1', color: 'white' }}
+                aria-label="Clear filter"
+              >
+                <X size={10} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {filteredTodayTutors.length === 0 || filteredDaySessions.length === 0 ? (
           <div className="rounded-xl p-8 text-center border border-dashed" style={{ borderColor: '#e5e7eb', background: 'white' }}>
-            <p className="text-sm italic" style={{ color: '#9ca3af' }}>No tutors available for the selected day</p>
+            <p className="text-sm italic" style={{ color: '#9ca3af' }}>
+              {hasSlotFilter ? 'No slots match your live filter' : 'No tutors available for the selected day'}
+            </p>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
@@ -932,7 +1093,7 @@ export function TodayView({
                           style={{ color: 'rgba(255,255,255,0.5)', borderRight: '1px solid rgba(255,255,255,0.08)', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#1f2937' }}>
                           Instructor
                         </th>
-                        {daySessions.map(block => (
+                        {filteredDaySessions.map(block => (
                           <th key={block.id} className="px-4 py-2.5 text-center"
                             style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 200, position: 'sticky', top: 0, zIndex: 3, background: '#1f2937' }}>
                             <div className="text-sm font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.9)' }}>{block.label}</div>
@@ -942,7 +1103,7 @@ export function TodayView({
                       </tr>
                     </thead>
                     <tbody>
-                      {todayTutors.map(tutor => {
+                      {filteredTodayTutors.map(tutor => {
                         const palette     = getTutorPaletteByIndex(tutorPaletteMap[tutor.id] ?? 0);
                         const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === todayIso);
                         return (
@@ -967,7 +1128,7 @@ export function TodayView({
                             </td>
 
                             {/* Time block cells */}
-                            {daySessions.map(block => {
+                            {filteredDaySessions.map(block => {
                               const session    = sessions.find(s => s.date === todayIso && s.tutorId === tutor.id && s.time === block.time);
                               const hasStudents = session && session.students.length > 0;
                               const isFull     = hasStudents && session!.students.length >= MAX_CAPACITY;
@@ -1115,7 +1276,7 @@ export function TodayView({
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-2 overflow-y-auto flex-1 min-h-0">
-                {todayTutors.map(tutor => {
+                {filteredTodayTutors.map(tutor => {
                   const palette     = getTutorPaletteByIndex(tutorPaletteMap[tutor.id] ?? 0);
                   const isOnTimeOff = timeOff.some(t => t.tutorId === tutor.id && t.date === todayIso);
                   return (
@@ -1126,7 +1287,7 @@ export function TodayView({
                       </div>
                       <div className="overflow-x-auto">
                         <div className="flex">
-                          {daySessions.map(block => {
+                          {filteredDaySessions.map(block => {
                             const session     = sessions.find(s => s.date === todayIso && s.tutorId === tutor.id && s.time === block.time);
                             const hasStudents = session && session.students.length > 0;
                             const isFull      = hasStudents && session!.students.length >= MAX_CAPACITY;
