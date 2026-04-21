@@ -734,6 +734,21 @@ export async function updateConfirmationStatus({ rowId, status }: {
   if (error) throw error
 }
 
+export async function updateSessionStudentTopic({ rowId, topic }: {
+  rowId: string
+  topic: string
+}) {
+  const cleanTopic = topic.trim()
+  if (!cleanTopic) throw new Error('Topic cannot be empty')
+
+  const { error } = await supabase
+    .from(SS)
+    .update({ topic: cleanTopic })
+    .eq('id', rowId)
+
+  if (error) throw error
+}
+
 export async function clearWeekNonRecurring({ weekStart }: {
   weekStart: Date | string
 }): Promise<{ deletedBookings: number; deletedSessions: number }> {

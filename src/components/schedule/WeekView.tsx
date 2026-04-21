@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { PlusCircle, Check, X, Loader2, Search } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
+import { createInlineStudent, updateAttendance, updateSessionStudentTopic, removeStudentFromSession, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
+import { TopicCombobox } from './TopicCombobox';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
 
@@ -90,6 +91,7 @@ export function WeekView({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [draggingTopic, setDraggingTopic] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [updatingTopicKey, setUpdatingTopicKey] = useState<string | null>(null);
   const [slotFilterQuery, setSlotFilterQuery] = useState('');
   const filterInputRef = useRef<HTMLInputElement>(null);
 
@@ -273,6 +275,17 @@ export function WeekView({
       return { label: 'NO-SHOW', bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5' };
     }
     return null;
+  };
+
+  const handleTopicChange = async (rowId: string | undefined, topic: string) => {
+    if (!rowId) return;
+    setUpdatingTopicKey(rowId);
+    try {
+      await updateSessionStudentTopic({ rowId, topic });
+      refetch();
+    } finally {
+      setUpdatingTopicKey(null);
+    }
   };
 
   const renderInlineForm = (tutor: Tutor, date: string, block: any, palette: any) => {
@@ -708,12 +721,16 @@ export function WeekView({
                                               }
                                               setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: isoDate, tutorName: tutor.name, block });
                                             }}>
-                                            <div className="flex justify-between items-start mb-1">
-                                              <div className="flex items-center gap-1.5 min-w-0">
-                                                <p className="text-xs font-bold leading-tight truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="flex items-center gap-1 min-w-0 flex-1">
+                                                <p className="text-xs font-bold leading-tight truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>
+                                                  {student.seriesId && <span className="text-[9px] font-black mr-0.5" style={{ color: '#7c3aed' }}>↺</span>}
+                                                  {student.name}
+                                                  {student.grade ? <span style={{ color: '#6b7280' }}> ({student.grade})</span> : null}
+                                                </p>
                                                 {attendanceBadge(student.status) && (
                                                   <span
-                                                    className="text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+                                                    className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider"
                                                     style={{
                                                       background: attendanceBadge(student.status)!.bg,
                                                       color: attendanceBadge(student.status)!.color,
@@ -724,7 +741,14 @@ export function WeekView({
                                                   </span>
                                                 )}
                                               </div>
-                                              <div className="flex items-center gap-1 shrink-0 ml-1">
+                                              <TopicCombobox
+                                                value={student.topic ?? 'General'}
+                                                topics={Array.from(new Set(['General', ...(tutor.subjects ?? []), student.topic || 'General']))}
+                                                onChange={(v) => void handleTopicChange(student.rowId, v)}
+                                                disabled={updatingTopicKey === student.rowId}
+                                                size="md"
+                                              />
+                                              <div className="flex items-center gap-1 shrink-0">
                                                 {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>✓</span>}
                                                 {student.confirmationStatus === 'cancelled'            && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
                                                 {student.confirmationStatus === 'reschedule_requested' && <span style={{ color: '#334155', fontSize: 10 }}>↗</span>}
@@ -762,14 +786,7 @@ export function WeekView({
                                                 </button>
                                               </div>
                                             </div>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                              <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
-                                              {student.seriesId && (
-                                                <span className="text-[8px] font-black px-1 py-0.5 rounded" style={{ background: '#ede9fe', color: '#7c3aed', letterSpacing: '0.02em' }}>↺ REC</span>
-                                              )}
-                                            </div>
-                                            {student.grade && <p className="text-[10px] mt-0.5" style={{ color: '#6b7280' }}>Grade {student.grade}</p>}
-                                            {student.notes && <p className="text-[10px] mt-1 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
+                                            {student.notes && <p className="text-[9px] mt-1 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
                                             {bulkRemoveMode && (
                                               <div className="mt-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: isSelected ? '#7c3aed' : '#6b7280' }}>
                                                 <span style={{ width: 10, height: 10, borderRadius: 999, display: 'inline-block', background: isSelected ? '#7c3aed' : '#d1d5db' }} />
@@ -918,13 +935,16 @@ export function WeekView({
                                                   : { background: 'transparent', color: '#6b7280' }}>
                                                 <X size={7} strokeWidth={2} />
                                               </button>
-                                              <div className="flex-1 min-w-0"
-                                                style={{ cursor: bulkRemoveMode ? 'pointer' : 'default' }}>
-                                                <div className="flex items-center gap-1">
-                                                  <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1"
+                                                  style={{ cursor: bulkRemoveMode ? 'pointer' : 'default' }}>
+                                                  <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>
+                                                    {student.seriesId && <span className="text-[9px] font-black mr-0.5" style={{ color: '#7c3aed' }}>↺</span>}
+                                                    {student.name}{student.grade ? ` (${student.grade})` : ''}
+                                                  </p>
                                                   {attendanceBadge(student.status) && (
                                                     <span
-                                                      className="text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-wider"
+                                                      className="shrink-0 text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-wider"
                                                       style={{
                                                         background: attendanceBadge(student.status)!.bg,
                                                         color: attendanceBadge(student.status)!.color,
@@ -934,10 +954,15 @@ export function WeekView({
                                                       {student.status === 'present' ? 'P' : 'NS'}
                                                     </span>
                                                   )}
+                                                    <TopicCombobox
+                                                      value={student.topic ?? 'General'}
+                                                      topics={Array.from(new Set(['General', ...(tutor.subjects ?? []), student.topic || 'General']))}
+                                                      onChange={(v) => void handleTopicChange(student.rowId, v)}
+                                                      disabled={updatingTopicKey === student.rowId}
+                                                      size="sm"
+                                                    />
                                                 </div>
-                                                <p className="text-[8px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
-                                                  {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}{student.seriesId ? ' ↺' : ''}
-                                                </p>
+                                                {student.notes && <p className="text-[8px] mt-0.5 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
                                               </div>
                                               {bulkRemoveMode && (
                                                 <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ color: isSelected ? '#7c3aed' : '#6b7280' }}>

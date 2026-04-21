@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
 import { DB } from '@/lib/db';
 
+const DEMO_SEGMENT_COOKIE = 'gs_demo_segment';
+
 export type EventName =
   | 'attendance_marked'
   | 'confirmation_updated'
@@ -45,12 +47,41 @@ export type EventName =
   | 'command_search_input'
   | 'command_search_submitted';
 
+function getCookieValue(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+
+  const all = document.cookie;
+  if (!all) return null;
+
+  const target = `${name}=`;
+  const match = all
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(target));
+
+  if (!match) return null;
+  return decodeURIComponent(match.slice(target.length));
+}
+
+function withDemoSegment(properties: Record<string, any>): Record<string, any> {
+  const segment = getCookieValue(DEMO_SEGMENT_COOKIE);
+  if (!segment) return properties;
+  if (properties.visitor_segment) return properties;
+
+  return {
+    ...properties,
+    visitor_segment: segment,
+  };
+}
+
 export async function logEvent(
   event_name: EventName,
   properties: Record<string, any> = {}
 ) {
   try {
-    await supabase.from(DB.events).insert({ event_name, properties });
+    await supabase
+      .from(DB.events)
+      .insert({ event_name, properties: withDemoSegment(properties) });
   } catch {
     // never throw — analytics should never break the app
   }

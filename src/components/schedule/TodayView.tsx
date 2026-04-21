@@ -1,10 +1,11 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Search } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
+import { createInlineStudent, updateAttendance, updateSessionStudentTopic, removeStudentFromSession, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
+import { TopicCombobox } from './TopicCombobox';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
 
@@ -353,6 +354,7 @@ export function TodayView({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [draggingTopic, setDraggingTopic] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [updatingTopicKey, setUpdatingTopicKey] = useState<string | null>(null);
   const [slotFilterQuery, setSlotFilterQuery] = useState('');
   const filterInputRef = useRef<HTMLInputElement>(null);
 
@@ -637,6 +639,17 @@ export function TodayView({
     if (status === 'present') return 1;
     if (status === 'no-show') return 2;
     return 3;
+  };
+
+  const handleTopicChange = async (rowId: string | undefined, topic: string) => {
+    if (!rowId) return;
+    setUpdatingTopicKey(rowId);
+    try {
+      await updateSessionStudentTopic({ rowId, topic });
+      refetch();
+    } finally {
+      setUpdatingTopicKey(null);
+    }
   };
 
   const orderStudentsForDisplay = (students: any[]) =>
@@ -1179,12 +1192,16 @@ export function TodayView({
                                           :                               { background: palette.bg, border: `1.5px solid ${palette.border}`, boxShadow: '0 5px 12px rgba(99,102,241,0.1), 0 1px 0 rgba(17,24,39,0.12)' }
                                         }
                                         onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
-                                        <div className="flex justify-between items-start mb-1">
-                                          <div className="flex items-center gap-1.5 min-w-0">
-                                            <p className="text-sm font-bold leading-tight truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="flex items-center gap-1 min-w-0 flex-1">
+                                            <p className="text-sm font-bold leading-tight truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>
+                                              {student.seriesId && <span className="text-[10px] font-black mr-0.5" style={{ color: '#7c3aed' }}>↺</span>}
+                                              {student.name}
+                                              {student.grade ? <span style={{ color: '#6b7280' }}> ({student.grade})</span> : null}
+                                            </p>
                                             {attendanceBadge(student.status) && (
                                               <span
-                                                className="text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider"
+                                                className="shrink-0 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider"
                                                 style={{
                                                   background: attendanceBadge(student.status)!.bg,
                                                   color: attendanceBadge(student.status)!.color,
@@ -1195,8 +1212,15 @@ export function TodayView({
                                               </span>
                                             )}
                                           </div>
-                                          <div className="flex items-center gap-1">
-                                            {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>Confirmed</span>}
+                                          <TopicCombobox
+                                            value={student.topic ?? 'General'}
+                                            topics={Array.from(new Set(['General', ...(tutor.subjects ?? []), student.topic || 'General']))}
+                                            onChange={(v) => void handleTopicChange(student.rowId, v)}
+                                            disabled={updatingTopicKey === student.rowId}
+                                            size="md"
+                                          />
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            {student.confirmationStatus === 'confirmed'            && <span style={{ color: '#15803d', fontSize: 10 }}>✓</span>}
                                             {student.confirmationStatus === 'cancelled'            && <span style={{ color: '#dc2626', fontSize: 10 }}>✕</span>}
                                             {student.confirmationStatus === 'reschedule_requested' && <span style={{ color: '#334155', fontSize: 10 }}>↗</span>}
                                             <button
@@ -1233,14 +1257,7 @@ export function TodayView({
                                             </button>
                                           </div>
                                         </div>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                          <p className="text-[10px] font-semibold uppercase tracking-tight" style={{ color: palette.tag }}>{student.topic}</p>
-                                          {student.seriesId && (
-                                            <span className="text-[8px] font-black px-1 py-0.5 rounded" style={{ background: '#ede9fe', color: '#7c3aed', letterSpacing: '0.02em' }}>↺ REC</span>
-                                          )}
-                                        </div>
-                                        {student.grade && <p className="text-[10px] mt-0.5" style={{ color: '#6b7280' }}>Grade {student.grade}</p>}
-                                        {student.notes && <p className="text-[10px] mt-1 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
+                                        {student.notes && <p className="text-[9px] mt-1 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
                                       </div>
                                     ))}
 
@@ -1367,13 +1384,15 @@ export function TodayView({
                                               : { background: 'transparent', color: '#6b7280' }}>
                                             <X size={8} strokeWidth={2} />
                                           </button>
-                                          <div className="flex-1 min-w-0 cursor-pointer"
-                                            onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
-                                            <div className="flex items-center gap-1">
-                                              <p className="text-[10px] font-bold leading-none truncate" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>{student.name}</p>
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1" onClick={() => setSelectedSessionWithNotes({ ...session, activeStudent: student, dayName: dayLabel, date: todayIso, tutorName: tutor.name, block })}>
+                                              <p className="text-[10px] font-bold leading-none truncate flex-1" style={{ color: '#111827', textDecoration: student.status === 'no-show' ? 'line-through' : 'none' }}>
+                                                {student.seriesId && <span className="text-[9px] font-black mr-0.5" style={{ color: '#7c3aed' }}>↺</span>}
+                                                {student.name}{student.grade ? ` (${student.grade})` : ''}
+                                              </p>
                                               {attendanceBadge(student.status) && (
                                                 <span
-                                                  className="text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-wider"
+                                                  className="shrink-0 text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-wider"
                                                   style={{
                                                     background: attendanceBadge(student.status)!.bg,
                                                     color: attendanceBadge(student.status)!.color,
@@ -1383,10 +1402,15 @@ export function TodayView({
                                                   {student.status === 'present' ? 'P' : 'NS'}
                                                 </span>
                                               )}
+                                              <TopicCombobox
+                                                value={student.topic ?? 'General'}
+                                                topics={Array.from(new Set(['General', ...(tutor.subjects ?? []), student.topic || 'General']))}
+                                                onChange={(v) => void handleTopicChange(student.rowId, v)}
+                                                disabled={updatingTopicKey === student.rowId}
+                                                size="sm"
+                                              />
                                             </div>
-                                            <p className="text-[8px] leading-none mt-0.5 truncate" style={{ color: palette.tag }}>
-                                              {student.topic}{student.grade ? ` · Gr.${student.grade}` : ''}{student.seriesId ? ' ↺' : ''}
-                                            </p>
+                                            {student.notes && <p className="text-[8px] mt-0.5 italic truncate" style={{ color: '#6b7280' }}>📝 {student.notes}</p>}
                                           </div>
                                         </div>
                                       ))}
