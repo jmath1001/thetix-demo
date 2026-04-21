@@ -151,6 +151,7 @@ function ContactLink({ href, icon, label, sublabel }: { href: string; icon: Reac
 // ── Student header ────────────────────────────────────────────────────────────
 function StudentHeader({ student, onBook }: { student: any; onBook: () => void }) {
   const initials = student.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+  const hoursLeft = student.hoursLeft ?? student.hours_left
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
@@ -170,7 +171,7 @@ function StudentHeader({ student, onBook }: { student: any; onBook: () => void }
         <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
           {student.grade && <Pill color={C.textSecondary} bg={C.surface} border={C.border}>Gr. {student.grade}</Pill>}
           {student.subject && <Pill color={C.textSecondary} bg={C.surface} border={C.border}>{student.subject}</Pill>}
-          {student.hoursLeft !== undefined && <Pill color={C.amber} bg={C.amberSoft}>{student.hoursLeft}h left</Pill>}
+          {hoursLeft !== undefined && hoursLeft !== null && <Pill color={C.amber} bg={C.amberSoft}>{hoursLeft}h left</Pill>}
         </div>
       </div>
       <button onClick={onBook} style={{
@@ -438,12 +439,23 @@ function StudentProfileCard({ student, sessions, tutors, onOpenAttendanceModal, 
   student: any; sessions: any[]; tutors: any[]
   onOpenAttendanceModal?: (session: any) => void; onBook: () => void
 }) {
-  const [tab, setTab] = useState<'sessions' | 'contact'>('sessions')
+  const [tab, setTab] = useState<'overview' | 'sessions' | 'contact'>('overview')
+  const hoursLeft = student.hoursLeft ?? student.hours_left
+  const studentSessions = useMemo(
+    () => sessions
+      .filter((s: any) => (s.students ?? []).some((st: any) => st.id === student.id))
+      .sort((a: any, b: any) => b.date.localeCompare(a.date)),
+    [sessions, student.id]
+  )
+
+  const upcomingCount = studentSessions.filter((s: any) => s.date >= toISODate(new Date())).length
+  const pastCount = studentSessions.length - upcomingCount
+
   return (
     <div>
       <StudentHeader student={student} onBook={onBook} />
       <div style={{ display: 'flex', borderBottom: `1.5px solid ${C.border}`, background: C.surface, padding: '0 20px' }}>
-        {(['sessions', 'contact'] as const).map(t => (
+        {(['overview', 'sessions', 'contact'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: '10px 0', marginRight: 24, fontSize: 11, fontWeight: 700,
             textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -454,9 +466,47 @@ function StudentProfileCard({ student, sessions, tutors, onOpenAttendanceModal, 
           }}>{t}</button>
         ))}
       </div>
-      {tab === 'sessions'
-        ? <StudentSessionsCard student={student} tutors={tutors} onOpenAttendanceModal={onOpenAttendanceModal} onBook={onBook} />
-        : <StudentContactCard student={student} onBook={onBook} />}
+      {tab === 'overview' && (
+        <div style={{ background: C.bg }}>
+          <Section label="Profile snapshot" accent />
+          <div style={{ padding: '0 20px 14px', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Hours left</div>
+              <div style={{ marginTop: 3, fontSize: 16, fontWeight: 800, color: C.textPrimary }}>{hoursLeft ?? '—'}</div>
+            </div>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Upcoming</div>
+              <div style={{ marginTop: 3, fontSize: 16, fontWeight: 800, color: C.textPrimary }}>{upcomingCount}</div>
+            </div>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Session history</div>
+              <div style={{ marginTop: 3, fontSize: 16, fontWeight: 800, color: C.textPrimary }}>{pastCount}</div>
+            </div>
+          </div>
+
+          <Section label="Contact" />
+          <div style={{ padding: '0 20px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Student email</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 600, color: C.textPrimary }}>{student.email || 'Not on file'}</div>
+            </div>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Student phone</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 600, color: C.textPrimary }}>{student.phone || 'Not on file'}</div>
+            </div>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Mom</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 600, color: C.textPrimary }}>{student.mom_name || student.mom_phone || student.mom_email || 'Not on file'}</div>
+            </div>
+            <div style={{ border: `1.5px solid ${C.border}`, borderRadius: 10, background: '#fff', padding: '10px 12px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Dad</div>
+              <div style={{ marginTop: 3, fontSize: 12, fontWeight: 600, color: C.textPrimary }}>{student.dad_name || student.dad_phone || student.dad_email || 'Not on file'}</div>
+            </div>
+          </div>
+        </div>
+      )}
+      {tab === 'sessions' && <StudentSessionsCard student={student} tutors={tutors} onOpenAttendanceModal={onOpenAttendanceModal} onBook={onBook} />}
+      {tab === 'contact' && <StudentContactCard student={student} onBook={onBook} />}
     </div>
   )
 }

@@ -290,10 +290,16 @@ function maybeDeterministicPlan(query: string, context: CommandContext): Planned
   if (namedStudent && /contact|email|phone|parent/.test(lower)) {
     return { type: 'student_contact', studentId: namedStudent.id }
   }
+  if (namedStudent && /info|information|hours|hour|detail|details|record|all|everything/.test(lower)) {
+    return { type: 'student_profile', studentId: namedStudent.id }
+  }
   if (namedStudent && /history|upcoming|session|schedule|booked/.test(lower)) {
     return { type: 'student_sessions', studentId: namedStudent.id }
   }
   if (namedStudent && /show|find|lookup|look up|profile/.test(lower)) {
+    return { type: 'student_profile', studentId: namedStudent.id }
+  }
+  if (namedStudent) {
     return { type: 'student_profile', studentId: namedStudent.id }
   }
 

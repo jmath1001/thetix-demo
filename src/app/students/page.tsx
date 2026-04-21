@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
-  Plus, Trash2, GraduationCap, Loader2, Save, X, Search,
+  Plus, Trash2, GraduationCap, Loader2, Save, X, Clock,
   ChevronDown, ChevronUp, ExternalLink, BarChart2, AlertTriangle,
-  Upload, CheckSquare, Square, FileText, ChevronRight, Mail, Phone, User
+  Upload, CheckSquare, Square, ChevronRight, Mail, Phone, User
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { BookingForm, BookingToast } from '@/components/BookingForm';
@@ -185,15 +185,16 @@ function MetricsPanel({ students, allSessions, tutors }: { students: any[]; allS
   );
 }
 
-// ── Student Row (table row style) ─────────────────────────────────────────────
+// ── Student Row (compact card style) ──────────────────────────────────────────
 function StudentRow({
-  student, isActive, selected, onToggle, onRefetch, tutors, allSessions, allAvailableSeats, onBookingSuccess,
+  student, isActive, selected, onToggle, onRefetch, tutors, allSessions, allAvailableSeats, onBookingSuccess, forceExpanded = false,
 }: {
   student: any; isActive: boolean; selected: boolean; onToggle: () => void;
   onRefetch: () => void; tutors: any[]; allSessions: any[];
   allAvailableSeats: any[]; onBookingSuccess: (d: any) => void;
+  forceExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(forceExpanded);
   const [tab, setTab] = useState<'contact' | 'sessions'>('contact');
   const [showEditModal, setShowEditModal] = useState(false);
   const [draft, setDraft] = useState(student);
@@ -230,6 +231,11 @@ function StudentRow({
   const isAtRisk = past.length >= 3 && noShowCount / past.length > 0.4;
   const nextSession = upcoming[0];
   const latestSession = past[0];
+  const hoursLeft = typeof student.hours_left === 'number' ? student.hours_left : null;
+
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   const handleUpdate = async () => {
     setSaving(true);
@@ -288,119 +294,100 @@ function StudentRow({
   };
 
   return (
-    <>
-      {/* Main row */}
-      <div className="grid items-center transition-all"
+    <div className={forceExpanded ? 'h-full min-h-0 flex flex-col gap-2' : 'space-y-2'}>
+      {/* Main compact card (tutor-like shell) */}
+      <div
+        className="overflow-hidden rounded-2xl border shadow-[0_12px_28px_rgba(15,23,42,0.07)] transition-all"
         style={{
-          gridTemplateColumns: '32px 34px minmax(140px,2.2fr) minmax(56px,0.75fr) minmax(88px,1fr) minmax(88px,1fr) minmax(68px,0.8fr) minmax(108px,1fr)',
-          borderBottom: expanded ? 'none' : '1px solid #dbe4ee',
-          background: selected ? '#fff1f2' : expanded ? '#f8fbff' : '#ffffff',
-          minHeight: 58,
-        }}>
+          borderColor: selected ? '#fda4af' : expanded ? '#c7d2fe' : '#dbe4ee',
+          background: selected
+            ? 'linear-gradient(135deg, #fff8f8 0%, #ffffff 55%)'
+            : expanded
+              ? 'linear-gradient(135deg, #ffffff 0%, #f8fbff 58%, #eef2ff 100%)'
+              : '#ffffff',
+        }}
+      >
+        <div className="p-3.5">
+          <div className="flex items-start gap-2.5">
+            <button onClick={onToggle} className="mt-0.5 rounded-xl border border-[#cbd5e1] bg-white p-2 text-[#64748b] transition-colors hover:border-[#fda4af] hover:text-[#dc2626]" onMouseDown={e => e.stopPropagation()}>
+              {selected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
+            </button>
 
-        {/* Checkbox */}
-        <div className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
-          <button onClick={onToggle} className="text-[#64748b] hover:text-[#dc2626] transition-colors">
-            {selected ? <CheckSquare size={14} style={{ color: '#dc2626' }} /> : <Square size={14} />}
-          </button>
-        </div>
-
-        {/* Avatar */}
-        <div className="flex items-center justify-center">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0"
-            style={{ background: color }}>{initials}</div>
-        </div>
-
-        {/* Name + risk */}
-        <div className="flex items-center gap-2 min-w-0 cursor-pointer pr-2" onClick={() => setExpanded(e => !e)}>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[13px] font-black text-[#0f172a] truncate">{student.name}</span>
-              <span
-                className="rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider"
-                style={isActive
-                  ? { background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }
-                  : { background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }}>
-                {isActive ? 'Active' : 'Inactive'}
-              </span>
-              {isAtRisk && <AlertTriangle size={10} style={{ color: '#dc2626', flexShrink: 0 }} />}
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black text-white shrink-0" style={{ background: color, boxShadow: '0 8px 16px rgba(79,70,229,0.18)' }}>
+              {initials}
             </div>
-            {student.grade && <span className="text-[10px] text-[#94a3b8]">Grade {student.grade}</span>}
+
+            <button className="flex-1 min-w-0 text-left" onClick={() => { if (!forceExpanded) setExpanded(e => !e); }}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[13px] font-black text-[#0f172a] truncate">{student.name}</span>
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider"
+                  style={isActive
+                    ? { background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }
+                    : { background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }}>
+                  {isActive ? 'Active' : 'Inactive'}
+                </span>
+                {isAtRisk && <AlertTriangle size={10} style={{ color: '#dc2626', flexShrink: 0 }} />}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                {student.grade && <span className="rounded-full border border-[#dbeafe] bg-[#eff6ff] px-1.5 py-0.5 font-bold text-[#1d4ed8]">Gr {student.grade}</span>}
+                {hoursLeft !== null && <span className="rounded-full border border-[#fde68a] bg-[#fffbeb] px-1.5 py-0.5 font-bold text-[#b45309]">{hoursLeft}h left</span>}
+                {nextSession && (
+                  <span className="rounded-full border border-[#c7d2fe] bg-[#eef2ff] px-1.5 py-0.5 font-bold text-[#4f46e5]">
+                    Next {new Date(nextSession.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+              <Link href={`/students/${student.id}`}
+                className="inline-flex items-center rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] transition-all"
+                style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569' }}>
+                History
+              </Link>
+              <button onClick={() => setShowBooking(true)}
+                className="rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white transition-all"
+                style={{ background: '#4f46e5' }}>
+                Book
+              </button>
+              <button onClick={handleDelete}
+                className={`p-1.5 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
+                {confirmDelete ? '?' : <Trash2 size={11} />}
+              </button>
+              <button onClick={() => { if (!forceExpanded) setExpanded(e => !e); }} className="rounded-lg border border-[#e2e8f0] p-1.5 text-[#94a3b8] hover:text-[#475569] transition-colors">
+                {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Sessions count */}
-        <div className="text-center">
-          <span className="text-[12px] font-bold text-[#475569]">{allStudentSessions.length}</span>
-        </div>
-
-        {/* Booking status */}
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: isBooked ? '#16a34a' : '#dc2626' }} />
-          <span className="text-[11px] font-semibold" style={{ color: isBooked ? '#16a34a' : '#dc2626' }}>
-            {isBooked ? 'Booked' : 'Not booked'}
-          </span>
-        </div>
-
-        {/* Attendance */}
-        <div className="flex items-center gap-1.5">
-          {past.length > 0 ? (
-            <>
-              <div className="flex gap-0.5">
+          <div className="mt-3 grid gap-2.5 md:grid-cols-3">
+            <div className="rounded-xl border border-[#e2e8f0] bg-white px-3 py-2.5">
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#64748b]">Sessions</p>
+              <p className="mt-1 text-sm font-black text-[#0f172a]">{allStudentSessions.length}</p>
+              <p className="text-[10px] text-[#64748b]">{upcoming.length} upcoming · {past.length} past</p>
+            </div>
+            <div className="rounded-xl border border-[#e2e8f0] bg-white px-3 py-2.5">
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#64748b]">Booking</p>
+              <p className="mt-1 text-sm font-black" style={{ color: isBooked ? '#15803d' : '#dc2626' }}>{isBooked ? 'Booked this week' : 'Not booked'}</p>
+              <p className="text-[10px] text-[#64748b]">{latestSession ? `Last ${new Date(latestSession.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'No previous sessions'}</p>
+            </div>
+            <div className="rounded-xl border border-[#e2e8f0] bg-white px-3 py-2.5">
+              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#64748b]">Attendance</p>
+              <p className="mt-1 text-sm font-black" style={{ color: rateColor }}>{past.length > 0 ? `${Math.round((rate ?? 0) * 100)}%` : 'No data'}</p>
+              <div className="mt-1 flex gap-0.5">
                 {past.slice(0, 5).map((s, i) => (
                   <div key={i} className="w-2 h-2 rounded-sm" style={{ background: statusDot(s.status) }} />
                 ))}
               </div>
-              <span className="text-[11px] font-bold" style={{ color: rateColor }}>
-                {rate !== null ? `${Math.round(rate * 100)}%` : '—'}
-              </span>
-            </>
-          ) : (
-            <span className="text-[11px] text-[#cbd5e1]">No data</span>
-          )}
-        </div>
-
-        {/* Next session */}
-        <div>
-          <div className="flex flex-col">
-            <span className="text-[9px] font-semibold" style={{ color: nextSession ? '#4f46e5' : '#cbd5e1' }}>
-              {nextSession
-                ? `Next ${new Date(nextSession.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                : 'Next —'}
-            </span>
-            <span className="text-[9px]" style={{ color: latestSession ? '#64748b' : '#cbd5e1' }}>
-              {latestSession
-                ? `Last ${new Date(latestSession.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                : 'Last —'}
-            </span>
+            </div>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-end gap-1.5 pr-3" onClick={e => e.stopPropagation()}>
-          <Link href={`/students/${student.id}`}
-            className="inline-flex items-center rounded-md px-2.5 py-1.5 text-[10px] font-bold transition-all"
-            style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569' }}>
-            History
-          </Link>
-          <button onClick={() => setShowBooking(true)}
-            className="rounded-md px-2.5 py-1.5 text-[10px] font-bold text-white transition-all"
-            style={{ background: '#4f46e5' }}>
-            Book
-          </button>
-          <button onClick={handleDelete}
-            className={`p-1.5 rounded-md transition-all ${confirmDelete ? 'bg-red-50 text-red-500' : 'text-[#cbd5e1] hover:text-red-400'}`}>
-            {confirmDelete ? '?' : <Trash2 size={11} />}
-          </button>
-          <button onClick={() => setExpanded(e => !e)} className="p-1 text-[#94a3b8] hover:text-[#475569] transition-colors">
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
         </div>
       </div>
 
       {/* Expanded panel */}
       {expanded && (
-        <div style={{ borderBottom: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
+        <div className={forceExpanded ? 'min-h-0 flex-1 overflow-hidden' : ''} style={{ borderBottom: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
           {/* Tab bar */}
           <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             {(['contact', 'sessions'] as const).map(t => (
@@ -408,7 +395,7 @@ function StudentRow({
                 className="relative mr-6 py-3 text-[11px] font-bold transition-colors"
                 style={tab === t
                   ? { color: '#4f46e5', borderBottom: '2px solid #4f46e5', marginBottom: -1 }
-                  : { color: '#94a3b8', borderBottom: '2px solid transparent', marginBottom: -1 }}>
+                  : { color: '#64748b', borderBottom: '2px solid transparent', marginBottom: -1 }}>
                 {t === 'sessions' ? `Sessions${allStudentSessions.length > 0 ? ` · ${allStudentSessions.length}` : ''}` : 'Contact Info'}
               </button>
             ))}
@@ -418,108 +405,53 @@ function StudentRow({
                 style={{ background: '#fff', borderColor: '#cbd5e1', color: '#475569' }}>
                 Edit Info
               </button>
-              <button onClick={() => setShowBooking(true)}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[10px] font-bold text-white transition-all"
-                style={{ background: '#4f46e5' }}>
-                + Book Session
-              </button>
             </div>
           </div>
 
-          <div className="px-6 py-5 max-h-[62vh] overflow-y-auto">
+          <div className={forceExpanded ? 'px-6 py-5 h-full overflow-y-auto' : 'px-6 py-5 max-h-[62vh] overflow-y-auto'}>
             {tab === 'contact' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Student */}
                 <div>
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Student</p>
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#475569]">Student</p>
                   <div className="space-y-2.5">
-                    {student.grade && (
-                      <div className="flex items-center gap-2.5">
-                        <GraduationCap size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                        <span className="text-[12px] font-semibold text-[#334155]">Grade {student.grade}</span>
-                      </div>
-                    )}
-                    {student.email ? (
-                      <div className="flex items-center gap-2.5">
-                        <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                        <span className="text-[12px] font-medium text-[#334155] truncate">{student.email}</span>
-                      </div>
-                    ) : null}
-                    {student.phone ? (
-                      <div className="flex items-center gap-2.5">
-                        <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                        <span className="text-[12px] font-medium text-[#334155]">{student.phone}</span>
-                      </div>
-                    ) : null}
-                    {!student.email && !student.phone && !student.grade && (
-                      <p className="text-[11px] italic text-[#cbd5e1]">No info on file</p>
-                    )}
-                    {student.bluebook_url && (
-                      <a href={student.bluebook_url} target="_blank" rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold transition-all"
-                        style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }}>
-                        <ExternalLink size={10} /> Bluebook
-                      </a>
-                    )}
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#fcd34d] bg-[#fffbeb] px-3 py-2">
+                      <Clock size={12} className="shrink-0" style={{ color: '#b45309' }} />
+                      <span className="text-[12px] font-black text-[#92400e]">Hours left: {typeof student.hours_left === 'number' ? student.hours_left : 'Not on file'}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2">
+                      <Mail size={12} className="shrink-0" style={{ color: '#64748b' }} />
+                      <span className="text-[12px] font-medium text-[#0f172a] truncate">{student.email ?? 'Not on file'}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2">
+                      <Phone size={12} className="shrink-0" style={{ color: '#64748b' }} />
+                      <span className="text-[12px] font-medium text-[#0f172a]">{student.phone ?? 'Not on file'}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2">
+                      <ExternalLink size={12} className="shrink-0" style={{ color: '#64748b' }} />
+                      <span className="text-[12px] font-medium text-[#0f172a] truncate">{student.bluebook_url ?? 'Not on file'}</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Mom */}
                 <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Mother</p>
-                  {(student.mom_name || student.mom_email || student.mom_phone) ? (
-                    <div className="space-y-2.5">
-                      {student.mom_name && (
-                        <div className="flex items-center gap-2.5">
-                          <User size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-semibold text-[#0f172a]">{student.mom_name}</span>
-                        </div>
-                      )}
-                      {student.mom_email && (
-                        <div className="flex items-center gap-2.5">
-                          <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-medium text-[#334155] truncate">{student.mom_email}</span>
-                        </div>
-                      )}
-                      {student.mom_phone && (
-                        <div className="flex items-center gap-2.5">
-                          <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-medium text-[#334155]">{student.mom_phone}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] italic text-[#cbd5e1]">Not on file</p>
-                  )}
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#475569]">Mother</p>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><User size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-semibold text-[#0f172a]">{student.mom_name ?? 'Not on file'}</span></div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><Mail size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-medium text-[#0f172a] truncate">{student.mom_email ?? 'Not on file'}</span></div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><Phone size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-medium text-[#0f172a]">{student.mom_phone ?? 'Not on file'}</span></div>
+                  </div>
                 </div>
 
                 {/* Dad */}
                 <div style={{ borderLeft: '1px solid #e2e8f0', paddingLeft: '1.5rem' }}>
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#94a3b8]">Father</p>
-                  {(student.dad_name || student.dad_email || student.dad_phone) ? (
-                    <div className="space-y-2.5">
-                      {student.dad_name && (
-                        <div className="flex items-center gap-2.5">
-                          <User size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-semibold text-[#0f172a]">{student.dad_name}</span>
-                        </div>
-                      )}
-                      {student.dad_email && (
-                        <div className="flex items-center gap-2.5">
-                          <Mail size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-medium text-[#334155] truncate">{student.dad_email}</span>
-                        </div>
-                      )}
-                      {student.dad_phone && (
-                        <div className="flex items-center gap-2.5">
-                          <Phone size={12} className="shrink-0" style={{ color: '#94a3b8' }} />
-                          <span className="text-[12px] font-medium text-[#334155]">{student.dad_phone}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] italic text-[#cbd5e1]">Not on file</p>
-                  )}
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-[0.22em] text-[#475569]">Father</p>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><User size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-semibold text-[#0f172a]">{student.dad_name ?? 'Not on file'}</span></div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><Mail size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-medium text-[#0f172a] truncate">{student.dad_email ?? 'Not on file'}</span></div>
+                    <div className="flex items-center gap-2.5 rounded-lg border border-[#d1d5db] bg-[#f3f4f6] px-3 py-2"><Phone size={12} className="shrink-0" style={{ color: '#64748b' }} /><span className="text-[12px] font-medium text-[#0f172a]">{student.dad_phone ?? 'Not on file'}</span></div>
+                  </div>
                 </div>
               </div>
             )}
@@ -670,7 +602,74 @@ function StudentRow({
           </div>
         </div>
       )}
-    </>
+    </div>
+  );
+}
+
+function StudentListItem({
+  student,
+  isActive,
+  isSelected,
+  onClick,
+  onToggle,
+  summary,
+}: {
+  student: any;
+  isActive: boolean;
+  isSelected: boolean;
+  onClick: () => void;
+  onToggle: () => void;
+  summary: { total: number; upcoming: number; attendanceRate: number | null; isAtRisk: boolean };
+}) {
+  const initials = student.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+  return (
+    <div
+      role="listitem"
+      tabIndex={0}
+      onClick={onClick}
+      className="w-full rounded-xl border px-2.5 py-2 text-left transition-all"
+      style={{
+        borderColor: isActive ? '#1d4ed8' : isSelected ? '#fca5a5' : '#dbe4ee',
+        background: isActive
+          ? 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 58%, #ffffff 100%)'
+          : isSelected
+            ? 'linear-gradient(135deg, #fff7f7 0%, #fff1f2 100%)'
+            : '#ffffff',
+        boxShadow: isActive ? '0 18px 34px rgba(37,99,235,0.14)' : '0 1px 2px rgba(15,23,42,0.04)',
+      }}>
+      <div className="flex items-start gap-2.5">
+        <button
+          type="button"
+          onClick={event => {
+            event.stopPropagation();
+            onToggle();
+          }}
+          className="mt-0.5 rounded-md border p-1 transition-colors"
+          style={{
+            borderColor: isActive ? '#c7d2fe' : '#cbd5e1',
+            background: isSelected ? '#fee2e2' : 'transparent',
+            color: isSelected ? '#dc2626' : isActive ? '#475569' : '#64748b',
+          }}>
+          {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+        </button>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0" style={{ background: avatarColor(student.name) }}>
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-[12px] font-black leading-tight" style={{ color: '#0f172a' }}>{student.name || 'Unnamed student'}</p>
+            {summary.isAtRisk && <AlertTriangle size={12} style={{ color: '#dc2626', flexShrink: 0 }} />}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold" style={{ color: '#64748b' }}>
+            <span>{summary.total} total</span>
+            <span>•</span>
+            <span>{summary.upcoming} upcoming</span>
+            <span>•</span>
+            <span>{summary.attendanceRate !== null ? `${Math.round(summary.attendanceRate * 100)}%` : '—'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -690,6 +689,8 @@ export default function StudentAdminPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmBulk, setConfirmBulk] = useState(false);
+  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -761,6 +762,30 @@ export default function StudentAdminPage() {
     return true;
   });
 
+  const studentSummaryById = useMemo(() => {
+    const map = new Map<string, { total: number; upcoming: number; attendanceRate: number | null; isAtRisk: boolean }>();
+    students.forEach(student => {
+      const sessionsForStudent = allSessions.flatMap(s => s.students.filter((st: any) => st.id === student.id));
+      const total = sessionsForStudent.length;
+      const upcoming = allSessions.filter(s => s.date >= today && s.students.some((st: any) => st.id === student.id)).length;
+      const pastSessions = allSessions
+        .filter(s => s.date < today)
+        .flatMap(s => s.students.filter((st: any) => st.id === student.id));
+      const present = pastSessions.filter((st: any) => st.status === 'present' || st.status === 'confirmed').length;
+      const noShow = pastSessions.filter((st: any) => st.status === 'no-show').length;
+      const attendanceRate = pastSessions.length > 0 ? present / pastSessions.length : null;
+      const isAtRisk = pastSessions.length >= 3 && noShow / pastSessions.length > 0.4;
+      map.set(student.id, { total, upcoming, attendanceRate, isAtRisk });
+    });
+    return map;
+  }, [students, allSessions, today]);
+
+  const activeStudent = filtered.find(student => student.id === activeStudentId)
+    ?? students.find(student => student.id === activeStudentId)
+    ?? filtered[0]
+    ?? students[0]
+    ?? null;
+
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.id));
   const toggleAll = () => {
     if (allSelected) { setSelected(new Set()); }
@@ -793,8 +818,8 @@ export default function StudentAdminPage() {
   };
 
   return (
-    <div className="student-admin h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe5f0 0%, #edf2f7 26%, #f6f8fb 100%)', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-      <div className="h-full overflow-y-auto overscroll-contain">
+    <div className="student-admin h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe7f5 0%, #eef4fb 180px, #f8fafc 360px, #f8fafc 100%)', fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="flex h-full flex-col overflow-hidden overscroll-contain">
 
       {/* Top bar */}
       <div className="sticky top-0 z-40 border-b border-[#e2e8f0] backdrop-blur-xl" style={{ background: 'rgba(255,255,255,0.92)' }}>
@@ -820,6 +845,11 @@ export default function StudentAdminPage() {
                 {confirmBulk ? `Confirm delete ${selected.size}` : `Delete ${selected.size}`}
               </button>
             )}
+            <button onClick={() => setShowAnalytics(true)}
+              className="flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] transition-all"
+              style={{ background: '#ffffff', borderColor: '#cbd5e1', color: '#334155' }}>
+              <BarChart2 size={11} /> Analytics
+            </button>
             <button onClick={() => setShowImport(true)}
               className="flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] transition-all"
               style={{ background: '#ffffff', borderColor: '#cbd5e1', color: '#334155' }}>
@@ -835,7 +865,7 @@ export default function StudentAdminPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-5 py-5 space-y-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col space-y-4 overflow-hidden px-5 py-4">
 
         {/* Stats */}
         {!loading && (
@@ -860,17 +890,6 @@ export default function StudentAdminPage() {
             ))}
           </div>
         )}
-
-        {!loading && <MetricsPanel students={students} allSessions={allSessions} tutors={tutors} />}
-
-        {/* Search */}
-        <div className="relative rounded-xl border border-[#cbd5e1] bg-white p-2 shadow-[0_18px_38px_rgba(15,23,42,0.08)]">
-          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94a3b8]" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…"
-            className="w-full rounded-lg border border-[#cbd5e1] bg-[#f8fafc] py-3 pl-10 pr-10 text-sm font-medium text-[#0f172a] outline-none transition-all placeholder:text-[#64748b] focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff]" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94a3b8]"><X size={13} /></button>}
-        </div>
-
         {/* Add student form */}
         {adding && (
           <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
@@ -931,39 +950,79 @@ export default function StudentAdminPage() {
           </div>
         )}
 
-        {/* Table */}
+        {/* Student roster + detail */}
         {loading ? (
           <div className="flex flex-col items-center py-24 gap-3">
             <Loader2 size={22} className="animate-spin text-[#dc2626]" />
             <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-widest">Loading…</p>
           </div>
         ) : filtered.length > 0 ? (
-          <div className="overflow-hidden rounded-xl bg-white shadow-[0_20px_44px_rgba(15,23,42,0.1)]" style={{ border: '1px solid #cbd5e1' }}>
-            {/* Table header */}
-            <div className="grid items-center px-0"
-              style={{ gridTemplateColumns: '32px 34px minmax(140px,2.2fr) minmax(56px,0.75fr) minmax(88px,1fr) minmax(88px,1fr) minmax(68px,0.8fr) minmax(108px,1fr)', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', height: 40 }}>
-              <div className="flex items-center justify-center">
-                <button onClick={toggleAll} className="text-[#94a3b8] hover:text-[#dc2626] transition-colors">
-                  {allSelected ? <CheckSquare size={13} style={{ color: '#dc2626' }} /> : <Square size={13} />}
-                </button>
+          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
+            <div className="flex min-h-0 flex-col space-y-2.5 rounded-3xl border border-[#9fb4d1] bg-[linear-gradient(180deg,#dbe7f5_0%,#eef4fb_100%)] p-2.5 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+              <div className="rounded-xl border border-[#bfd0e6] bg-[linear-gradient(135deg,#ffffff_0%,#edf4ff_100%)] p-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2563eb]">Roster</p>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <p className="text-sm font-black text-[#0f172a]">{filtered.length} students</p>
+                  <span className="rounded-full bg-[#dbeafe] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#1d4ed8]">{activeIds.size} active</span>
+                </div>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, email, phone"
+                  className="mt-2.5 w-full rounded-lg border border-[#cbd5e1] bg-[#f8fafc] px-3 py-2 text-sm font-medium text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#60a5fa] focus:outline-none"
+                />
               </div>
-              <div />
-              {['Student', 'Sessions', 'Booking', 'Attendance', 'Next / Latest', 'Actions'].map(h => (
-                <div key={h} className={`text-[9px] font-black uppercase tracking-[0.2em] text-[#64748b] ${h === 'Actions' ? 'text-right pr-3' : ''}`}>{h}</div>
-              ))}
+
+              <div className="flex items-center justify-between rounded-xl border border-[#bfd0e6] bg-white px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+                <button onClick={toggleAll} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569]">
+                  {allSelected ? <CheckSquare size={14} style={{ color: '#f87171' }} /> : <Square size={14} />}
+                  {allSelected ? 'Clear selection' : 'Select all'}
+                </button>
+                <span className="rounded-full bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">{selected.size} selected</span>
+              </div>
+
+              <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+                {filtered.map(student => (
+                  <StudentListItem
+                    key={student.id}
+                    student={student}
+                    isActive={activeStudent?.id === student.id}
+                    isSelected={selected.has(student.id)}
+                    summary={studentSummaryById.get(student.id) ?? { total: 0, upcoming: 0, attendanceRate: null, isAtRisk: false }}
+                    onClick={() => setActiveStudentId(student.id)}
+                    onToggle={() => {
+                      const next = new Set(selected);
+                      if (next.has(student.id)) next.delete(student.id);
+                      else next.add(student.id);
+                      setSelected(next);
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-            {/* Rows */}
-            {filtered.map(s => (
-              <StudentRow
-                key={s.id} student={s}
-                isActive={activeIds.has(s.id)}
-                selected={selected.has(s.id)}
-                onToggle={() => setSelected(sel => { const n = new Set(sel); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; })}
-                onRefetch={fetchData} tutors={tutors} allSessions={allSessions}
-                allAvailableSeats={allAvailableSeats}
-                onBookingSuccess={d => { setBookingToast(d); setTimeout(() => setBookingToast(null), 4000); }}
-              />
-            ))}
+
+            <div className="min-h-0 h-full overflow-hidden">
+              {activeStudent ? (
+                <StudentRow
+                  key={activeStudent.id}
+                  student={activeStudent}
+                  isActive={activeIds.has(activeStudent.id)}
+                  selected={selected.has(activeStudent.id)}
+                  forceExpanded={true}
+                  onToggle={() => setSelected(sel => { const n = new Set(sel); n.has(activeStudent.id) ? n.delete(activeStudent.id) : n.add(activeStudent.id); return n; })}
+                  onRefetch={fetchData}
+                  tutors={tutors}
+                  allSessions={allSessions}
+                  allAvailableSeats={allAvailableSeats}
+                  onBookingSuccess={d => { setBookingToast(d); setTimeout(() => setBookingToast(null), 4000); }}
+                />
+              ) : (
+                <div className="rounded-[28px] border border-[#cbd5e1] bg-white px-6 py-16 text-center shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+                  <p className="text-lg font-black text-[#0f172a]">Pick a student</p>
+                  <p className="mt-2 text-[12px] text-[#64748b]">Select someone from the roster to review contact, sessions, and book quickly.</p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="rounded-xl bg-white py-24 text-center shadow-[0_20px_44px_rgba(15,23,42,0.08)]" style={{ border: '1px dashed #cbd5e1' }}>
@@ -977,6 +1036,19 @@ export default function StudentAdminPage() {
 
       {showImport && <CSVImportModal onClose={() => setShowImport(false)} onImported={fetchData} />}
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
+      {showAnalytics && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.56)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAnalytics(false); }}>
+          <div className="w-full max-w-6xl max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-end">
+              <button onClick={() => setShowAnalytics(false)} className="rounded-lg border border-[#cbd5e1] bg-white p-2 text-[#64748b]">
+                <X size={14} />
+              </button>
+            </div>
+            <MetricsPanel students={students} allSessions={allSessions} tutors={tutors} />
+          </div>
+        </div>
+      )}
       <style>{`
         .student-admin button {
           border-radius: 8px !important;
