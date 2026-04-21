@@ -1,28 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const CORRECT_PASSWORD = process.env.APP_PASSWORD || 'password123';
-
-export function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-  
-  // Allow login page and API auth routes
-  if (pathname === '/login' || pathname.startsWith('/api/auth')) {
-    return NextResponse.next();
-  }
-  
-  // Allow static assets and next internals
-  if (pathname.startsWith('/_next') || pathname.startsWith('/public')) {
-    return NextResponse.next();
-  }
-  
-  // Check for auth cookie on all other routes
-  const authCookie = request.cookies.get('authenticated')?.value;
-  
-  if (authCookie !== 'true') {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-  
+export function middleware(_request: NextRequest) {
   return NextResponse.next();
 }
 
