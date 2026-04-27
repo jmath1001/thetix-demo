@@ -8,6 +8,16 @@ export type SessionBlock = {
   days: number[]    // which days this session exists on (1=Mon…4=Thu, 6=Sat)
 }
 
+export type SessionTimesByDay = Record<string, string[]>
+
+export const DEFAULT_SESSION_TIMES_BY_DAY: SessionTimesByDay = {
+  '1': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
+  '2': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
+  '3': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
+  '4': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
+  '6': ['09:30-11:20', '11:30-13:20', '13:30-15:20', '15:30-17:20'],
+}
+
 export const SESSION_BLOCKS: SessionBlock[] = [
   { id: 'S1', label: 'Session 1', time: '13:30', display: '1:30 – 3:20 PM', days: [1, 2, 3, 4] },
   { id: 'S2', label: 'Session 2', time: '15:30', display: '3:30 – 5:20 PM', days: [1, 2, 3, 4] },
@@ -19,6 +29,34 @@ export const SESSION_BLOCKS: SessionBlock[] = [
   { id: 'S8', label: 'Session 4', time: '15:30', display: '3:30 – 5:20 PM', days: [6] },
 ]
 
+function buildBlocksFromTimes(dow: number, slots: string[]): SessionBlock[] {
+  return [...new Set(slots)]
+    .sort((a, b) => {
+      const aStart = a.split('-')[0]
+      const bStart = b.split('-')[0]
+      return aStart.localeCompare(bStart)
+    })
+    .map((slot, i) => {
+      const parts = slot.split('-')
+      const hasEnd = parts.length === 2 && parts[1].includes(':')
+      const startTime = hasEnd ? parts[0] : slot
+      const endTime = hasEnd ? parts[1] : null
+
+      const existing = SESSION_BLOCKS.find(s => s.time === startTime && s.days.includes(dow))
+      if (existing && !endTime) return existing
+
+      return {
+        id: `D${dow}-T${startTime}`,
+        label: `Session ${i + 1}`,
+        time: startTime,
+        display: endTime
+          ? `${formatTime(startTime)} – ${formatTime(endTime)}`
+          : formatTime(startTime),
+        days: [dow],
+      }
+    })
+}
+
 // TIME_SLOTS is kept for compatibility — just the unique start times
 export const TIME_SLOTS = SESSION_BLOCKS.map(s => s.time)
 
@@ -27,7 +65,18 @@ export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday']
 export const MAX_CAPACITY = 3
 
 /** Get session blocks available on a given day-of-week number */
-export function getSessionsForDay(dow: number): SessionBlock[] {
+export function getSessionsForDay(dow: number, sessionTimesByDay?: SessionTimesByDay | null): SessionBlock[] {
+  if (sessionTimesByDay) {
+    const key = String(dow)
+    if (Object.prototype.hasOwnProperty.call(sessionTimesByDay, key)) {
+      const dayTimes = Array.isArray(sessionTimesByDay[key]) ? sessionTimesByDay[key] : []
+      if (dayTimes.length > 0) {
+        return buildBlocksFromTimes(dow, dayTimes)
+      }
+      // Explicitly configured but empty means no sessions for this day.
+      return []
+    }
+  }
   return SESSION_BLOCKS.filter(s => s.days.includes(dow))
 }
 

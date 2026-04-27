@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { DB, withCenter, withCenterPayload } from '@/lib/db'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const p = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const RECURRING_TABLE = `${p}_recurring_series`
-const SESSIONS_TABLE  = `${p}_sessions`
-const SS_TABLE        = `${p}_session_students`
-const STUDENTS_TABLE  = `${p}_students`
-const TIME_OFF_TABLE  = `${p}_tutor_time_off`
+const RECURRING_TABLE = DB.recurringSeries
+const SESSIONS_TABLE  = DB.sessions
+const SS_TABLE        = DB.sessionStudents
+const STUDENTS_TABLE  = DB.students
+const TIME_OFF_TABLE  = DB.timeOff
 const MAX_CAPACITY    = 3
 
 function toISODate(d: Date): string {
@@ -36,10 +36,12 @@ export async function POST(req: NextRequest) {
 
     const totalWeeks = Math.max(1, Math.min(52, Number(weeks) || 1))
 
-    const { data: studentRow, error: studentErr } = await supabase
-      .from(STUDENTS_TABLE)
-      .select('id, name')
-      .eq('id', studentId)
+    const { data: studentRow, error: studentErr } = await withCenter(
+      supabase
+        .from(STUDENTS_TABLE)
+        .select('id, name')
+        .eq('id', studentId)
+    )
       .single()
 
     if (studentErr || !studentRow) {
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     // Create the recurring series row
     const { data: series, error: seriesErr } = await supabase
       .from(RECURRING_TABLE)
-      .insert({
+      .insert(withCenterPayload({
         student_id:  studentId,
         tutor_id:    tutorId,
         day_of_week: dayOfWeek,
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
         end_date:    endDate,
         total_weeks: totalWeeks,
         status:      'active',
-      })
+      }))
       .select('id')
       .single()
 
@@ -85,11 +87,13 @@ export async function POST(req: NextRequest) {
       d.setDate(d.getDate() + w * 7)
       const isoDate = toISODate(d)
 
-      const { data: offDay, error: offDayErr } = await supabase
-        .from(TIME_OFF_TABLE)
-        .select('id')
-        .eq('tutor_id', tutorId)
-        .eq('date', isoDate)
+      const { data: offDay, error: offDayErr } = await withCenter(
+        supabase
+          .from(TIME_OFF_TABLE)
+          .select('id')
+          .eq('tutor_id', tutorId)
+          .eq('date', isoDate)
+      )
         .maybeSingle()
 
       if (offDayErr) {
@@ -101,11 +105,13 @@ export async function POST(req: NextRequest) {
         continue
       }
 
-      const { data: sessionsAtTime, error: sessionsAtTimeErr } = await supabase
-        .from(SESSIONS_TABLE)
-        .select('id, tutor_id')
-        .eq('session_date', isoDate)
-        .eq('time', time)
+      const { data: sessionsAtTime, error: sessionsAtTimeErr } = await withCenter(
+        supabase
+          .from(SESSIONS_TABLE)
+          .select('id, tutor_id')
+          .eq('session_date', isoDate)
+          .eq('time', time)
+      )
 
       if (sessionsAtTimeErr) {
         return NextResponse.json({ error: sessionsAtTimeErr.message }, { status: 500 })
@@ -114,12 +120,14 @@ export async function POST(req: NextRequest) {
       const slotSessionIds = (sessionsAtTime ?? []).map((s: any) => s.id)
 
       if (slotSessionIds.length > 0) {
-        const { data: existingRows, error: existingRowsErr } = await supabase
-          .from(SS_TABLE)
-          .select('id, session_id')
-          .in('session_id', slotSessionIds)
-          .eq('student_id', studentId)
-          .neq('status', 'cancelled')
+        const { data: existingRows, error: existingRowsErr } = await withCenter(
+          supabase
+            .from(SS_TABLE)
+            .select('id, session_id')
+            .in('session_id', slotSessionIds)
+            .eq('student_id', studentId)
+            .neq('status', 'cancelled')
+        )
 
         if (existingRowsErr) {
           return NextResponse.json({ error: existingRowsErr.message }, { status: 500 })
@@ -131,9 +139,11 @@ export async function POST(req: NextRequest) {
           )
 
           if (sameTutorBooking) {
-            const { error: updateErr } = await supabase
-              .from(SS_TABLE)
-              .update({ series_id: seriesId, topic })
+            const { error: updateErr } = await withCenter(
+              supabase
+                .from(SS_TABLE)
+                .update({ series_id: seriesId, topic })
+            )
               .eq('id', sameTutorBooking.id)
 
             if (updateErr) {
@@ -159,7 +169,7 @@ export async function POST(req: NextRequest) {
       } else {
         const { data: createdSession, error: createSessionErr } = await supabase
           .from(SESSIONS_TABLE)
-          .insert({ session_date: isoDate, tutor_id: tutorId, time })
+          .insert(withCenterPayload({ session_date: isoDate, tutor_id: tutorId, time }))
           .select('id')
           .single()
 
@@ -170,11 +180,13 @@ export async function POST(req: NextRequest) {
         targetSessionId = createdSession.id
       }
 
-      const { data: enrolledRows, error: enrolledErr } = await supabase
-        .from(SS_TABLE)
-        .select('id')
-        .eq('session_id', targetSessionId)
-        .neq('status', 'cancelled')
+      const { data: enrolledRows, error: enrolledErr } = await withCenter(
+        supabase
+          .from(SS_TABLE)
+          .select('id')
+          .eq('session_id', targetSessionId)
+          .neq('status', 'cancelled')
+      )
 
       if (enrolledErr) {
         return NextResponse.json({ error: enrolledErr.message }, { status: 500 })
@@ -189,7 +201,7 @@ export async function POST(req: NextRequest) {
 
       const { error: enrollErr } = await supabase
         .from(SS_TABLE)
-        .insert({
+        .insert(withCenterPayload({
           session_id: targetSessionId,
           student_id: studentId,
           name: studentRow.name,
@@ -197,7 +209,7 @@ export async function POST(req: NextRequest) {
           status: 'scheduled',
           series_id: seriesId,
           confirmation_token: createConfirmationToken(),
-        })
+        }))
 
       if (enrollErr) {
         return NextResponse.json({ error: enrollErr.message }, { status: 500 })

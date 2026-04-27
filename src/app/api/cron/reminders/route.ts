@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { randomUUID } from "crypto";
-import { DB } from "@/lib/db";
+import { DB, withCenter, withCenterPayload } from "@/lib/db";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +14,7 @@ const SESSIONS = DB.sessions;
 const STUDENTS = DB.students;
 const SETTINGS = DB.centerSettings;
 const REMINDER_LOGS = DB.reminderLogs;
+const TERM_ENROLLMENTS = DB.termEnrollments;
 const EMAIL_SEND_MODE = (process.env.EMAIL_SEND_MODE ?? "redirect").toLowerCase();
 const REMINDER_CRON_ENABLED = process.env.REMINDER_CRON_ENABLED === "true";
 const TEST_RECIPIENT = process.env.EMAIL_TEST_RECIPIENT?.trim() || process.env.GOOGLE_EMAIL?.trim() || null;
@@ -176,7 +177,9 @@ async function sendProtectedMail({
 }
 
 async function getSettingsOrThrow() {
-  const { data, error } = await supabase.from(SETTINGS).select("*").limit(1).maybeSingle();
+  const { data, error } = await withCenter(
+    supabase.from(SETTINGS).select("*").limit(1)
+  ).maybeSingle();
 
   if (error) {
     throw new Error(`Unable to read ${SETTINGS}: ${error.message}`);
@@ -207,7 +210,9 @@ async function sendReminderForEntry({
   let token = entry.confirmation_token;
   if (!token) {
     token = randomUUID();
-    const { error: tokenError } = await supabase.from(SS).update({ confirmation_token: token }).eq("id", entry.id);
+    const { error: tokenError } = await withCenter(
+      supabase.from(SS).update({ confirmation_token: token })
+    ).eq("id", entry.id);
     if (tokenError) throw tokenError;
   }
   const normalizedBaseUrl = appBaseUrl.endsWith("/") ? appBaseUrl.slice(0, -1) : appBaseUrl;
@@ -260,14 +265,16 @@ async function sendReminderForEntry({
   }
 
   if (guard.shouldMarkSent) {
-    await supabase.from(SS).update({ reminder_sent: true }).eq("id", entry.id);
-    await supabase.from(REMINDER_LOGS).insert({
+    await withCenter(
+      supabase.from(SS).update({ reminder_sent: true })
+    ).eq("id", entry.id);
+    await supabase.from(REMINDER_LOGS).insert(withCenterPayload({
       session_date:       session.session_date,
       session_time:       session.time,
       student_name:       student.name,
       emailed_to:         [student.email, student.mom_email, student.dad_email].filter(Boolean).join(", "),
       session_student_id: entry.id,
-    });
+    }));
   }
 
   return { sent };
@@ -300,12 +307,14 @@ export async function GET() {
     const tomorrow    = new Date(); tomorrow.setDate(now.getDate() + 1);
     const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 
-    const { data: sessions, error } = await (supabase
-      .from(SESSIONS)
-      .select(`id, session_date, time,
-        ${SS} ( id, status, reminder_sent, confirmation_token, topic,
-          ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ) )`)
-      .in("session_date", [todayStr, tomorrowStr]) as PromiseLike<{ data: ReminderSession[] | null; error: any }>);
+    const { data: sessions, error } = await (withCenter(
+      supabase
+        .from(SESSIONS)
+        .select(`id, session_date, time,
+          ${SS} ( id, status, reminder_sent, confirmation_token, topic,
+            ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ) )`)
+        .in("session_date", [todayStr, tomorrowStr])
+    ) as any);
     if (error) throw error;
 
     if (guard.mode === "disabled") {
@@ -382,19 +391,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unable to determine app base URL for confirmation links" }, { status: 500 });
     }
 
-    const { data: entries, error: fetchErr } = await (supabase
-      .from(SS)
-      .select(`id, status, reminder_sent, confirmation_token, topic,
-        ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ),
-        ${SESSIONS} ( session_date, time )`)
-      .in("id", body.sessionStudentIds) as PromiseLike<{ data: ReminderEntry[] | null; error: any }>);
+    const { data: entries, error: fetchErr } = await (withCenter(
+      supabase
+        .from(SS)
+        .select(`id, student_id, status, reminder_sent, confirmation_token, topic,
+          ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ),
+          ${SESSIONS} ( session_date, time )`)
+        .in("id", body.sessionStudentIds)
+    ) as any);
     if (fetchErr) throw fetchErr;
+
+    let filteredEntries = entries ?? [];
+    if (typeof body.termId === 'string' && body.termId.trim()) {
+      const { data: enrollmentRows, error: enrollmentErr } = await withCenter(
+        supabase
+          .from(TERM_ENROLLMENTS)
+          .select('student_id')
+          .eq('term_id', body.termId.trim())
+      );
+      if (enrollmentErr) throw enrollmentErr;
+
+      const enrolledStudentIds = new Set((enrollmentRows ?? []).map((row: any) => row.student_id));
+      filteredEntries = filteredEntries.filter((entry: any) => enrolledStudentIds.has(entry.student_id));
+    }
 
     const transporter = getTransporter();
     let sent = 0;
     const errors: string[] = [];
 
-    for (const entry of entries ?? []) {
+    for (const entry of filteredEntries) {
       const session = pickRelation(entry, SESSIONS);
       const student = pickRelation(entry, STUDENTS);
       if (!session) { errors.push(`${student?.name ?? entry.id}: session not found`); continue; }

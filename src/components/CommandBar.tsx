@@ -281,14 +281,14 @@ function StudentSessionsCard({ student, tutors, onOpenAttendanceModal, onBook }:
     async function fetchAllSessions() {
       setFetchLoading(true)
       try {
-        const p = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
         const { supabase } = await import('@/lib/supabaseClient')
-        const SS = `${p}_session_students`
-        const SESS = `${p}_sessions`
-        const { data, error } = await (supabase
+        const { DB, withCenter } = await import('@/lib/db')
+        const SS = DB.sessionStudents
+        const SESS = DB.sessions
+        const { data, error } = await (withCenter(supabase
           .from(SS)
           .select(`id, topic, status, notes, confirmation_status, ${SESS} ( id, session_date, tutor_id, time )`)
-          .eq('student_id', student.id) as any)
+          .eq('student_id', student.id)) as any)
 
         if (error) throw error
 

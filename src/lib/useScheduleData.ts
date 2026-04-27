@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { DB, withCenter, withCenterPayload } from '@/lib/db'
+import type { SessionTimesByDay } from '@/components/constants'
 
-// ── Table names — swap prefix via NEXT_PUBLIC_TABLE_PREFIX env var ────────────
-const p              = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const TUTORS         = `${p}_tutors`
-const STUDENTS       = `${p}_students`
-const SESSIONS       = `${p}_sessions`
-const SS             = `${p}_session_students`   // short alias used in nested selects
-const RECURRING      = `${p}_recurring_series`
-const TIME_OFF       = `${p}_tutor_time_off`
+const TUTORS         = DB.tutors
+const STUDENTS       = DB.students
+const SESSIONS       = DB.sessions
+const SS             = DB.sessionStudents
+const RECURRING      = DB.recurringSeries
+const TIME_OFF       = DB.timeOff
 const MATH_TOPICS    = ['Algebra', 'Geometry', 'Pre-Calculus', 'Calculus', 'Statistics', 'SAT Math', 'ACT Math', 'Math']
 const ENG_TOPICS     = ['Reading', 'Writing', 'Grammar', 'Essay', 'SAT English', 'ACT English', 'English']
 
@@ -94,6 +94,7 @@ export type ScheduleData = {
   students: Student[]
   sessions: Session[]
   timeOff: TimeOff[]
+  activeTermSessionTimesByDay: SessionTimesByDay | null
   activeStudentIds: Set<string>
   loading: boolean
   error: string | null
@@ -170,17 +171,20 @@ export function getOccupiedBlocks(startTime: string, durationMinutes: number): s
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useScheduleData(weekStart: Date): ScheduleData {
+export function useScheduleData(weekStart: Date, options?: { termId?: string | null }): ScheduleData {
   const [tutors,   setTutors]   = useState<Tutor[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [timeOff,  setTimeOff]  = useState<TimeOff[]>([])
+  const [activeTermSessionTimesByDay, setActiveTermSessionTimesByDay] = useState<SessionTimesByDay | null>(null)
   const [activeStudentIds, setActiveStudentIds] = useState<Set<string>>(new Set())
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
   const [tick,     setTick]     = useState(0)
 
   const refetch = () => setTick(t => t + 1)
+
+  const selectedTermId = options?.termId ?? null
 
   useEffect(() => {
     let cancelled = false
@@ -207,25 +211,25 @@ export function useScheduleData(weekStart: Date): ScheduleData {
         const thirtyDaysAgoIso = toISODate(thirtyDaysAgo)
 
         const [tutorRes, studentRes, sessionRes, timeOffRes, activeRes] = await Promise.all([
-          supabase.from(TUTORS).select('*').order('name'),
-          supabase.from(STUDENTS).select('*').order('name'),
-          (supabase
+          withCenter(supabase.from(TUTORS).select('*')).order('name'),
+          withCenter(supabase.from(STUDENTS).select('*')).order('name'),
+          (withCenter(supabase
             .from(SESSIONS)
             .select(`id, session_date, tutor_id, time, ${SS} ( id, student_id, name, topic, status, notes, confirmation_status, series_id )`)
             .gte('session_date', from)
             .lte('session_date', to)
-            .order('session_date')
+            .order('session_date'))
             .order('time') as any),
-          supabase
+          withCenter(supabase
             .from(TIME_OFF)
             .select('*')
             .gte('date', from)
-            .lte('date', to),
-          (supabase
+            .lte('date', to)),
+          (withCenter(supabase
             .from(SESSIONS)
             .select(`id, ${SS}(student_id)`)
             .gte('session_date', thirtyDaysAgoIso)
-            .lte('session_date', todayIso) as any),
+            .lte('session_date', todayIso)) as any),
         ])
 
         if (tutorRes.error)   throw tutorRes.error
@@ -233,25 +237,120 @@ export function useScheduleData(weekStart: Date): ScheduleData {
         if (sessionRes.error) throw sessionRes.error
         if (timeOffRes.error) throw timeOffRes.error
 
-        const tutors: Tutor[] = (tutorRes.data ?? []).map((r: any) => ({
-          id:                 r.id,
-          name:               r.name,
-          subjects:           r.subjects ?? [],
-          cat:                r.cat,
-          availability:       r.availability ?? [],
-          availabilityBlocks: r.availability_blocks ?? [],
-        }))
+        // Use the server route so schedule and center-settings read terms the same way.
+        // This avoids client-side RLS mismatches where anon term reads can return empty.
+        let terms: any[] = []
+        try {
+          const termsRes = await fetch('/api/terms', { cache: 'no-store' })
+          const termsPayload = await termsRes.json().catch(() => ({}))
+          if (!termsRes.ok) throw new Error(termsPayload?.error ?? 'Failed to load terms')
+          terms = Array.isArray(termsPayload?.terms) ? termsPayload.terms : []
+        } catch {
+          // Fallback to direct client read if API route is unavailable.
+          const termRes = await withCenter(supabase.from(DB.terms).select('*')).order('start_date', { ascending: false })
+          if (termRes.error) throw termRes.error
+          terms = termRes.data ?? []
+        }
 
-        const students: Student[] = (studentRes.data ?? []).map((r: any) => ({
+        const todayForTermSelection = toISODate(getCentralTimeNow())
+        const requestedTermId = typeof selectedTermId === 'string' ? selectedTermId.trim() : ''
+        const normalizedStatus = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
+
+        // Prefer an explicitly active term (case-insensitive), then a term covering today, then newest term.
+        const activeTerm =
+          (requestedTermId ? terms.find((term: any) => term.id === requestedTermId) : null)
+          ??
+          terms.find((term: any) => normalizedStatus(term.status) === 'active')
+          ?? terms.find((term: any) => {
+            const start = typeof term.start_date === 'string' ? term.start_date : ''
+            const end = typeof term.end_date === 'string' ? term.end_date : ''
+            return !!start && !!end && start <= todayForTermSelection && todayForTermSelection <= end
+          })
+          ?? terms[0]
+          ?? null
+        const activeTermId = activeTerm?.id ?? null
+
+        let enrollmentByStudent: Record<string, any> = {}
+        if (activeTermId) {
+          const enrollRes = await withCenter(
+            supabase
+              .from(DB.termEnrollments)
+              .select('*')
+              .eq('term_id', activeTermId)
+          )
+          if (enrollRes.error) throw enrollRes.error
+          enrollmentByStudent = (enrollRes.data ?? []).reduce((acc: Record<string, any>, row: any) => {
+            acc[row.student_id] = row
+            return acc
+          }, {})
+        }
+
+        let termAvailabilityByTutor: Record<string, string[]> = {}
+        if (activeTermId) {
+          try {
+            const tutorAvailabilityRes = await fetch(`/api/tutor-availability?termId=${encodeURIComponent(activeTermId)}`, {
+              cache: 'no-store',
+            })
+            const tutorAvailabilityPayload = await tutorAvailabilityRes.json().catch(() => ({}))
+            if (tutorAvailabilityRes.ok) {
+              const rows = Array.isArray(tutorAvailabilityPayload?.overrides) ? tutorAvailabilityPayload.overrides : []
+              termAvailabilityByTutor = rows.reduce((acc: Record<string, string[]>, row: any) => {
+                if (row?.tutor_id && Array.isArray(row?.availability_blocks)) {
+                  acc[row.tutor_id] = row.availability_blocks
+                }
+                return acc
+              }, {})
+            }
+          } catch {
+            termAvailabilityByTutor = {}
+          }
+        }
+
+        const tutors: Tutor[] = (tutorRes.data ?? []).map((r: any) => {
+          const termAvailabilityBlocks = termAvailabilityByTutor[r.id]
+          const resolvedAvailabilityBlocks: string[] = Array.isArray(termAvailabilityBlocks)
+            ? termAvailabilityBlocks
+            : (Array.isArray(r.availability_blocks) ? r.availability_blocks : [])
+          const resolvedAvailabilityDays: number[] = Array.from(new Set<number>(
+            resolvedAvailabilityBlocks
+              .map((block: string) => {
+                const [dow] = block.split('-')
+                const n = Number(dow)
+                return Number.isFinite(n) ? n : null
+              })
+              .filter((value: number | null): value is number => value !== null)
+          )).sort((a, b) => a - b)
+
+          return {
+            id:                 r.id,
+            name:               r.name,
+            subjects:           r.subjects ?? [],
+            cat:                r.cat,
+            availability:       resolvedAvailabilityDays.length > 0 ? resolvedAvailabilityDays : (r.availability ?? []),
+            availabilityBlocks: resolvedAvailabilityBlocks,
+          }
+        })
+
+        const students: Student[] = (studentRes.data ?? []).map((r: any) => {
+          const enrollment = enrollmentByStudent[r.id]
+          const enrollmentSubjects = Array.isArray(enrollment?.subjects)
+            ? enrollment.subjects.filter((s: unknown): s is string => typeof s === 'string' && !!s.trim())
+            : null
+          const enrollmentAvailability = Array.isArray(enrollment?.availability_blocks)
+            ? enrollment.availability_blocks
+            : null
+          return ({
           id:                 r.id,
           name:               r.name,
-          subjects:           Array.isArray(r.subjects)
+          subjects:           Array.isArray(enrollmentSubjects) && enrollmentSubjects.length > 0
+            ? enrollmentSubjects
+            : Array.isArray(r.subjects)
             ? r.subjects.filter((s: unknown): s is string => typeof s === 'string' && !!s.trim())
             : (r.subject ? [r.subject] : []),
           subject:            r.subject ?? null,
           grade:              r.grade ?? null,
-          hoursLeft:          r.hours_left,
-          availabilityBlocks: r.availability_blocks ?? [],
+          hoursLeft:          typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : r.hours_left,
+          availabilityBlocks: enrollmentAvailability ?? (r.availability_blocks ?? []),
           email:              r.email ?? null,
           phone:              r.phone ?? null,
           parent_name:        r.parent_name ?? null,
@@ -264,7 +363,8 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           dad_email:          r.dad_email ?? null,
           dad_phone:          r.dad_phone ?? null,
           bluebook_url:       r.bluebook_url ?? null,
-        }))
+        })
+        })
 
         const gradeMap: Record<string, string | null> = {}
         students.forEach(s => { gradeMap[s.id] = s.grade })
@@ -299,6 +399,11 @@ export function useScheduleData(weekStart: Date): ScheduleData {
           setStudents(students)
           setSessions(sessions)
           setTimeOff(timeOffMapped)
+          setActiveTermSessionTimesByDay(
+            activeTerm && typeof activeTerm.session_times_by_day === 'object' && activeTerm.session_times_by_day
+              ? (activeTerm.session_times_by_day as SessionTimesByDay)
+              : null
+          )
           const ids = new Set<string>(
             (activeRes.data ?? []).flatMap((r: any) => (r[SS] ?? []).map((ss: any) => ss.student_id as string))
           )
@@ -313,9 +418,9 @@ export function useScheduleData(weekStart: Date): ScheduleData {
 
     load()
     return () => { cancelled = true }
-  }, [toISODate(weekStart), tick])
+  }, [toISODate(weekStart), tick, selectedTermId])
 
-  return { tutors, students, sessions, timeOff, activeStudentIds, loading, error, refetch }
+  return { tutors, students, sessions, timeOff, activeTermSessionTimesByDay, activeStudentIds, loading, error, refetch }
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────
@@ -337,11 +442,11 @@ export async function createInlineStudent({
 
   const { data, error } = await supabase
     .from(STUDENTS)
-    .insert({
+    .insert(withCenterPayload({
       name: trimmed,
       subjects: subject?.trim() ? [subject.trim()] : [],
       subject: subject?.trim() || null,
-    })
+    }))
     .select('*')
     .single()
 
@@ -395,11 +500,11 @@ export async function bookStudent({
     endDate.setDate(endDate.getDate() + (recurringWeeks - 1) * 7)
     const { data: series, error: seriesErr } = await supabase
       .from(RECURRING)
-      .insert({
+      .insert(withCenterPayload({
         student_id: student.id, tutor_id: tutorId, day_of_week: dayOfWeek(date),
         time, topic, notes: notes || null, start_date: date,
         end_date: toISODate(endDate), total_weeks: recurringWeeks, status: 'active',
-      })
+      }))
       .select('id').single()
     if (seriesErr) throw seriesErr
     seriesId = series.id
@@ -410,22 +515,24 @@ export async function bookStudent({
     d.setDate(d.getDate() + w * 7)
     const isoDate = toISODate(d)
 
-    const { data: sessionsAtTime } = await supabase
-      .from(SESSIONS).select('id').eq('session_date', isoDate).eq('time', time)
+    const { data: sessionsAtTime } = await withCenter(
+      supabase.from(SESSIONS).select('id').eq('session_date', isoDate).eq('time', time)
+    )
 
     if (sessionsAtTime && sessionsAtTime.length > 0) {
       const sessionIds = sessionsAtTime.map((s: any) => s.id)
-      const { data: alreadyBooked } = await supabase
-        .from(SS).select('id').in('session_id', sessionIds)
-        .eq('student_id', student.id).neq('status', 'cancelled').maybeSingle()
+      const { data: alreadyBooked } = await withCenter(
+        supabase.from(SS).select('id').in('session_id', sessionIds)
+          .eq('student_id', student.id).neq('status', 'cancelled')
+      ).maybeSingle()
       if (alreadyBooked) throw new Error(`${student.name} is already booked at ${time} on ${isoDate}`)
     }
 
-    const { data: existing, error: fetchErr } = await (supabase
+    const { data: existing, error: fetchErr } = await (withCenter(supabase
       .from(SESSIONS)
       .select(`id, ${SS}(id)`)
       .eq('session_date', isoDate).eq('tutor_id', tutorId).eq('time', time)
-      .maybeSingle() as any)
+      ).maybeSingle() as any)
     if (fetchErr) throw fetchErr
 
     let sessionId: string
@@ -435,18 +542,18 @@ export async function bookStudent({
       sessionId = existing.id
     } else {
       const { data: created, error: createErr } = await supabase
-        .from(SESSIONS).insert({ session_date: isoDate, tutor_id: tutorId, time }).select('id').single()
+        .from(SESSIONS).insert(withCenterPayload({ session_date: isoDate, tutor_id: tutorId, time })).select('id').single()
       if (createErr) throw createErr
       sessionId = created.id
     }
 
     const { data: enrolled, error: enrollErr } = await supabase
       .from(SS)
-      .insert({
+      .insert(withCenterPayload({
         session_id: sessionId, student_id: student.id, name: student.name,
         topic, notes: notes || null, status: 'scheduled', series_id: seriesId,
         confirmation_token: createConfirmationToken(),
-      })
+      }))
       .select('id, series_id')
       .single()
     if (enrollErr) throw enrollErr
@@ -587,10 +694,11 @@ export async function moveStudentSession({
 // ── Recurring series helpers ──────────────────────────────────────────────────
 
 export async function fetchAllSeries(): Promise<RecurringSeries[]> {
-  const { data, error } = await (supabase
-    .from(RECURRING)
-    .select(`id, created_at, student_id, tutor_id, day_of_week, time, topic, notes, start_date, end_date, total_weeks, status, ${STUDENTS} ( name ), ${TUTORS} ( name )`)
-    .order('start_date', { ascending: false }) as any)
+  const { data, error } = await (withCenter(
+    supabase
+      .from(RECURRING)
+      .select(`id, created_at, student_id, tutor_id, day_of_week, time, topic, notes, start_date, end_date, total_weeks, status, ${STUDENTS} ( name ), ${TUTORS} ( name )`)
+  ).order('start_date', { ascending: false }) as any)
   if (error) throw error
   return (data ?? []).map((r: any) => ({
     id: r.id, createdAt: r.created_at, studentId: r.student_id,
@@ -603,20 +711,24 @@ export async function fetchAllSeries(): Promise<RecurringSeries[]> {
 }
 
 export async function fetchSeriesSessions(seriesId: string) {
-  const { data, error } = await (supabase
-    .from(SS)
-    .select(`id, status, notes, ${SESSIONS} ( id, session_date, time, tutor_id )`)
-    .eq('series_id', seriesId) as any)
+  const { data, error } = await (withCenter(
+    supabase
+      .from(SS)
+      .select(`id, status, notes, ${SESSIONS} ( id, session_date, time, tutor_id )`)
+      .eq('series_id', seriesId)
+  ) as any)
   if (error) throw error
   return data ?? []
 }
 
 export async function cancelSeries(seriesId: string): Promise<void> {
   const today = toISODate(new Date())
-  const { data: futureSessions, error: fetchErr } = await (supabase
-    .from(SS)
-    .select(`id, ${SESSIONS}!inner ( session_date )`)
-    .eq('series_id', seriesId) as any)
+  const { data: futureSessions, error: fetchErr } = await (withCenter(
+    supabase
+      .from(SS)
+      .select(`id, ${SESSIONS}!inner ( session_date )`)
+      .eq('series_id', seriesId)
+  ) as any)
   if (fetchErr) throw fetchErr
 
   const futureRowIds = (futureSessions ?? [])
@@ -627,12 +739,12 @@ export async function cancelSeries(seriesId: string): Promise<void> {
     .map((r: any) => r.id)
 
   if (futureRowIds.length > 0) {
-    const { error: deleteErr } = await supabase.from(SS).delete().in('id', futureRowIds)
+    const { error: deleteErr } = await withCenter(supabase.from(SS).delete()).in('id', futureRowIds)
     if (deleteErr) throw deleteErr
   }
 
-  const { error: updateErr } = await supabase.from(RECURRING)
-    .update({ status: 'cancelled' }).eq('id', seriesId)
+  const { error: updateErr } = await withCenter(supabase.from(RECURRING)
+    .update({ status: 'cancelled' })).eq('id', seriesId)
   if (updateErr) throw updateErr
 }
 
@@ -655,8 +767,12 @@ export async function rescheduleSeries({ seriesId, newTutorId, newTime, student,
   const today = toISODate(new Date())
   const MAX_CAPACITY = 3
 
-  const { data: seriesRow, error: seriesErr } = await supabase
-    .from(RECURRING).select('end_date, day_of_week').eq('id', seriesId).single()
+  const { data: seriesRow, error: seriesErr } = await withCenter(
+    supabase
+      .from(RECURRING)
+      .select('end_date, day_of_week')
+      .eq('id', seriesId)
+  ).single()
   if (seriesErr) throw seriesErr
 
   const seriesEndDate: string = seriesRow.end_date
@@ -664,10 +780,12 @@ export async function rescheduleSeries({ seriesId, newTutorId, newTime, student,
   const targetDow: number    = overrideDayOfWeek ?? currentDow
   const isDayChange           = overrideDayOfWeek !== undefined && overrideDayOfWeek !== currentDow
 
-  const { data: futureSessions, error: fetchErr } = await (supabase
-    .from(SS)
-    .select(`id, ${SESSIONS}!inner ( id, session_date )`)
-    .eq('series_id', seriesId) as any)
+  const { data: futureSessions, error: fetchErr } = await (withCenter(
+    supabase
+      .from(SS)
+      .select(`id, ${SESSIONS}!inner ( id, session_date )`)
+      .eq('series_id', seriesId)
+  ) as any)
   if (fetchErr) throw fetchErr
 
   const futureRows = (futureSessions ?? []).filter((r: any) => {
@@ -676,7 +794,7 @@ export async function rescheduleSeries({ seriesId, newTutorId, newTime, student,
   })
 
   if (futureRows.length > 0) {
-    const { error: deleteErr } = await supabase.from(SS).delete()
+    const { error: deleteErr } = await withCenter(supabase.from(SS).delete())
       .in('id', futureRows.map((r: any) => r.id))
     if (deleteErr) throw deleteErr
   }
@@ -701,11 +819,14 @@ export async function rescheduleSeries({ seriesId, newTutorId, newTime, student,
   }
 
   for (const isoDate of targetDates) {
-    const { data: existing } = await (supabase
-      .from(SESSIONS)
-      .select(`id, ${SS}(id)`)
-      .eq('session_date', isoDate).eq('tutor_id', newTutorId).eq('time', newTime)
-      .maybeSingle() as any)
+    const { data: existing } = await (withCenter(
+      supabase
+        .from(SESSIONS)
+        .select(`id, ${SS}(id)`)
+        .eq('session_date', isoDate)
+        .eq('tutor_id', newTutorId)
+        .eq('time', newTime)
+    ).maybeSingle() as any)
 
     let sessionId: string
     if (existing) {
@@ -714,30 +835,36 @@ export async function rescheduleSeries({ seriesId, newTutorId, newTime, student,
       sessionId = existing.id
     } else {
       const { data: created, error: createErr } = await supabase
-        .from(SESSIONS).insert({ session_date: isoDate, tutor_id: newTutorId, time: newTime })
+        .from(SESSIONS).insert(withCenterPayload({ session_date: isoDate, tutor_id: newTutorId, time: newTime }))
         .select('id').single()
       if (createErr) throw createErr
       sessionId = created.id
     }
 
-    const { error: enrollErr } = await supabase.from(SS).insert({
+    const { error: enrollErr } = await supabase.from(SS).insert(withCenterPayload({
       session_id: sessionId, student_id: student.id, name: student.name,
       topic, status: 'scheduled', series_id: seriesId,
       confirmation_token: createConfirmationToken(),
-    })
+    }))
     if (enrollErr) throw enrollErr
   }
 
   const seriesUpdate: Record<string, any> = { tutor_id: newTutorId, time: newTime, topic }
   if (isDayChange) seriesUpdate.day_of_week = targetDow
-  const { error: updateErr } = await supabase.from(RECURRING).update(seriesUpdate).eq('id', seriesId)
+  const { error: updateErr } = await withCenter(
+    supabase.from(RECURRING).update(seriesUpdate)
+  ).eq('id', seriesId)
   if (updateErr) throw updateErr
 }
 
 export async function markCompletedSeries(): Promise<void> {
   const today = toISODate(new Date())
-  const { error } = await supabase.from(RECURRING)
-    .update({ status: 'completed' }).eq('status', 'active').lt('end_date', today)
+  const { error } = await withCenter(
+    supabase.from(RECURRING)
+      .update({ status: 'completed' })
+      .eq('status', 'active')
+      .lt('end_date', today)
+  )
   if (error) throw error
 }
 

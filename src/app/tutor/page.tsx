@@ -4,15 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { X, Trash2, UserPlus, ChevronDown, ChevronUp, AlertTriangle, CalendarOff, Plus, Loader2, Mail, Phone, Save, CheckSquare, Square } from 'lucide-react';
 import { SESSION_BLOCKS } from '@/components/constants';
 import { supabase } from '@/lib/supabaseClient';
+import { DB, withCenter, withCenterPayload } from '@/lib/db';
 import type { Tutor } from '@/lib/useScheduleData';
 import { logEvent } from '@/lib/analytics';
 
 // ── Table names ───────────────────────────────────────────────────────────────
-const p        = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const TUTORS   = `${p}_tutors`
-const TIME_OFF = `${p}_tutor_time_off`
-const SESSIONS = `${p}_sessions`
-const SS       = `${p}_session_students`
+const TUTORS   = DB.tutors
+const TIME_OFF = DB.timeOff
+const SESSIONS = DB.sessions
+const SS       = DB.sessionStudents
 
 // ── Subject definitions ───────────────────────────────────────────────────────
 export const SUBJECT_GROUPS = [
@@ -38,9 +38,9 @@ const EMPTY_TUTOR: Omit<TutorWithContact, 'id'> = {
   email: '', phone: '',
 };
 
-const inputCls = "w-full rounded-lg border border-[#94a3b8] bg-white px-3.5 py-2.5 text-sm font-medium text-[#0f172a] placeholder:text-[#64748b] shadow-[0_1px_2px_rgba(15,23,42,0.06)] focus:outline-none focus:border-[#4f46e5] focus:ring-4 focus:ring-[#e0e7ff] transition-all";
-const fieldCardCls = "rounded-lg border border-[#cbd5e1] bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)]";
-const fieldLabelCls = "block text-[9px] font-black uppercase tracking-[0.22em] text-[#64748b]";
+const inputCls = "w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
+const fieldCardCls = "rounded border border-slate-200 bg-white px-3 py-2.5";
+const fieldLabelCls = "block text-[10px] font-semibold text-slate-400";
 
 function toDateValue(isoDate: string) {
   return new Date(`${isoDate}T00:00:00`);
@@ -168,11 +168,11 @@ function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChang
 
   return (
     <div className="space-y-2">
-      <label className="block text-[9px] font-black uppercase tracking-[0.18em] text-[#334155]">Subjects</label>
+      <label className="block text-[10px] font-semibold text-slate-400">Subjects</label>
       <div className="space-y-2">
         {SUBJECT_GROUPS.map(group => (
-          <div key={group.group} className="rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
-            <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-[#64748b]">{group.group}</p>
+          <div key={group.group} className="rounded border border-slate-200 bg-slate-50 p-2.5">
+            <p className="mb-2 text-[10px] font-semibold text-slate-500">{group.group}</p>
             <div className="flex flex-wrap gap-1">
               {group.subjects.map(subject => {
                 const active = selected.includes(subject);
@@ -180,7 +180,7 @@ function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChang
                   <button key={subject} type="button" onClick={() => toggle(subject)}
                     className="rounded-md px-2 py-1 text-[10px] font-semibold tracking-[0.02em] transition-all"
                     style={active
-                      ? { background: '#4f46e5', color: 'white', border: '1px solid #4f46e5', boxShadow: '0 4px 10px rgba(79,70,229,0.14)' }
+                      ? { background: '#0f172a', color: 'white', border: '1px solid #0f172a' }
                       : { background: 'white', color: '#475569', border: '1px solid #cbd5e1' }}>
                     {subject}
                   </button>
@@ -288,7 +288,7 @@ function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
     setError(null);
     setSaving(true);
     const { error: insertError } = await supabase.from(TIME_OFF).insert(
-      datesToInsert.map(date => ({ tutor_id: tutor.id, date, note: note.trim() }))
+      datesToInsert.map(date => withCenterPayload({ tutor_id: tutor.id, date, note: note.trim() }))
     );
 
     if (insertError) {
@@ -307,7 +307,7 @@ function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
   const handleDelete = async (ids: string[]) => {
     setError(null);
     setSaving(true);
-    const { error: deleteError } = await supabase.from(TIME_OFF).delete().in('id', ids);
+    const { error: deleteError } = await withCenter(supabase.from(TIME_OFF).delete()).in('id', ids);
     if (deleteError) {
       setSaving(false);
       setError(deleteError.message);
@@ -448,16 +448,7 @@ function TutorListItem({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="w-full rounded-xl border px-2 py-2 text-left transition-all"
-      style={{
-        borderColor: isActive ? '#1d4ed8' : isSelected ? '#fca5a5' : '#dbe4ee',
-        background: isActive
-          ? 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 58%, #ffffff 100%)'
-          : isSelected
-            ? 'linear-gradient(135deg, #fff7f7 0%, #fff1f2 100%)'
-            : '#ffffff',
-        boxShadow: isActive ? '0 18px 34px rgba(37,99,235,0.14)' : '0 1px 2px rgba(15,23,42,0.04)',
-      }}>
+      className={`w-full rounded border px-2 py-2 text-left transition-colors ${isActive ? 'border-slate-300 bg-slate-50' : isSelected ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
       <div className="flex items-start gap-2.5">
         <button
           type="button"
@@ -465,25 +456,20 @@ function TutorListItem({
             event.stopPropagation();
             onToggle();
           }}
-          className="mt-0.5 rounded-md border p-1 transition-colors"
-          style={{
-            borderColor: isActive ? '#c7d2fe' : '#cbd5e1',
-            background: isSelected ? '#fee2e2' : 'transparent',
-            color: isSelected ? '#dc2626' : isActive ? '#475569' : '#64748b',
-          }}>
+          className={`mt-0.5 rounded border p-1 transition-colors ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-500'}`}>
           {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-            <p className="truncate text-[12px] font-black leading-tight" style={{ color: '#0f172a' }}>{tutor.name || 'Unnamed tutor'}</p>
-            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: tutor.cat === 'math' ? '#1d4ed8' : '#be185d' }}>
+            <p className="truncate text-[12px] font-black leading-tight text-slate-900">{tutor.name || 'Unnamed tutor'}</p>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
               {tutor.cat === 'math' ? 'Math / Sci' : 'Eng / Hist'}
             </p>
             </div>
             {conflictCount > 0 && (
               <span
-                className="flex h-5 w-5 items-center justify-center rounded-full bg-[#dc2626] text-[12px] font-black text-white"
+                className="flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[12px] font-black text-white"
                 title={`${conflictCount} booking${conflictCount === 1 ? '' : 's'} need movement`}>
                 !
               </span>
@@ -553,35 +539,35 @@ function TutorDetailPanel({
   const catBg = draft.cat === 'math' ? '#dbeafe' : '#fce7f3';
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-[#b8c7da] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.14)]">
-      <div className="border-b border-[#dbe4ee] bg-[linear-gradient(135deg,#dfeafb_0%,#f6faff_48%,#ffffff_100%)] px-4 py-4 md:px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-white px-4 py-4 md:px-5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl text-xs font-black text-white" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)' }}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-xs font-black text-white">
                 {initials(draft.name)}
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate text-lg font-black text-[#0f172a]">{draft.name || 'Unnamed tutor'}</h2>
-                  <span className="rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ background: catBg, color: catColor }}>
+                  <h2 className="truncate text-lg font-black text-slate-900">{draft.name || 'Unnamed tutor'}</h2>
+                  <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                     {catLabel}
                   </span>
-                  {dirty && <span className="rounded-full bg-[#fef3c7] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#b45309]">Unsaved</span>}
-                  {conflictCount > 0 && <span className="rounded-full bg-[#fee2e2] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#b91c1c]">Needs attention · {conflictCount}</span>}
+                  {dirty && <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Unsaved</span>}
+                  {conflictCount > 0 && <span className="rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">Needs attention · {conflictCount}</span>}
                 </div>
-                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[#475569]">
-                  <span className="flex items-center gap-1.5"><Mail size={12} className="text-[#94a3b8]" /> {draft.email || 'No email on file'}</span>
-                  <span className="flex items-center gap-1.5"><Phone size={12} className="text-[#94a3b8]" /> {draft.phone || 'No phone on file'}</span>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                  <span className="flex items-center gap-1.5"><Mail size={12} className="text-slate-400" /> {draft.email || 'No email on file'}</span>
+                  <span className="flex items-center gap-1.5"><Phone size={12} className="text-slate-400" /> {draft.phone || 'No phone on file'}</span>
                 </div>
-                <p className="mt-1.5 text-[11px] text-[#64748b]">{draft.subjects.slice(0, 3).join(' • ') || 'No subjects assigned yet'}</p>
+                <p className="mt-1.5 text-[11px] text-slate-500">{draft.subjects.slice(0, 3).join(' • ') || 'No subjects assigned yet'}</p>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isEditing ? (
               <>
-                <button onClick={() => { setIsEditing(false); setDraft(tutor); }} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569]">
+                <button onClick={() => { setIsEditing(false); setDraft(tutor); }} className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                   Cancel
                 </button>
                 <button
@@ -592,43 +578,43 @@ function TutorDetailPanel({
                     setIsEditing(false);
                   }}
                   disabled={!dirty || saving}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#4f46e5] px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white disabled:opacity-40">
+                  className="flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-40">
                   {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
                 </button>
               </>
             ) : (
-              <button onClick={() => setIsEditing(true)} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569]">
+              <button onClick={() => setIsEditing(true)} className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                 Edit tutor
               </button>
             )}
-            <button onClick={() => setConfirmDelete(true)} className="rounded-xl border border-[#fecaca] bg-[#fff1f2] px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#dc2626]">
+            <button onClick={() => setConfirmDelete(true)} className="rounded border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">
               Delete
             </button>
           </div>
         </div>
 
         <div className="mt-3 grid gap-2.5 lg:grid-cols-2">
-          <div className="rounded-xl border border-[#fecaca] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(220,38,38,0.05)]">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Conflicts</p>
-            <p className="mt-1 text-sm font-black text-[#0f172a]">{conflictCount} session{conflictCount === 1 ? '' : 's'} need movement</p>
-            <p className="mt-0.5 text-[11px] text-[#64748b]">{conflictCount > 0 ? 'See details tab list below.' : 'No blocked-date conflicts right now.'}</p>
+          <div className="rounded border border-slate-100 bg-slate-50 px-3.5 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conflicts</p>
+            <p className="mt-1 text-sm font-black text-slate-900">{conflictCount} session{conflictCount === 1 ? '' : 's'} need movement</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{conflictCount > 0 ? 'See details tab list below.' : 'No blocked-date conflicts right now.'}</p>
           </div>
-          <div className="rounded-xl border border-[#fecaca] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(220,38,38,0.05)]">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Time off</p>
-            <p className="mt-1 text-sm font-black text-[#0f172a]">{timeOffCount} blocked day{timeOffCount === 1 ? '' : 's'}</p>
-            <p className="mt-0.5 text-[11px] text-[#64748b]">{upcomingTimeOff ? `Next: ${formatDateLabel(upcomingTimeOff.date)}` : 'No upcoming blocks'}</p>
+          <div className="rounded border border-slate-100 bg-slate-50 px-3.5 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Time off</p>
+            <p className="mt-1 text-sm font-black text-slate-900">{timeOffCount} blocked day{timeOffCount === 1 ? '' : 's'}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{upcomingTimeOff ? `Next: ${formatDateLabel(upcomingTimeOff.date)}` : 'No upcoming blocks'}</p>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2 border-t border-[rgba(148,163,184,0.18)] pt-3">
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
           {(['details', 'timeoff'] as const).map(currentTab => (
             <button
               key={currentTab}
               onClick={() => setTab(currentTab)}
-              className="rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] transition-all"
+              className="rounded px-2.5 py-1 text-[11px] font-semibold transition-colors"
               style={tab === currentTab
-                ? { background: '#1d4ed8', color: 'white', boxShadow: '0 10px 20px rgba(37,99,235,0.22)' }
-                : { background: '#e2e8f0', color: '#475569' }}>
+                ? { background: '#0f172a', color: 'white' }
+                : { color: '#64748b' }}>
               {currentTab === 'details' ? 'Details' : `Time Off${timeOffCount > 0 ? ` · ${timeOffCount}` : ''}`}
             </button>
           ))}
@@ -639,7 +625,7 @@ function TutorDetailPanel({
         {tab === 'details' ? (
           <div className="space-y-5">
             <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-3 rounded-3xl border border-[#dbe4ee] bg-[#f8fafc] p-3.5">
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
                 {isEditing && (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className={fieldCardCls}>
@@ -653,7 +639,7 @@ function TutorDetailPanel({
                           <button key={currentCat} onClick={() => setDraft({ ...draft, cat: currentCat })}
                             className="flex-1 rounded-md py-2 text-[10px] font-black uppercase tracking-[0.12em]"
                             style={draft.cat === currentCat
-                              ? { background: '#4f46e5', color: 'white', border: '1.5px solid #4f46e5' }
+                              ? { background: '#0f172a', color: 'white', border: '1.5px solid #0f172a' }
                               : { background: 'white', color: '#475569', border: '1.5px solid #cbd5e1' }}>
                             {currentCat === 'math' ? 'Math / Sci' : 'Eng / Hist'}
                           </button>
@@ -671,29 +657,29 @@ function TutorDetailPanel({
                   </div>
                 )}
 
-                <div className="rounded-2xl border border-[#dbe4ee] bg-white p-3.5">
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                   {isEditing ? (
                     <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} />
                   ) : (
                     <>
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Subjects</p>
-                          <p className="mt-1 text-[11px] text-[#64748b]">Core teaching coverage.</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Subjects</p>
+                          <p className="mt-1 text-[11px] text-slate-500">Core teaching coverage.</p>
                         </div>
-                        <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#1d4ed8]">{draft.subjects.length}</span>
+                        <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{draft.subjects.length}</span>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {draft.subjects.length > 0 ? draft.subjects.map(subject => (
-                          <span key={subject} className="rounded-full border border-[#dbeafe] bg-[#eff6ff] px-2.5 py-1 text-[10px] font-bold text-[#1d4ed8]">{subject}</span>
-                        )) : <span className="text-[12px] text-[#94a3b8]">No subjects assigned</span>}
+                          <span key={subject} className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">{subject}</span>
+                        )) : <span className="text-[12px] text-slate-400">No subjects assigned</span>}
                       </div>
                     </>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-[#dbe4ee] bg-white p-3.5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                 {isEditing ? (
                   <AvailabilityGrid
                     blocks={draft.availabilityBlocks}
@@ -707,8 +693,8 @@ function TutorDetailPanel({
                   <>
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748b]">Schedule conflicts</p>
-                        <p className="mt-1 text-[12px] text-[#64748b]">Booked sessions currently overlapping blocked dates.</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Schedule conflicts</p>
+                        <p className="mt-1 text-[12px] text-slate-500">Booked sessions currently overlapping blocked dates.</p>
                       </div>
                       {conflictCount > 0 ? (
                         <span className="flex items-center gap-1.5 rounded-full bg-[#fee2e2] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#b91c1c]">
@@ -724,12 +710,12 @@ function TutorDetailPanel({
                         {conflictSessions.map(session => (
                           <div key={session.id} className="rounded-xl border border-[#fecaca] bg-[#fff7f7] px-3 py-2.5">
                             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-[12px] font-black text-[#0f172a]">{formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}</p>
+                              <p className="text-[12px] font-black text-slate-900">{formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}</p>
                               <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#b91c1c]">!
                                 {' '}Move {session.students.length}
                               </p>
                             </div>
-                            <p className="mt-1 text-[11px] text-[#64748b]">{summarizeStudentNames(session.students)}</p>
+                            <p className="mt-1 text-[11px] text-slate-500">{summarizeStudentNames(session.students)}</p>
                           </div>
                         ))}
                       </div>
@@ -749,17 +735,17 @@ function TutorDetailPanel({
       </div>
 
       {confirmDelete && (
-        <div className="border-t border-[#fecaca] bg-[#fff7f7] px-5 py-4 md:px-6">
+        <div className="border-t border-red-200 bg-red-50 px-5 py-4 md:px-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-black text-[#0f172a]">Delete {draft.name}?</p>
-              <p className="text-[12px] text-[#64748b]">This action cannot be undone.</p>
+              <p className="text-sm font-black text-slate-900">Delete {draft.name}?</p>
+              <p className="text-[12px] text-slate-500">This action cannot be undone.</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setConfirmDelete(false)} className="rounded-xl border border-[#cbd5e1] bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569]">
+              <button onClick={() => setConfirmDelete(false)} className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                 Cancel
               </button>
-              <button onClick={async () => { await onDelete(tutor.id); setConfirmDelete(false); }} className="rounded-xl bg-[#dc2626] px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white">
+              <button onClick={async () => { await onDelete(tutor.id); setConfirmDelete(false); }} className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
                 Confirm delete
               </button>
             </div>
@@ -1096,20 +1082,21 @@ export default function TutorManagementPage() {
     setError(null);
     const todayIso = toISODate(new Date());
     const [tutorRes, timeOffRes, sessionRes] = await Promise.all([
-      supabase.from(TUTORS).select('*').order('name'),
-      supabase.from(TIME_OFF).select('*').order('date'),
-      (supabase
+      withCenter(supabase.from(TUTORS).select('*')).order('name'),
+      withCenter(supabase.from(TIME_OFF).select('*')).order('date'),
+      (withCenter(supabase
         .from(SESSIONS)
         .select(`id, session_date, tutor_id, time, ${SS} ( id, student_id, name, status, series_id )`)
         .gte('session_date', todayIso)
-        .order('session_date')
+        .order('session_date'))
         .order('time') as any),
     ]);
     if (!tutorRes.error) {
-      setTutors((tutorRes.data ?? []).map(r => ({
-        id: r.id, name: r.name, subjects: r.subjects ?? [], cat: r.cat,
-        availability: r.availability ?? [], availabilityBlocks: r.availability_blocks ?? [],
-        email: r.email ?? null, phone: r.phone ?? null,
+      const tutorRows = (tutorRes.data ?? []) as any[];
+      setTutors(tutorRows.map(row => ({
+        id: row.id, name: row.name, subjects: row.subjects ?? [], cat: row.cat,
+        availability: row.availability ?? [], availabilityBlocks: row.availability_blocks ?? [],
+        email: row.email ?? null, phone: row.phone ?? null,
       })));
     }
     if (!timeOffRes.error) setTimeOffList(timeOffRes.data ?? []);
@@ -1148,18 +1135,18 @@ export default function TutorManagementPage() {
 
   const handleSave = async (updated: TutorWithContact) => {
     setError(null);
-    const { error } = await supabase.from(TUTORS).update({
+    const { error } = await withCenter(supabase.from(TUTORS).update({
       name: updated.name, subjects: updated.subjects, cat: updated.cat,
       availability: updated.availability, availability_blocks: updated.availabilityBlocks,
       email: updated.email || null, phone: updated.phone || null,
-    }).eq('id', updated.id);
+    })).eq('id', updated.id);
     if (error) setError(error.message);
     else fetchAll();
   };
 
   const handleDelete = async (id: string) => {
     setError(null);
-    const { error } = await supabase.from(TUTORS).delete().eq('id', id);
+    const { error } = await withCenter(supabase.from(TUTORS).delete()).eq('id', id);
     if (error) setError(error.message);
     else fetchAll();
   };
@@ -1167,7 +1154,7 @@ export default function TutorManagementPage() {
   const handleBulkDelete = async () => {
     if (!confirmBulk) { setConfirmBulk(true); setTimeout(() => setConfirmBulk(false), 3000); return; }
     setBulkDeleting(true);
-    await supabase.from(TUTORS).delete().in('id', Array.from(selected));
+    await withCenter(supabase.from(TUTORS).delete()).in('id', Array.from(selected));
     logEvent('tutors_bulk_deleted', { count: selected.size });
     setSelected(new Set());
     setConfirmBulk(false);
@@ -1178,11 +1165,11 @@ export default function TutorManagementPage() {
   const handleAdd = async () => {
     if (!newTutor.name.trim()) return;
     setSaving(true); setError(null);
-    const { error } = await supabase.from(TUTORS).insert([{
+    const { error } = await supabase.from(TUTORS).insert([withCenterPayload({
       name: newTutor.name, subjects: newTutor.subjects, cat: newTutor.cat,
       availability: newTutor.availability, availability_blocks: newTutor.availabilityBlocks,
       email: newTutor.email || null, phone: newTutor.phone || null,
-    }]);
+    })]);
     setSaving(false);
     if (error) setError(error.message);
     else { setAdding(false); setNewTutor(EMPTY_TUTOR); fetchAll(); logEvent('tutor_created', { tutorName: newTutor.name }); }
@@ -1210,46 +1197,47 @@ export default function TutorManagementPage() {
   };
 
   if (loading) return (
-    <div className="flex min-h-dvh w-full items-center justify-center" style={{ background: '#f8fafc' }}>
-      <div className="flex flex-col items-center gap-3">
-        <Loader2 size={24} className="animate-spin" style={{ color: '#dc2626' }} />
-        <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>Loading tutors…</p>
+    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 size={24} className="animate-spin" style={{ color: '#dc2626' }} />
+          <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>Loading tutors…</p>
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="tutor-admin h-[calc(100dvh-58px)] overflow-hidden md:h-dvh" style={{ background: 'linear-gradient(180deg, #dbe7f5 0%, #eef4fb 180px, #f8fafc 360px, #f8fafc 100%)', fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
-      <div className="flex h-full flex-col overflow-hidden overscroll-contain">
+    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="tutor-admin flex h-full flex-col overflow-hidden overscroll-contain bg-white">
 
       {/* Top bar */}
-      <div className="sticky top-0 z-40 border-b border-[#dbe4ee] backdrop-blur-xl" style={{ background: 'rgba(255,255,255,0.84)' }}>
+      <div className="sticky top-0 z-40 border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#c7d2fe] bg-[#eef2ff]">
-              <UserPlus size={18} style={{ color: '#2563eb' }} />
+            <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-900 text-white">
+              <UserPlus size={15} />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#2563eb]">Tutor Admin</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tutor Admin</p>
               <div className="flex items-center gap-2">
-                <span className="text-base font-black text-[#0f172a]">Tutors</span>
-                {!loading && <span className="rounded-full border border-[#c7d2fe] bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">{tutors.length}</span>}
+                <span className="text-base font-black text-slate-900">Tutors</span>
+                {!loading && <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{tutors.length}</span>}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {selected.size > 0 && (
               <button onClick={handleBulkDelete} disabled={bulkDeleting}
-                className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all disabled:opacity-50"
-                style={{ background: confirmBulk ? '#991b1b' : '#dc2626', boxShadow: '0 12px 24px rgba(127,29,29,0.22)' }}>
+                className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${confirmBulk ? 'border-red-300 bg-red-50 text-red-600' : 'border-slate-200 text-slate-600 hover:border-red-200 hover:text-red-500'}`}>
                 {bulkDeleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
                 {confirmBulk ? `Confirm delete ${selected.size}` : `Delete ${selected.size}`}
               </button>
             )}
             <button
               onClick={() => { setAdding(a => !a); setNewTutor(EMPTY_TUTOR); }}
-              className="flex items-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition-all"
-              style={{ background: adding ? '#334155' : '#2563eb', boxShadow: adding ? 'none' : '0 12px 24px rgba(37,99,235,0.24)' }}>
+              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white transition-colors ${adding ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
               {adding ? <><X size={13} /> Cancel</> : <><UserPlus size={13} /> Add Tutor</>}
             </button>
           </div>
@@ -1357,27 +1345,27 @@ export default function TutorManagementPage() {
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
-            <div className="flex min-h-0 flex-col space-y-2.5 rounded-3xl border border-[#9fb4d1] bg-[linear-gradient(180deg,#dbe7f5_0%,#eef4fb_100%)] p-2.5 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-              <div className="rounded-xl border border-[#bfd0e6] bg-[linear-gradient(135deg,#ffffff_0%,#edf4ff_100%)] p-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#2563eb]">Roster</p>
+            <div className="flex min-h-0 flex-col space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+              <div className="rounded border border-slate-200 bg-white p-2.5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Roster</p>
                 <div className="mt-1 flex items-center justify-between gap-2">
-                  <p className="text-sm font-black text-[#0f172a]">{tutors.length} tutors</p>
-                  <span className="rounded-full bg-[#dbeafe] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#1d4ed8]">{tutorsWithTimeOff} off</span>
+                  <p className="text-sm font-black text-slate-900">{tutors.length} tutors</p>
+                  <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{tutorsWithTimeOff} off</span>
                 </div>
                 <input
                   value={searchQuery}
                   onChange={event => setSearchQuery(event.target.value)}
                   placeholder="Search name, subject, email"
-                  className="mt-2.5 w-full rounded-lg border border-[#cbd5e1] bg-[#f8fafc] px-3 py-2 text-sm font-medium text-[#0f172a] placeholder:text-[#94a3b8] focus:border-[#60a5fa] focus:outline-none"
+                  className="mt-2.5 h-7 w-full rounded border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700 outline-none focus:border-slate-400"
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-xl border border-[#bfd0e6] bg-white px-3 py-2 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
-                <button onClick={toggleAll} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.16em] text-[#475569]">
-                  {allSelected ? <CheckSquare size={14} style={{ color: '#f87171' }} /> : <Square size={14} />}
+              <div className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2">
+                <button onClick={toggleAll} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                  {allSelected ? <CheckSquare size={14} className="text-slate-900" /> : <Square size={14} />}
                   {allSelected ? 'Clear selection' : 'Select all'}
                 </button>
-                <span className="rounded-full bg-[#eef2ff] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#3730a3]">
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
                   {selected.size} selected
                 </span>
               </div>
@@ -1441,6 +1429,7 @@ export default function TutorManagementPage() {
           border-radius: 8px !important;
         }
       `}</style>
+    </div>
     </div>
   );
 }

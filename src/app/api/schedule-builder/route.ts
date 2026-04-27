@@ -37,6 +37,7 @@ interface RequestBody {
   existingBookings: ExistingBooking[]
   weekStart: string
   weekEnd: string
+  sessionTimesByDay?: Record<string, string[]>
 }
 
 interface Assignment {
@@ -70,36 +71,26 @@ function studentAvailable(availabilityBlocks: string[], dayNum: number, time: st
 // a new time would create a gap. C2 session times: 11:00, 13:30, 15:30, 17:30, 19:30
 // A gap = two assigned times with an unassigned time between them.
 
-// All possible session start times per day-of-week
-const SESSION_TIMES_BY_DOW: Record<number, string[]> = {
-  1: ['13:30', '15:30', '17:30', '19:30'],
-  2: ['13:30', '15:30', '17:30', '19:30'],
-  3: ['13:30', '15:30', '17:30', '19:30'],
-  4: ['13:30', '15:30', '17:30', '19:30'],
-  6: ['09:30', '11:30', '13:30', '15:30'],
-}
-// Flat ordered list for gap detection (all unique times across all days, ordered)
-const SESSION_ORDER = ['09:30', '11:30', '13:30', '15:30', '17:30', '19:30']
-
 function wouldCreateGap(
   existingTimesOnDay: string[],
   newTime: string,
-  allSeatTimesOnDay: string[] // all times that have a seat (assigned or available)
+  allSeatTimesOnDay: string[], // all times that have a seat (assigned or available)
+  sessionOrder: string[],
 ): boolean {
   if (existingTimesOnDay.length === 0) return false
 
   const assigned = [...existingTimesOnDay, newTime]
-  const occupied = SESSION_ORDER.filter(t => assigned.includes(t))
+  const occupied = sessionOrder.filter(t => assigned.includes(t))
   if (occupied.length < 2) return false
 
   const min = occupied[0]
   const max = occupied[occupied.length - 1]
-  const minIdx = SESSION_ORDER.indexOf(min)
-  const maxIdx = SESSION_ORDER.indexOf(max)
+  const minIdx = sessionOrder.indexOf(min)
+  const maxIdx = sessionOrder.indexOf(max)
 
   // Every session slot between min and max must be either assigned or available
   for (let i = minIdx + 1; i < maxIdx; i++) {
-    const t = SESSION_ORDER[i]
+    const t = sessionOrder[i]
     if (!assigned.includes(t) && !allSeatTimesOnDay.includes(t)) {
       // There's a gap that can't be filled
       return true
@@ -149,7 +140,7 @@ function scoreSlot(
 
 export async function POST(req: NextRequest) {
   const body: RequestBody = await req.json()
-  const { needs, availableSeats, existingBookings, weekStart, weekEnd } = body
+  const { needs, availableSeats, existingBookings, weekStart, weekEnd, sessionTimesByDay } = body
 
   if (!needs?.length || !availableSeats?.length) {
     return NextResponse.json({ assignments: [] })
@@ -170,6 +161,20 @@ export async function POST(req: NextRequest) {
   // Track how many we've assigned to each slot this run
   const assignedCounts: Record<number, number> = {}
 
+  const timeOrderSet = new Set<string>()
+  availableSeats.forEach(s => timeOrderSet.add(s.time))
+  Object.values(sessionTimesByDay ?? {}).forEach(times => {
+    if (!Array.isArray(times)) return
+    times.forEach(t => {
+      if (typeof t === 'string' && t.trim()) {
+        // slots may be "HH:MM" or "HH:MM-HH:MM" — always order by start time
+        const start = t.includes('-') ? t.split('-')[0] : t
+        timeOrderSet.add(start)
+      }
+    })
+  })
+  const sessionOrder = [...timeOrderSet].sort((a, b) => a.localeCompare(b))
+
   // Track which tutor+day combos have assigned times (for no-gap check)
   // key: "tutorId-date" → string[]
   const tutorDayAssigned: Record<string, string[]> = {}
@@ -181,8 +186,14 @@ export async function POST(req: NextRequest) {
   for (const s of availableSeats) {
     const key = `${s.tutorId}-${s.date}`
     if (!tutorDayAvailable[key]) {
-      // Seed with all theoretically valid session times for this dow
-      tutorDayAvailable[key] = [...(SESSION_TIMES_BY_DOW[s.dayNum] ?? [])]
+      const configuredDayTimes = Array.isArray(sessionTimesByDay?.[String(s.dayNum)])
+        ? sessionTimesByDay?.[String(s.dayNum)]
+        : null
+      tutorDayAvailable[key] = configuredDayTimes && configuredDayTimes.length > 0
+        ? configuredDayTimes.map(t => t.includes('-') ? t.split('-')[0] : t)
+        : availableSeats
+            .filter(x => x.tutorId === s.tutorId && x.date === s.date)
+            .map(x => x.time)
     }
   }
 
@@ -234,7 +245,7 @@ export async function POST(req: NextRequest) {
         const tutorDayKey = `${s.tutorId}-${s.date}`
         const alreadyOnDay = tutorDayAssigned[tutorDayKey] ?? []
         const availableOnDay = tutorDayAvailable[tutorDayKey] ?? []
-        if (wouldCreateGap(alreadyOnDay, s.time, availableOnDay)) return false
+        if (wouldCreateGap(alreadyOnDay, s.time, availableOnDay, sessionOrder)) return false
 
         return true
       })

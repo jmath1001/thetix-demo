@@ -1,13 +1,37 @@
-const p = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
+const TABLE_PREFIX = 'slake'
+const centerId = process.env.NEXT_PUBLIC_CENTER_ID ?? process.env.CENTER_ID ?? ''
 
 export const DB = {
-  tutors:           `${p}_tutors`,
-  students:         `${p}_students`,
-  sessions:         `${p}_sessions`,
-  sessionStudents:  `${p}_session_students`,
-  recurringSeries:  `${p}_recurring_series`,
-  timeOff:          `${p}_tutor_time_off`,
-  events:           `${p}_events`,
-  centerSettings:   `${p}_center_settings`,
-  reminderLogs:     `${p}_reminder_logs`,
+  centers:          `${TABLE_PREFIX}_centers`,
+  terms:            `${TABLE_PREFIX}_terms`,
+  termEnrollments:  `${TABLE_PREFIX}_term_enrollments`,
+  tutorTermAvailability: `${TABLE_PREFIX}_tutor_term_availability`,
+  tutors:           `${TABLE_PREFIX}_tutors`,
+  students:         `${TABLE_PREFIX}_students`,
+  sessions:         `${TABLE_PREFIX}_sessions`,
+  sessionStudents:  `${TABLE_PREFIX}_session_students`,
+  recurringSeries:  `${TABLE_PREFIX}_recurring_series`,
+  timeOff:          `${TABLE_PREFIX}_tutor_time_off`,
+  events:           `${TABLE_PREFIX}_events`,
+  centerSettings:   `${TABLE_PREFIX}_center_settings`,
+  reminderLogs:     `${TABLE_PREFIX}_reminder_logs`,
+} as const
+
+export function getCenterId(): string {
+  if (!centerId) {
+    throw new Error('Missing NEXT_PUBLIC_CENTER_ID or CENTER_ID for center-scoped data access.')
+  }
+
+  return centerId
+}
+
+export function withCenter(query: any): any {
+  return query.eq('center_id', getCenterId())
+}
+
+export function withCenterPayload<T extends Record<string, unknown>>(payload: T): T & { center_id: string } {
+  return {
+    ...payload,
+    center_id: getCenterId(),
+  }
 }

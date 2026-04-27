@@ -5,14 +5,14 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft, AlertTriangle, CalendarDays, Repeat2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { DB, withCenter } from '@/lib/db'
 import { dayOfWeek, getCentralTimeNow, toISODate } from '@/lib/useScheduleData'
 import { getSessionsForDay } from '@/components/constants'
 
-const p = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const STUDENTS = `${p}_students`
-const SESSIONS = `${p}_sessions`
-const SS = `${p}_session_students`
-const TUTORS = `${p}_tutors`
+const STUDENTS = DB.students
+const SESSIONS = DB.sessions
+const SS = DB.sessionStudents
+const TUTORS = DB.tutors
 
 type HistoryRow = {
   rowId: string
@@ -73,12 +73,12 @@ export default function StudentHistoryPage() {
 
       try {
         const [{ data: studentRow, error: studentErr }, { data: rows, error: rowsErr }, { data: tutorRows, error: tutorErr }] = await Promise.all([
-          supabase.from(STUDENTS).select('*').eq('id', studentId).single(),
-          (supabase
+          withCenter(supabase.from(STUDENTS).select('*').eq('id', studentId)).single(),
+          (withCenter(supabase
             .from(SS)
             .select(`id, topic, status, notes, series_id, session_id, ${SESSIONS} ( id, session_date, time, tutor_id )`)
-            .eq('student_id', studentId) as any),
-          supabase.from(TUTORS).select('id, name'),
+            .eq('student_id', studentId)) as any),
+          withCenter(supabase.from(TUTORS).select('id, name')),
         ])
 
         if (studentErr) throw studentErr

@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { X, Sparkles, Loader2, Check, AlertTriangle, ChevronDown, RotateCcw, Calendar, User, Clock, ArrowRight, Plus, Trash2 } from 'lucide-react'
 import type { Student, Tutor } from '@/lib/useScheduleData'
 import { SchedulePreviewGrid } from '@/components/SchedulePreviewGrid'
-import { SESSION_BLOCKS } from '@/components/constants'
+import { getSessionsForDay, type SessionBlock, type SessionTimesByDay } from '@/components/constants'
 
 interface AvailableSeat {
   tutor: { id: string; name: string; subjects: string[]; cat: string }
@@ -62,6 +62,10 @@ interface ScheduleBuilderProps {
   tutors: Tutor[]
   sessions: any[]
   allAvailableSeats: AvailableSeat[]
+  sessionTimesByDay?: SessionTimesByDay
+  terms?: Array<{ id: string; name: string; status: string }>
+  selectedTermId?: string
+  onChangeTerm?: (termId: string) => void
   weekStart: string
   weekEnd: string
   initialMode?: 'batch' | 'single'
@@ -108,6 +112,15 @@ function bookingConflict(
   bookedSlots: Record<string, Set<string>>
 ): boolean {
   return bookedSlots[studentId]?.has(`${slot.date}-${slot.time}`) ?? false
+}
+
+function toMinutes(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time)
+  if (!match) return null
+  const h = Number(match[1])
+  const m = Number(match[2])
+  if (Number.isNaN(h) || Number.isNaN(m)) return null
+  return h * 60 + m
 }
 
 // Prioritize clean placements first so conflict-heavy needs do not block easy wins.
@@ -219,14 +232,13 @@ function clientSideMatch(
         if (!studentTimesPerDay[dayKey][seat.dayNum]) studentTimesPerDay[dayKey][seat.dayNum] = []
         const timesOnDay = studentTimesPerDay[dayKey][seat.dayNum]
         if (timesOnDay.length > 0) {
-          // Prefer consecutive session times (less gaps)
-          const sessionOrder = ['11:00', '13:30', '15:30', '17:30', '19:30']
-          const currIdx = sessionOrder.indexOf(seat.time)
-          const lastIdx = sessionOrder.indexOf(timesOnDay[timesOnDay.length - 1])
-          if (currIdx > 0 && lastIdx >= 0 && Math.abs(currIdx - lastIdx) === 1) {
-            score += 12 // Consecutive time bonus
-          } else if (currIdx > 0 && lastIdx >= 0) {
-            score -= (Math.abs(currIdx - lastIdx) - 1) * 3 // Gap penalty
+          // Prefer tighter adjacent times without assuming fixed hardcoded session slots.
+          const curr = toMinutes(seat.time)
+          const last = toMinutes(timesOnDay[timesOnDay.length - 1])
+          if (curr != null && last != null) {
+            const diff = Math.abs(curr - last)
+            if (diff <= 70) score += 12
+            else score -= Math.max(1, Math.floor((diff - 1) / 30)) * 2
           }
         }
 
@@ -261,7 +273,7 @@ function clientSideMatch(
 }
 
 export function ScheduleBuilder({
-  students, tutors, sessions, allAvailableSeats, weekStart, weekEnd, initialMode = 'batch', onConfirm, onClose
+  students, tutors, sessions, allAvailableSeats, sessionTimesByDay, terms = [], selectedTermId = '', onChangeTerm, weekStart, weekEnd, initialMode = 'batch', onConfirm, onClose
 }: ScheduleBuilderProps) {
   const [builderMode, setBuilderMode] = useState<'batch' | 'single'>(initialMode)
   const [step, setStep] = useState<'select' | 'preview'>('select')
@@ -285,6 +297,31 @@ export function ScheduleBuilder({
   const [dirtyAvailability, setDirtyAvailability] = useState<Set<string>>(new Set())
   const persistedAvailabilityRef = useRef<Record<string, string[]>>({})
   const availabilitySaveVersionRef = useRef<Record<string, number>>({})
+
+  const builderSessionBlocks = useMemo<SessionBlock[]>(() => {
+    const byTime = new Map<string, SessionBlock>()
+    AVAILABILITY_DAYS.forEach(({ dow }) => {
+      const dayBlocks = getSessionsForDay(dow, sessionTimesByDay ?? null)
+      dayBlocks.forEach(block => {
+        const existing = byTime.get(block.time)
+        if (!existing) {
+          byTime.set(block.time, { ...block, days: [dow] })
+          return
+        }
+        if (!existing.days.includes(dow)) {
+          byTime.set(block.time, { ...existing, days: [...existing.days, dow] })
+        }
+      })
+    })
+
+    return Array.from(byTime.values())
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .map((block, idx) => ({
+        ...block,
+        label: `Session ${idx + 1}`,
+        days: [...block.days].sort((a, b) => a - b),
+      }))
+  }, [sessionTimesByDay])
 
   const normalizeBlocks = useCallback((blocks: string[]) => {
     return Array.from(new Set(blocks)).sort()
@@ -359,6 +396,34 @@ export function ScheduleBuilder({
 
     return result
   }, [sessions])
+
+  const subjectOptions = useMemo(() => {
+    const dynamicSubjects = new Set<string>()
+
+    ALL_SUBJECTS.forEach(subject => {
+      if (typeof subject === 'string' && subject.trim()) dynamicSubjects.add(subject.trim())
+    })
+
+    students.forEach(student => {
+      getStudentSubjects(student).forEach(subject => {
+        if (typeof subject === 'string' && subject.trim()) dynamicSubjects.add(subject.trim())
+      })
+    })
+
+    tutors.forEach(tutor => {
+      ;(tutor.subjects ?? []).forEach(subject => {
+        if (typeof subject === 'string' && subject.trim()) dynamicSubjects.add(subject.trim())
+      })
+    })
+
+    Object.values(recurringTopicsByStudent).forEach(topics => {
+      topics.forEach(subject => {
+        if (typeof subject === 'string' && subject.trim()) dynamicSubjects.add(subject.trim())
+      })
+    })
+
+    return Array.from(dynamicSubjects).sort((a, b) => a.localeCompare(b))
+  }, [students, tutors, recurringTopicsByStudent])
 
   const existingSeatCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -608,8 +673,9 @@ export function ScheduleBuilder({
 
         if (!destination) continue
 
-        const fullDayName = (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])[new Date(full.date + 'T00:00:00').getDay()] ?? full.date
-        const fullBlockLabel = SESSION_BLOCKS.find((b: any) => b.time === full.time)?.label ?? full.time
+        const matchedSeat = candidateSeats.find(seat => seat.date === full.date && seat.time === full.time)
+        const fullDayName = matchedSeat?.dayName ?? ((['Sun','Mon','Tue','Wed','Thu','Fri','Sat'])[new Date(full.date + 'T00:00:00').getDay()] ?? full.date)
+        const fullBlockLabel = matchedSeat?.block?.label ?? full.time
 
         const scoringFactors: Array<{ label: string; value: string; impact: 'positive' | 'negative' | 'neutral' }> = [
           { label: 'Opens full session', value: 'Session has 3 students — making room optimizes class', impact: 'positive' },
@@ -701,7 +767,11 @@ export function ScheduleBuilder({
     const res = await fetch('/api/student-availability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ studentId, availabilityBlocks })
+      body: JSON.stringify({
+        studentId,
+        availabilityBlocks,
+        termId: selectedTermId || undefined,
+      })
     })
 
     if (!res.ok) {
@@ -723,7 +793,7 @@ export function ScheduleBuilder({
       persistedAvailabilityRef.current = next
       return next
     })
-  }, [])
+  }, [selectedTermId])
 
   const persistAvailabilityChange = useCallback(async (studentId: string, availabilityBlocks: string[]) => {
     setSavingAvailability(s => new Set([...s, studentId]))
@@ -914,6 +984,7 @@ export function ScheduleBuilder({
           })),
           weekStart,
           weekEnd,
+          sessionTimesByDay,
         }),
       })
 
@@ -953,7 +1024,7 @@ export function ScheduleBuilder({
     } finally {
       setGenerating(false)
     }
-  }, [canGenerate, builderMode, singleSelectedStudent, singleSubject, allNeeds, allAvailableSeats, weekStart, weekEnd, bookedSlotsByStudent, buildSuggestionsForNeed, singleSessionBlocks])
+  }, [canGenerate, builderMode, singleSelectedStudent, singleSubject, allNeeds, allAvailableSeats, weekStart, weekEnd, sessionTimesByDay, bookedSlotsByStudent, buildSuggestionsForNeed, singleSessionBlocks])
 
   const swapSlot = useCallback((needId: string, slotIndex: number) => {
     const slot = previewSeatPool[slotIndex]
@@ -1030,6 +1101,12 @@ export function ScheduleBuilder({
   const inputStyle: React.CSSProperties = { padding: '8px 12px', borderRadius: 10, border: '1.5px solid #94a3b8', fontSize: 13, outline: 'none', background: 'white', color: '#0f172a' }
   const btnSecondary: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: '1.5px solid #94a3b8', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'white', color: '#0f172a' }
 
+  useEffect(() => {
+    setStep('select')
+    setProposals([])
+    setSuggestionsByNeed({})
+  }, [selectedTermId])
+
   return (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, background: 'rgba(2,6,23,0.72)', backdropFilter: 'blur(10px)' }}
@@ -1079,6 +1156,23 @@ export function ScheduleBuilder({
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {terms.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 10, background: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#64748b' }}>Term</span>
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={selectedTermId}
+                    onChange={e => onChangeTerm?.(e.target.value)}
+                    style={{ padding: '5px 26px 5px 8px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', color: '#0f172a', fontSize: 11, fontWeight: 700, appearance: 'none', cursor: 'pointer', minWidth: 170 }}
+                  >
+                    {terms.map(term => (
+                      <option key={term.id} value={term.id}>{term.name} ({term.status})</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={10} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', color: '#64748b', pointerEvents: 'none' }} />
+                </div>
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 4, borderRadius: 10, background: '#e2e8f0', border: '1px solid #94a3b8' }}>
               <button
                 onClick={() => setBuilderMode('batch')}
@@ -1168,7 +1262,7 @@ export function ScheduleBuilder({
                             onChange={e => setSingleSubject(e.target.value)}
                             style={{ width: '100%', padding: '9px 28px 9px 12px', borderRadius: 10, border: `1.5px solid ${singleSubject ? '#7c3aed' : '#cbd5e1'}`, fontSize: 13, fontWeight: 600, color: singleSubject ? '#0f172a' : '#94a3b8', background: 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}>
                             <option value="">Pick subject…</option>
-                            {ALL_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                            {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                           <ChevronDown size={11} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
                         </div>
@@ -1207,8 +1301,8 @@ export function ScheduleBuilder({
                             </tr>
                           </thead>
                           <tbody>
-                            {SESSION_BLOCKS.map((block, i) => (
-                              <tr key={block.id} style={{ borderBottom: i < SESSION_BLOCKS.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                            {builderSessionBlocks.map((block, i) => (
+                              <tr key={block.id} style={{ borderBottom: i < builderSessionBlocks.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                                 <td style={{ padding: '7px 10px' }}>
                                   <div style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{block.label}</div>
                                   <div style={{ fontSize: 10, color: '#64748b' }}>{block.display}</div>
@@ -1257,6 +1351,11 @@ export function ScheduleBuilder({
                 const isBooked   = bookedStudentIds.has(student.id)
                 const needs      = studentNeeds[student.id] ?? []
                 const hasEmpty   = needs.some(n => !n.subject)
+                const selectedSubjects = Array.from(new Set(
+                  needs
+                    .map(need => need.subject?.trim())
+                    .filter((subject): subject is string => Boolean(subject))
+                ))
                 const activeAvailability = studentAvailability[student.id] ?? student.availabilityBlocks ?? []
                 const hasUnsavedAvailability = dirtyAvailability.has(student.id)
                 const isSavingAvailability = savingAvailability.has(student.id)
@@ -1288,6 +1387,26 @@ export function ScheduleBuilder({
                         {isSelected && !hasEmpty && needs.length > 0 && (
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
                             {needs.length} session{needs.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                        {isSelected && selectedSubjects.length > 0 && (
+                          <span
+                            title={selectedSubjects.join(', ')}
+                            style={{
+                              maxWidth: 220,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: 20,
+                              background: '#f1f5f9',
+                              color: '#334155',
+                              border: '1px solid #cbd5e1',
+                            }}
+                          >
+                            {selectedSubjects.join(', ')}
                           </span>
                         )}
                       </div>
@@ -1348,8 +1467,8 @@ export function ScheduleBuilder({
                                 </tr>
                               </thead>
                               <tbody>
-                                {SESSION_BLOCKS.map((block, i) => (
-                                  <tr key={block.id} style={{ borderBottom: i < SESSION_BLOCKS.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                                {builderSessionBlocks.map((block, i) => (
+                                  <tr key={block.id} style={{ borderBottom: i < builderSessionBlocks.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                                     <td style={{ padding: '7px 10px' }}>
                                       <div style={{ fontSize: 11, fontWeight: 700, color: '#0f172a' }}>{block.label}</div>
                                       <div style={{ fontSize: 10, color: '#64748b' }}>{block.display}</div>
@@ -1402,7 +1521,7 @@ export function ScheduleBuilder({
                                 style={{ width: '100%', padding: '7px 28px 7px 12px', borderRadius: 10, border: `1.5px solid ${!need.subject ? '#ef4444' : '#7c3aed'}`, fontSize: 13, fontWeight: 600, color: need.subject ? '#0f172a' : '#334155', background: 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}
                               >
                                 <option value="">Pick subject…</option>
-                                {ALL_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                                {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
                             </div>

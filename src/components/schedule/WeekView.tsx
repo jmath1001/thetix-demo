@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, X, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
-import { getSessionsForDay } from '@/components/constants';
+import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
@@ -60,6 +60,7 @@ interface WeekViewProps {
   selectedRemovals: Record<string, { sessionId: string; studentId: string; name: string }>;
   setSelectedRemovals: (value: Record<string, { sessionId: string; studentId: string; name: string }> | ((prev: Record<string, { sessionId: string; studentId: string; name: string }>) => Record<string, { sessionId: string; studentId: string; name: string }>)) => void;
   refetch: () => void;
+  sessionTimesByDay?: SessionTimesByDay | null;
   onMoveStudent: (params: {
     rowId: string;
     studentId: string;
@@ -86,6 +87,7 @@ export function WeekView({
   setSelectedRemovals,
   refetch,
   onMoveStudent,
+  sessionTimesByDay,
 }: WeekViewProps) {
   const [forms, setForms]               = useState<Record<string, InlineForm>>({});
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -521,7 +523,7 @@ export function WeekView({
           (session) => (session.students ?? []).some((st: any) => st.status !== 'cancelled')
         ).length;
         const studentsPerSession = scheduledSessionCount > 0 ? (dayStudentCount / scheduledSessionCount) : 0;
-        const daySessions = getSessionsForDay(dow);
+        const daySessions = getSessionsForDay(dow, sessionTimesByDay);
 
         const filteredActiveTutors = hasSlotFilter
           ? activeTutors.filter((tutor) =>
@@ -530,6 +532,9 @@ export function WeekView({
                 const activeStudents = (session?.students ?? []).filter((st: any) => st.status !== 'cancelled');
                 const studentBlob = activeStudents.map((st: any) => [st.name, st.topic, st.notes, st.grade ? `grade ${st.grade}` : ''].filter(Boolean).join(' ')).join(' ');
                 return slotTextMatchesFilter([
+                    dayLabel,
+                    dateLabel,
+                    isoDate,
                   tutor.name,
                   tutor.cat,
                   (tutor.subjects ?? []).join(' '),
@@ -549,6 +554,9 @@ export function WeekView({
                 const activeStudents = (session?.students ?? []).filter((st: any) => st.status !== 'cancelled');
                 const studentBlob = activeStudents.map((st: any) => [st.name, st.topic, st.notes, st.grade ? `grade ${st.grade}` : ''].filter(Boolean).join(' ')).join(' ');
                 return slotTextMatchesFilter([
+                  dayLabel,
+                  dateLabel,
+                  isoDate,
                   tutor.name,
                   tutor.cat,
                   (tutor.subjects ?? []).join(' '),

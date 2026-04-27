@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { DB } from '@/lib/db';
+import { DB, withCenter } from '@/lib/db';
 import {
   fetchAllSeries, fetchSeriesSessions, cancelSeries,
   rescheduleSeries, markCompletedSeries, createConfirmationToken, bookStudent,
@@ -371,8 +371,8 @@ export default function RecurringManager() {
       await markCompletedSeries();
       const [seriesData, tutorRes, studentRes] = await Promise.all([
         fetchAllSeries(),
-        supabase.from(DB.tutors).select('*').order('name'),
-        supabase.from(DB.students).select('*').order('name'),
+        withCenter(supabase.from(DB.tutors).select('*')).order('name'),
+        withCenter(supabase.from(DB.students).select('*')).order('name'),
       ]);
       setSeries(seriesData);
       setTutors((tutorRes.data ?? []).map((r: any) => ({
@@ -414,7 +414,7 @@ export default function RecurringManager() {
 
   const handleDelete = async (id: string) => {
     try {
-      await supabase.from(DB.recurringSeries).delete().eq('id', id);
+      await withCenter(supabase.from(DB.recurringSeries).delete()).eq('id', id);
       logEvent('recurring_series_deleted', { seriesId: id });
       await load();
     }

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
-import { getSessionsForDay } from '@/components/constants';
+import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
@@ -71,6 +71,7 @@ interface TodayViewProps {
     toDate: string;
     toTime: string;
   }) => Promise<void>;
+  sessionTimesByDay?: SessionTimesByDay | null;
 }
 
 
@@ -346,6 +347,7 @@ export function TodayView({
   selectedDate,
   onDateChange,
   onMoveStudent,
+  sessionTimesByDay,
 }: TodayViewProps) {
 
   // one InlineForm per slot key
@@ -369,7 +371,7 @@ export function TodayView({
   const dayLabel  = isToday ? (DAY_NAMES[dayIdx] ?? 'Today') : (DAY_NAMES[dayIdx] ?? 'Selected Day');
   const isWeekend = !ACTIVE_DAYS.includes(todayDow);
 
-  const daySessions = getSessionsForDay(todayDow);
+  const daySessions = getSessionsForDay(todayDow, sessionTimesByDay);
   const todayTutors = tutors.filter(t =>
     t.availability.includes(todayDow) &&
     (selectedTutorFilter === null || t.id === selectedTutorFilter)

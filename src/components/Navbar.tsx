@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   Calendar, Users, GraduationCap,
-  Repeat, Mail, ChevronLeft, ChevronRight,
+  Repeat, Mail, Settings, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 const CENTER_NAME  = process.env.NEXT_PUBLIC_CENTER_NAME       ?? 'Scheduler';
@@ -14,6 +14,7 @@ const navItems = [
   { name: 'Recurring', icon: Repeat,        href: '/recurring' },
   { name: 'Tutors',    icon: Users,         href: '/tutor' },
   { name: 'Students',  icon: GraduationCap, href: '/students' },
+  { name: 'Center',    icon: Settings,      href: '/center-settings' },
   { name: 'Contact',   icon: Mail,          href: '/contact' },
 ];
 
@@ -114,7 +115,9 @@ export function Navbar({ initialCollapsed = false }: { initialCollapsed?: boolea
         {/* ── Nav items ──────────────────────────────────── */}
         <nav className="flex flex-col gap-0.5 px-2 py-3 flex-1">
           {navItems.map(({ name, icon: Icon, href }) => {
-            const active = current === href;
+            const active = href === '/'
+              ? current === '/'
+              : current === href || current.startsWith(`${href}/`)
             return (
               <a
                 key={name}
@@ -152,7 +155,9 @@ export function Navbar({ initialCollapsed = false }: { initialCollapsed?: boolea
         style={{ background: '#ffffff', borderTop: '1px solid #f3f4f6', boxShadow: '0 -2px 8px rgba(0,0,0,0.06)' }}
       >
         {navItems.map(({ name, icon: Icon, href }) => {
-          const active = current === href;
+          const active = href === '/'
+            ? current === '/'
+            : current === href || current.startsWith(`${href}/`)
           return (
             <a
               key={name}

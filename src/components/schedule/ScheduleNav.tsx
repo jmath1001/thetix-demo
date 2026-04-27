@@ -13,6 +13,9 @@ interface ScheduleNavProps {
   goToNextWeek: () => void;
   goToThisWeek: () => void;
   tutors: Tutor[];
+  terms?: Array<{ id: string; name: string; status?: string | null }>;
+  selectedTermId?: string;
+  setSelectedTermId?: (v: string) => void;
   selectedTutorFilter: string | null;
   setSelectedTutorFilter: (v: string | null) => void;
   onOpenEnrollModal: () => void;
@@ -38,6 +41,9 @@ export function ScheduleNav({
   goToNextWeek,
   goToThisWeek,
   tutors,
+  terms = [],
+  selectedTermId = '',
+  setSelectedTermId,
   selectedTutorFilter,
   setSelectedTutorFilter,
   onOpenEnrollModal,
@@ -100,28 +106,12 @@ export function ScheduleNav({
             </>
           )}
 
-        {commandBarSlot && (
-          <div className="absolute left-1/2 top-1/2 hidden xl:flex w-full -translate-x-1/2 -translate-y-1/2 justify-center px-4 pointer-events-none" style={{ maxWidth: 620 }}>
-            <div
-              className="w-full flex items-center justify-center gap-2 pointer-events-auto rounded-lg px-1.5 py-1"
-              style={{
-                maxWidth: 560,
-                background: 'linear-gradient(120deg, rgba(79,70,229,0.12) 0%, rgba(129,140,248,0.16) 52%, rgba(224,231,255,0.9) 100%)',
-                border: '1px solid #c7d2fe',
-                boxShadow: '0 6px 14px rgba(79,70,229,0.12)',
-              }}
-            >
-              {commandBarSlot}
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 min-w-0" />
 
-        {/* Assistant command bar stays inline below xl to avoid overlapping nav controls */}
+        {/* Assistant command bar stays inline to avoid overlapping nav controls */}
         {commandBarSlot && (
           <div
-            className="hidden lg:flex xl:hidden items-center gap-2 shrink-0 rounded-lg px-1.5 py-1"
+            className="hidden lg:flex items-center gap-2 shrink-0 rounded-lg px-1.5 py-1"
             style={{
               background: 'linear-gradient(120deg, rgba(79,70,229,0.12) 0%, rgba(129,140,248,0.16) 52%, rgba(224,231,255,0.9) 100%)',
               border: '1px solid #c7d2fe',
@@ -213,6 +203,30 @@ export function ScheduleNav({
           </div>
 
           <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+
+          {!todayView && terms.length > 0 && setSelectedTermId && (
+            <>
+              <div className="relative shrink-0">
+                <select
+                  value={selectedTermId}
+                  onChange={e => setSelectedTermId(e.target.value)}
+                  className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider cursor-pointer"
+                  style={{
+                    background: '#eff6ff',
+                    border: '1px solid #93c5fd',
+                    color: '#1d4ed8',
+                    outline: 'none', maxWidth: 132,
+                  }}>
+                  {terms.map(term => (
+                    <option key={term.id} value={term.id}>{term.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: '#2563eb' }} />
+              </div>
+              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+            </>
+          )}
 
           {/* Tutor filter */}
           <div className="relative shrink-0">

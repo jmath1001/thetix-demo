@@ -6,14 +6,14 @@ import type {
   CommandContext,
   CommandResult,
 } from '@/lib/command/types'
+import { DB, withCenter, withCenterPayload } from '@/lib/db'
 import { activeStudentRows, dateRangeInclusive, resolveDayToken } from '@/lib/command/utils'
 
-const p = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const STUDENTS = `${p}_students`
-const SESSIONS = `${p}_sessions`
-const SS = `${p}_session_students`
-const TIME_OFF = `${p}_tutor_time_off`
-const TUTORS = `${p}_tutors`
+const STUDENTS = DB.students
+const SESSIONS = DB.sessions
+const SS = DB.sessionStudents
+const TIME_OFF = DB.timeOff
+const TUTORS = DB.tutors
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -349,12 +349,14 @@ async function executeCreateTimeOff(params: Record<string, unknown>): Promise<Ac
   const note = typeof params.note === 'string' ? params.note : ''
 
   const requestedDates = dateRangeInclusive(startDate, endDate)
-  const { data: existing, error: existingErr } = await supabase
-    .from(TIME_OFF)
-    .select('date')
-    .eq('tutor_id', tutorId)
-    .gte('date', startDate)
-    .lte('date', endDate)
+  const { data: existing, error: existingErr } = await withCenter(
+    supabase
+      .from(TIME_OFF)
+      .select('date')
+      .eq('tutor_id', tutorId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+  )
   if (existingErr) throw existingErr
 
   const existingSet = new Set((existing ?? []).map((r: { date: string }) => r.date))
@@ -368,7 +370,7 @@ async function executeCreateTimeOff(params: Record<string, unknown>): Promise<Ac
     }
   }
 
-  const rows = toInsertDates.map((date) => ({ tutor_id: tutorId, date, note }))
+  const rows = toInsertDates.map((date) => withCenterPayload({ tutor_id: tutorId, date, note }))
   const { error: insertErr } = await supabase.from(TIME_OFF).insert(rows)
   if (insertErr) throw insertErr
 
@@ -426,7 +428,7 @@ async function executeUpdateStudentContact(params: Record<string, unknown>): Pro
   const patch: Record<string, unknown> = {}
   patch[field] = params.value ?? null
 
-  const { error } = await supabase.from(STUDENTS).update(patch).eq('id', studentId)
+  const { error } = await withCenter(supabase.from(STUDENTS).update(patch)).eq('id', studentId)
   if (error) throw error
 
   return {
@@ -516,10 +518,12 @@ async function executeMoveSession(params: Record<string, unknown>): Promise<Acti
   const studentId = typeof params.studentId === 'string' ? params.studentId : ''
   const rowId = typeof params.rowId === 'string' ? params.rowId : ''
 
-  const { data: fromSession, error: fromErr } = await supabase
-    .from(SESSIONS)
-    .select('id, tutor_id, session_date, time')
-    .eq('id', fromSessionId)
+  const { data: fromSession, error: fromErr } = await withCenter(
+    supabase
+      .from(SESSIONS)
+      .select('id, tutor_id, session_date, time')
+      .eq('id', fromSessionId)
+  )
     .single()
   if (fromErr) throw fromErr
 
@@ -535,34 +539,38 @@ async function executeMoveSession(params: Record<string, unknown>): Promise<Acti
     }
   }
 
-  const { data: sessionsAtTime, error: satErr } = await supabase
-    .from(SESSIONS)
-    .select('id')
-    .eq('session_date', toDate)
-    .eq('time', toTime)
+  const { data: sessionsAtTime, error: satErr } = await withCenter(
+    supabase
+      .from(SESSIONS)
+      .select('id')
+      .eq('session_date', toDate)
+      .eq('time', toTime)
+  )
   if (satErr) throw satErr
 
   const targetSessionIds = (sessionsAtTime ?? []).map((s: { id: string }) => s.id)
   if (targetSessionIds.length > 0) {
-    const { data: dup, error: dupErr } = await supabase
-      .from(SS)
-      .select('id')
-      .in('session_id', targetSessionIds)
-      .eq('student_id', studentId)
-      .neq('status', 'cancelled')
-      .neq('id', rowId)
+    const { data: dup, error: dupErr } = await withCenter(
+      supabase
+        .from(SS)
+        .select('id')
+        .in('session_id', targetSessionIds)
+        .eq('student_id', studentId)
+        .neq('status', 'cancelled')
+        .neq('id', rowId)
+    )
       .maybeSingle()
     if (dupErr) throw dupErr
     if (dup) throw new Error('Student is already booked at that date/time.')
   }
 
-  const { data: existing, error: existingErr } = await (supabase
+  const { data: existing, error: existingErr } = await (withCenter(supabase
     .from(SESSIONS)
     .select(`id, ${SS}(id)`)
     .eq('session_date', toDate)
     .eq('tutor_id', toTutorId)
     .eq('time', toTime)
-    .maybeSingle() as any)
+    ).maybeSingle() as any)
   if (existingErr) throw existingErr
 
   let targetSessionId: string
@@ -572,16 +580,18 @@ async function executeMoveSession(params: Record<string, unknown>): Promise<Acti
   } else {
     const { data: created, error: createErr } = await supabase
       .from(SESSIONS)
-      .insert({ session_date: toDate, tutor_id: toTutorId, time: toTime })
+      .insert(withCenterPayload({ session_date: toDate, tutor_id: toTutorId, time: toTime }))
       .select('id')
       .single()
     if (createErr) throw createErr
     targetSessionId = created.id
   }
 
-  const { error: moveErr } = await supabase
-    .from(SS)
-    .update({ session_id: targetSessionId })
+  const { error: moveErr } = await withCenter(
+    supabase
+      .from(SS)
+      .update({ session_id: targetSessionId })
+  )
     .eq('id', rowId)
     .eq('student_id', studentId)
   if (moveErr) throw moveErr
@@ -653,40 +663,46 @@ async function executeBookStudent(params: Record<string, unknown>): Promise<Acti
     throw new Error('Booking execution requires student, tutor, date, and time.')
   }
 
-  const { data: student, error: studentErr } = await supabase
-    .from(STUDENTS)
-    .select('id, name')
-    .eq('id', studentId)
+  const { data: student, error: studentErr } = await withCenter(
+    supabase
+      .from(STUDENTS)
+      .select('id, name')
+      .eq('id', studentId)
+  )
     .single()
   if (studentErr) throw studentErr
 
-  const { data: sessionsAtTime, error: satErr } = await supabase
-    .from(SESSIONS)
-    .select('id')
-    .eq('session_date', date)
-    .eq('time', time)
+  const { data: sessionsAtTime, error: satErr } = await withCenter(
+    supabase
+      .from(SESSIONS)
+      .select('id')
+      .eq('session_date', date)
+      .eq('time', time)
+  )
   if (satErr) throw satErr
 
   const targetSessionIds = (sessionsAtTime ?? []).map((s: { id: string }) => s.id)
   if (targetSessionIds.length > 0) {
-    const { data: dup, error: dupErr } = await supabase
-      .from(SS)
-      .select('id')
-      .in('session_id', targetSessionIds)
-      .eq('student_id', studentId)
-      .neq('status', 'cancelled')
+    const { data: dup, error: dupErr } = await withCenter(
+      supabase
+        .from(SS)
+        .select('id')
+        .in('session_id', targetSessionIds)
+        .eq('student_id', studentId)
+        .neq('status', 'cancelled')
+    )
       .maybeSingle()
     if (dupErr) throw dupErr
     if (dup) throw new Error('Student is already booked at that date/time.')
   }
 
-  const { data: existing, error: existingErr } = await (supabase
+  const { data: existing, error: existingErr } = await (withCenter(supabase
     .from(SESSIONS)
     .select(`id, ${SS}(id)`)
     .eq('session_date', date)
     .eq('tutor_id', tutorId)
     .eq('time', time)
-    .maybeSingle() as any)
+    ).maybeSingle() as any)
   if (existingErr) throw existingErr
 
   let sessionId: string
@@ -696,7 +712,7 @@ async function executeBookStudent(params: Record<string, unknown>): Promise<Acti
   } else {
     const { data: created, error: createErr } = await supabase
       .from(SESSIONS)
-      .insert({ session_date: date, tutor_id: tutorId, time })
+      .insert(withCenterPayload({ session_date: date, tutor_id: tutorId, time }))
       .select('id')
       .single()
     if (createErr) throw createErr
@@ -707,14 +723,14 @@ async function executeBookStudent(params: Record<string, unknown>): Promise<Acti
     globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`
 
-  const { error: enrollErr } = await supabase.from(SS).insert({
+  const { error: enrollErr } = await supabase.from(SS).insert(withCenterPayload({
     session_id: sessionId,
     student_id: studentId,
     name: student.name,
     topic,
     status: 'scheduled',
     confirmation_token: confirmationToken,
-  })
+  }))
   if (enrollErr) throw enrollErr
 
   return {
@@ -937,10 +953,12 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
 
     const block = `${dow}-${time}`
 
-    const { data: tutor, error: tutorErr } = await supabase
-      .from(TUTORS)
-      .select('availability, availability_blocks')
-      .eq('id', tutorId)
+    const { data: tutor, error: tutorErr } = await withCenter(
+      supabase
+        .from(TUTORS)
+        .select('availability, availability_blocks')
+        .eq('id', tutorId)
+    )
       .single()
     if (tutorErr) throw tutorErr
 
@@ -953,12 +971,14 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
       .filter((d) => Number.isFinite(d))
       .sort((a, b) => a - b)
 
-    const { error: updateErr } = await supabase
-      .from(TUTORS)
-      .update({
+    const { error: updateErr } = await withCenter(
+      supabase
+        .from(TUTORS)
+        .update({
         availability_blocks: nextBlocks,
         availability: nextAvailability,
-      })
+        })
+    )
       .eq('id', tutorId)
     if (updateErr) throw updateErr
 
@@ -978,12 +998,14 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
 
     if (action === 'add_time_off') {
       const note = typeof params.note === 'string' ? params.note : ''
-      const { data: existing, error: existingErr } = await supabase
-        .from(TIME_OFF)
-        .select('date')
-        .eq('tutor_id', tutorId)
-        .gte('date', startDate)
-        .lte('date', endDate)
+      const { data: existing, error: existingErr } = await withCenter(
+        supabase
+          .from(TIME_OFF)
+          .select('date')
+          .eq('tutor_id', tutorId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+      )
       if (existingErr) throw existingErr
 
       const existingSet = new Set((existing ?? []).map((row: { date: string }) => row.date))
@@ -997,7 +1019,7 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
       }
 
       const { error: insertErr } = await supabase.from(TIME_OFF).insert(
-        toInsert.map((date) => ({ tutor_id: tutorId, date, note }))
+        toInsert.map((date) => withCenterPayload({ tutor_id: tutorId, date, note }))
       )
       if (insertErr) throw insertErr
 
@@ -1008,12 +1030,14 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
       }
     }
 
-    const { data: existing, error: existingErr } = await supabase
-      .from(TIME_OFF)
-      .select('id, date')
-      .eq('tutor_id', tutorId)
-      .gte('date', startDate)
-      .lte('date', endDate)
+    const { data: existing, error: existingErr } = await withCenter(
+      supabase
+        .from(TIME_OFF)
+        .select('id, date')
+        .eq('tutor_id', tutorId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+    )
     if (existingErr) throw existingErr
 
     const ids = (existing ?? []).map((row: { id: string }) => row.id).filter(Boolean)
@@ -1025,7 +1049,7 @@ async function executeManageTutorSchedule(params: Record<string, unknown>): Prom
       }
     }
 
-    const { error: deleteErr } = await supabase.from(TIME_OFF).delete().in('id', ids)
+    const { error: deleteErr } = await withCenter(supabase.from(TIME_OFF).delete()).in('id', ids)
     if (deleteErr) throw deleteErr
 
     return {

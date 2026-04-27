@@ -2,10 +2,10 @@
 import { useState, useRef } from 'react';
 import { X, Upload, FileText, ChevronRight, Loader2, ClipboardPaste } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
+import { DB, withCenterPayload } from '@/lib/db';
 import { logEvent } from '@/lib/analytics';
 
-const p        = process.env.NEXT_PUBLIC_TABLE_PREFIX ?? 'slake'
-const STUDENTS = `${p}_students`
+const STUDENTS = DB.students
 
 const DB_FIELDS = [
   { key: 'name',         label: 'Name',          required: true },
@@ -116,7 +116,7 @@ export function CSVImportModal({ onClose, onImported }: Props) {
       DB_FIELDS.forEach(f => { rec[f.key] = getMapped(row, f.key) || null })
       return rec
     })
-    const { error } = await supabase.from(STUDENTS).insert(records)
+    const { error } = await supabase.from(STUDENTS).insert(records.map(record => withCenterPayload(record)))
     if (error) { setError(error.message); setStep('map'); return }
     logEvent('students_imported', { count: records.length })
     onImported()

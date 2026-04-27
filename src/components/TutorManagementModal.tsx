@@ -1,10 +1,16 @@
 "use client"
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { X, Trash2, UserPlus, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { SESSION_BLOCKS } from '@/components/constants';
 import { supabase } from '@/lib/supabaseClient';
 import { DB } from '@/lib/db';
 import type { Tutor } from '@/lib/useScheduleData';
+
+type TermOption = {
+  id: string;
+  name: string;
+  status?: string | null;
+}
 
 
 
@@ -230,26 +236,137 @@ function TutorRow({ tutor, onSave, onDelete }: { tutor: Tutor; onSave: (u: Tutor
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
 
-export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: Tutor[]; onClose: () => void; onRefetch: () => void }) {
+export function TutorManagementModal({
+  tutors,
+  terms,
+  selectedTermId,
+  onSelectTerm,
+  onClose,
+  onRefetch,
+}: {
+  tutors: Tutor[];
+  terms: TermOption[];
+  selectedTermId: string;
+  onSelectTerm: (termId: string) => void;
+  onClose: () => void;
+  onRefetch: () => void;
+}) {
   const [adding, setAdding] = useState(false);
   const [newTutor, setNewTutor] = useState<Omit<Tutor, 'id'>>(EMPTY_TUTOR);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingTermAvailability, setLoadingTermAvailability] = useState(false);
+  const [termAvailabilityByTutor, setTermAvailabilityByTutor] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTermAvailability() {
+      if (!selectedTermId) {
+        setTermAvailabilityByTutor({});
+        return;
+      }
+
+      setLoadingTermAvailability(true);
+      try {
+        const res = await fetch(`/api/tutor-availability?termId=${encodeURIComponent(selectedTermId)}`, {
+          cache: 'no-store',
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || 'Failed to load term tutor availability');
+
+        const rows = Array.isArray(payload?.overrides) ? payload.overrides : [];
+        const map = rows.reduce((acc: Record<string, string[]>, row: any) => {
+          if (row?.tutor_id && Array.isArray(row?.availability_blocks)) {
+            acc[row.tutor_id] = row.availability_blocks;
+          }
+          return acc;
+        }, {});
+
+        if (!cancelled) setTermAvailabilityByTutor(map);
+      } catch (err: any) {
+        if (!cancelled) {
+          setTermAvailabilityByTutor({});
+          setError(err?.message || 'Failed to load term tutor availability');
+        }
+      } finally {
+        if (!cancelled) setLoadingTermAvailability(false);
+      }
+    }
+
+    void loadTermAvailability();
+    return () => { cancelled = true; };
+  }, [selectedTermId]);
+
+  const effectiveTutors = useMemo(() => {
+    return tutors.map(tutor => {
+      const termBlocks = termAvailabilityByTutor[tutor.id];
+      if (!selectedTermId || !Array.isArray(termBlocks)) return tutor;
+
+      const availability = Array.from(new Set(
+        termBlocks
+          .map(block => {
+            const [dow] = block.split('-');
+            const parsed = Number(dow);
+            return Number.isFinite(parsed) ? parsed : null;
+          })
+          .filter((value): value is number => value !== null)
+      )).sort((a, b) => a - b);
+
+      return {
+        ...tutor,
+        availabilityBlocks: termBlocks,
+        availability,
+      };
+    });
+  }, [tutors, selectedTermId, termAvailabilityByTutor]);
 
   const handleSave = async (updated: Tutor) => {
     setError(null);
-    const { error } = await supabase
+    const { error: tutorUpdateError } = await supabase
       .from(DB.tutors)
       .update({
         name: updated.name,
         subjects: updated.subjects,
         cat: updated.cat,
-        availability: updated.availability,
-        availability_blocks: updated.availabilityBlocks,
+        ...(selectedTermId
+          ? {}
+          : {
+              availability: updated.availability,
+              availability_blocks: updated.availabilityBlocks,
+            }),
       })
       .eq('id', updated.id);
-    if (error) setError(error.message);
-    else onRefetch();
+
+    if (tutorUpdateError) {
+      setError(tutorUpdateError.message);
+      return;
+    }
+
+    if (selectedTermId) {
+      const res = await fetch('/api/tutor-availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tutorId: updated.id,
+          termId: selectedTermId,
+          availabilityBlocks: updated.availabilityBlocks,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(payload?.error || 'Failed to save tutor availability for term');
+        return;
+      }
+
+      setTermAvailabilityByTutor(prev => ({
+        ...prev,
+        [updated.id]: updated.availabilityBlocks,
+      }));
+    }
+
+    onRefetch();
   };
 
   const handleDelete = async (id: string) => {
@@ -284,8 +401,26 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
           <div>
             <h2 className="text-lg font-bold" style={{ color: '#1c1917' }}>Manage Tutors</h2>
             <p className="text-xs mt-0.5" style={{ color: '#a8a29e' }}>{tutors.length} tutor{tutors.length !== 1 ? 's' : ''}</p>
+            {selectedTermId && (
+              <p className="text-[10px] mt-1 font-semibold" style={{ color: '#6d28d9' }}>Editing availability for selected term</p>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {terms.length > 0 && (
+              <div className="relative">
+                <select
+                  value={selectedTermId}
+                  onChange={e => onSelectTerm(e.target.value)}
+                  className="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg text-[11px] font-semibold"
+                  style={{ border: '1px solid #d6d3d1', color: '#57534e', background: 'white' }}
+                >
+                  {terms.map(term => (
+                    <option key={term.id} value={term.id}>{term.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#a8a29e' }} />
+              </div>
+            )}
             {!adding && (
               <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white"
                 style={{ background: '#6d28d9', boxShadow: '0 1px 3px rgba(109,40,217,0.4)' }}
@@ -302,6 +437,12 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ background: '#faf9f7' }}>
+          {loadingTermAvailability && (
+            <div className="p-3 rounded-xl text-xs font-semibold" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4338ca' }}>
+              Loading tutor availability for selected term...
+            </div>
+          )}
+
           {error && (
             <div className="p-3 rounded-xl flex items-center gap-2 text-sm" style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b' }}>
               <AlertTriangle size={14} /> {error}
@@ -345,7 +486,7 @@ export function TutorManagementModal({ tutors, onClose, onRefetch }: { tutors: T
             </div>
           )}
 
-          {tutors.map(t => (
+          {effectiveTutors.map(t => (
             <TutorRow key={t.id} tutor={t} onSave={handleSave} onDelete={handleDelete} />
           ))}
 

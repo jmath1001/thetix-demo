@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation';
 import { Loader2, Zap } from 'lucide-react';
 
-import { MAX_CAPACITY, getSessionsForDay, type SessionBlock } from '@/components/constants';
+import { MAX_CAPACITY, getSessionsForDay, type SessionBlock, type SessionTimesByDay } from '@/components/constants';
 import {
   useScheduleData,
   bookStudent,
@@ -38,6 +38,15 @@ import { ScheduleOptimizerController, type OptimizerScope } from '@/components/o
 
 const SCHEDULE_VIEW_STORAGE_KEY = 'schedule:viewMode';
 
+type TermOption = {
+  id: string;
+  name: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+  session_times_by_day: SessionTimesByDay | null;
+};
+
 export default function MasterDeployment() {
   const searchParams = useSearchParams();
   const lastHandledActionRef = useRef<string | null>(null);
@@ -47,15 +56,21 @@ export default function MasterDeployment() {
   const [isScheduleBuilderOpen, setIsScheduleBuilderOpen] = useState(false);
   const [scheduleBuilderMode, setScheduleBuilderMode] = useState<'batch' | 'single'>('batch');
   const [isSchedulerMenuOpen, setIsSchedulerMenuOpen] = useState(false);
+  const [builderTerms, setBuilderTerms] = useState<TermOption[]>([]);
+  const [selectedBuilderTermId, setSelectedBuilderTermId] = useState<string>('');
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const { tutors, students, sessions, timeOff, activeStudentIds, loading, error, refetch } = useScheduleData(weekStart);
+  const { tutors, students, sessions, timeOff, activeTermSessionTimesByDay, activeStudentIds, loading, error, refetch } = useScheduleData(weekStart, {
+    termId: selectedBuilderTermId || null,
+  });
   const nextWeekStart = useMemo(() => {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + 7);
     return d;
   }, [weekStart]);
-  const { sessions: nextWeekSessions } = useScheduleData(nextWeekStart);
+  const { sessions: nextWeekSessions } = useScheduleData(nextWeekStart, {
+    termId: selectedBuilderTermId || null,
+  });
 
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
@@ -82,6 +97,57 @@ export default function MasterDeployment() {
   useEffect(() => {
     setLocalSessions(sessions);
   }, [sessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTermsForBuilder() {
+      try {
+        const res = await fetch('/api/terms', { cache: 'no-store' });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || 'Failed to load terms');
+        const rows = (Array.isArray(payload?.terms) ? payload.terms : []) as TermOption[];
+        if (cancelled) return;
+        setBuilderTerms(rows);
+        setSelectedBuilderTermId(prev => {
+          if (prev && rows.some(t => t.id === prev)) return prev;
+          const active = rows.find(t => (t.status ?? '').trim().toLowerCase() === 'active');
+          return active?.id ?? rows[0]?.id ?? '';
+        });
+      } catch {
+        if (!cancelled) {
+          setBuilderTerms([]);
+          setSelectedBuilderTermId('');
+        }
+      }
+    }
+    loadTermsForBuilder();
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedBuilderTerm = useMemo(
+    () => builderTerms.find(t => t.id === selectedBuilderTermId) ?? null,
+    [builderTerms, selectedBuilderTermId]
+  );
+
+  const handleBuilderTermChange = useCallback((termId: string) => {
+    setSelectedBuilderTermId(termId);
+
+    const term = builderTerms.find(t => t.id === termId);
+    const startDate = term?.start_date;
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return;
+
+    const parsed = new Date(startDate + 'T00:00:00');
+    if (Number.isNaN(parsed.getTime())) return;
+
+    setTodayDate(parsed);
+    setWeekStart(getWeekStart(parsed));
+  }, [builderTerms]);
+
+  const builderSessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
+    const raw = selectedBuilderTerm?.session_times_by_day;
+    if (raw && typeof raw === 'object') return raw as SessionTimesByDay;
+    return activeTermSessionTimesByDay ?? null;
+  }, [selectedBuilderTerm, activeTermSessionTimesByDay]);
 
   const applyInlineBookingOptimistic = useCallback((
     current: typeof localSessions,
@@ -325,7 +391,7 @@ export default function MasterDeployment() {
         const dow = dayOfWeek(isoDate);
         if (!tutor.availability.includes(dow)) return;
         if (timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate)) return;
-        getSessionsForDay(dow).forEach(block => {
+        getSessionsForDay(dow, activeTermSessionTimesByDay).forEach(block => {
           if (!isTutorAvailable(tutor, dow, block.time)) return;
           const session = localSessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
           const count = session ? session.students.filter((s: any) => s.status !== 'cancelled').length : 0;
@@ -336,7 +402,7 @@ export default function MasterDeployment() {
       });
     });
     return seats.sort((a, b) => { const dd = a.date.localeCompare(b.date); return dd !== 0 ? dd : a.time.localeCompare(b.time); });
-  }, [enrollCat, tutors, localSessions, activeDates, timeOff]);
+  }, [enrollCat, tutors, localSessions, activeDates, timeOff, activeTermSessionTimesByDay]);
 
   // All tutors regardless of category — for ScheduleBuilder
   const allSeatsForBuilder = useMemo(() => {
@@ -347,7 +413,7 @@ export default function MasterDeployment() {
         const dow = dayOfWeek(isoDate);
         if (!tutor.availability.includes(dow)) return;
         if (timeOff.some(t => t.tutorId === tutor.id && t.date === isoDate)) return;
-        getSessionsForDay(dow).forEach(block => {
+        getSessionsForDay(dow, builderSessionTimesByDay).forEach(block => {
           if (!isTutorAvailable(tutor, dow, block.time)) return;
           const session = localSessions.find(s => s.date === isoDate && s.tutorId === tutor.id && s.time === block.time);
           const count = session ? session.students.filter((s: any) => s.status !== 'cancelled').length : 0;
@@ -358,7 +424,7 @@ export default function MasterDeployment() {
       });
     });
     return seats.sort((a, b) => { const dd = a.date.localeCompare(b.date); return dd !== 0 ? dd : a.time.localeCompare(b.time); });
-  }, [tutors, localSessions, activeDates, timeOff]);
+  }, [tutors, localSessions, activeDates, timeOff, builderSessionTimesByDay]);
 
   const handleInlineBook = useCallback(async ({ tutorId, date, time, student, topic, notes, recurring, recurringWeeks }: {
     tutorId: string;
@@ -441,14 +507,14 @@ export default function MasterDeployment() {
     const tutor = tutors.find(t => t.id === tutorId);
     if (!tutor) return;
     const dow = dayOfWeek(slotDate);
-    const block = getSessionsForDay(dow).find(b => b.time === slotTime);
+    const block = getSessionsForDay(dow, activeTermSessionTimesByDay).find(b => b.time === slotTime);
     const dayName = DAY_NAMES[ACTIVE_DAYS.indexOf(dow)];
     setGridSlotToBook({ tutor, dayNum: dow, dayName, time: slotTime, date: slotDate, block } as any);
     setEnrollCat(tutor.cat);
     setAiPrefilledStudentId(studentId ?? null);
     setIsEnrollModalOpen(true);
     logEvent('ai_booking_initiated', { studentId, tutorId, slotDate, slotTime, topic });
-  }, [tutors]);
+  }, [tutors, activeTermSessionTimesByDay]);
 
   const setSelectedSessionWithNotes = (s: any) => {
     setSelectedSession(s);
@@ -641,6 +707,9 @@ export default function MasterDeployment() {
         goToNextWeek={goToNextWeek}
         goToThisWeek={goToThisWeek}
         tutors={tutors}
+        terms={builderTerms.map(t => ({ id: t.id, name: t.name, status: t.status }))}
+        selectedTermId={selectedBuilderTermId}
+        setSelectedTermId={handleBuilderTermChange}
         selectedTutorFilter={selectedTutorFilter}
         setSelectedTutorFilter={setSelectedTutorFilter}
         onOpenEnrollModal={() => setIsEnrollModalOpen(true)}
@@ -761,6 +830,7 @@ export default function MasterDeployment() {
           selectedDate={todayDate}
           onDateChange={handleTodayDateChange}
           onInlineBook={handleInlineBook}
+          sessionTimesByDay={activeTermSessionTimesByDay}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();
@@ -784,6 +854,7 @@ export default function MasterDeployment() {
           selectedRemovals={selectedRemovals}
           setSelectedRemovals={setSelectedRemovals}
           onInlineBook={handleInlineBook}
+          sessionTimesByDay={activeTermSessionTimesByDay}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();
@@ -841,7 +912,16 @@ export default function MasterDeployment() {
       />
 
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
-      {isTutorModalOpen && <TutorManagementModal tutors={tutors} onClose={() => setIsTutorModalOpen(false)} onRefetch={refetch} />}
+      {isTutorModalOpen && (
+        <TutorManagementModal
+          tutors={tutors}
+          terms={builderTerms.map(t => ({ id: t.id, name: t.name, status: t.status }))}
+          selectedTermId={selectedBuilderTermId}
+          onSelectTerm={handleBuilderTermChange}
+          onClose={() => setIsTutorModalOpen(false)}
+          onRefetch={refetch}
+        />
+      )}
 
       <ScheduleOptimizerController
         students={students}
@@ -881,6 +961,10 @@ export default function MasterDeployment() {
           tutors={tutors}
           sessions={localSessions}
           allAvailableSeats={allSeatsForBuilder}
+          sessionTimesByDay={(builderSessionTimesByDay ?? undefined) as SessionTimesByDay | undefined}
+          terms={builderTerms.map(t => ({ id: t.id, name: t.name, status: t.status }))}
+          selectedTermId={selectedBuilderTermId}
+          onChangeTerm={handleBuilderTermChange}
           weekStart={weekStartIso}
           weekEnd={weekEndIso}
           initialMode={scheduleBuilderMode}
