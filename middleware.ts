@@ -11,7 +11,10 @@ export function middleware(request: NextRequest) {
     pathname === '/login' ||
     pathname === '/confirm' ||
     pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/confirm')
+    pathname.startsWith('/api/confirm') ||
+    pathname.startsWith('/api/enrollment-form')
+
+
   ) {
     return NextResponse.next();
   }

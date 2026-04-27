@@ -279,6 +279,8 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
               .eq('term_id', activeTermId)
           )
           if (enrollRes.error) throw enrollRes.error
+          console.log('[enrollments]', enrollRes.data, 'for termId:', activeTermId)
+
           enrollmentByStudent = (enrollRes.data ?? []).reduce((acc: Record<string, any>, row: any) => {
             acc[row.student_id] = row
             return acc
@@ -331,6 +333,9 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           }
         })
 
+        console.log('[debug] enrollment for Aisha:', enrollmentByStudent['bac81475-7fba-4f0d-9b42-52ef7253de7c'])
+
+
         const students: Student[] = (studentRes.data ?? []).map((r: any) => {
           const enrollment = enrollmentByStudent[r.id]
           const enrollmentSubjects = Array.isArray(enrollment?.subjects)
@@ -365,6 +370,10 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           bluebook_url:       r.bluebook_url ?? null,
         })
         })
+
+        console.log('[debug] activeTermId:', activeTermId)
+console.log('[debug] enrollmentByStudent keys:', Object.keys(enrollmentByStudent))
+console.log('[debug] students[0]:', students[0])
 
         const gradeMap: Record<string, string | null> = {}
         students.forEach(s => { gradeMap[s.id] = s.grade })

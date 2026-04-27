@@ -33,39 +33,23 @@ const MAX_CAPACITY = 3
 
 const normalizeStringArray = (value: unknown): string[] => {
   if (Array.isArray(value)) {
-    return value
-      .map(v => String(v).trim())
-      .filter(Boolean)
+    return value.map(v => String(v).trim()).filter(Boolean)
   }
-
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if (!trimmed) return []
-
     try {
       const parsed = JSON.parse(trimmed)
-      if (Array.isArray(parsed)) {
-        return parsed
-          .map(v => String(v).trim())
-          .filter(Boolean)
-      }
-    } catch {
-      // Fall back to comma-separated parsing for legacy string values.
-    }
-
-    return trimmed
-      .split(',')
-      .map(v => v.trim())
-      .filter(Boolean)
+      if (Array.isArray(parsed)) return parsed.map(v => String(v).trim()).filter(Boolean)
+    } catch {}
+    return trimmed.split(',').map(v => v.trim()).filter(Boolean)
   }
-
   return []
 }
 
 const isTutorAvailable = (tutor: any, dow: number, time: string) =>
   tutor.availability_blocks?.includes(`${dow}-${time}`)
 
-// ── Pill badge ────────────────────────────────────────────────────────────────
 function Badge({ children, color = 'gray' }: { children: React.ReactNode; color?: 'green' | 'red' | 'blue' | 'yellow' | 'gray' | 'purple' }) {
   const map: Record<string, string> = {
     green:  'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -82,7 +66,6 @@ function Badge({ children, color = 'gray' }: { children: React.ReactNode; color?
   )
 }
 
-// ── Attendance bar ────────────────────────────────────────────────────────────
 function AttBar({ rate }: { rate: number | null }) {
   if (rate === null) return <span className="text-xs text-slate-400">—</span>
   const pct = Math.round(rate * 100)
@@ -99,11 +82,18 @@ function AttBar({ rate }: { rate: number | null }) {
 
 // ── Student detail slide-over ─────────────────────────────────────────────────
 function StudentSlideOver({
-  student, tutors, allSessions, allAvailableSeats,
+  student, tutors, allSessions, allAvailableSeats, terms,
   onClose, onRefetch, onUpdateStudent, onBookingSuccess,
 }: {
-  student: any; tutors: any[]; allSessions: any[]; allAvailableSeats: any[];
-  onClose: () => void; onRefetch: () => void; onUpdateStudent: (updated: any) => void; onBookingSuccess: (d: any) => void;
+  student: any
+  tutors: any[]
+  allSessions: any[]
+  allAvailableSeats: any[]
+  terms: any[]
+  onClose: () => void
+  onRefetch: () => void
+  onUpdateStudent: (updated: any) => void
+  onBookingSuccess: (d: any) => void
 }) {
   const [tab, setTab] = useState<'info' | 'sessions'>('info')
   const [showBooking, setShowBooking] = useState(false)
@@ -112,6 +102,7 @@ function StudentSlideOver({
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
   const [enrollCat, setEnrollCat] = useState('math')
+  const [sendingForm, setSendingForm] = useState(false)
 
   const today = toISODate(getCentralTimeNow())
 
@@ -134,10 +125,12 @@ function StudentSlideOver({
   const upcoming = sessions.filter(s => !s.isPast)
   const present = past.filter(s => s.status === 'present' || s.status === 'confirmed').length
   const rate = past.length > 0 ? present / past.length : null
+
   const availabilityBlocks: string[] = [
     ...normalizeStringArray(student.availability_blocks),
     ...normalizeStringArray(student.availabilityBlocks),
   ].filter((value, index, self) => self.indexOf(value) === index)
+
   const availabilityPreview = availabilityBlocks.slice(0, 6).map((key: string) => {
     const [dowRaw, time] = key.split('-')
     const dow = Number(dowRaw)
@@ -159,6 +152,33 @@ function StudentSlideOver({
     setSaving(false)
     setEditing(false)
     onRefetch()
+  }
+
+  const handleSendEnrollmentForm = async () => {
+    const email = student.mom_email || student.dad_email || student.email
+    if (!email) { alert('No email on file for this student.'); return }
+    if (!student.selected_term_id) { alert('No term selected.'); return }
+    const termRow = terms.find((t: any) => t.id === student.selected_term_id)
+    setSendingForm(true)
+    try {
+      const res = await fetch('/api/send-enrollment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: student.id,
+          termId: student.selected_term_id,
+          recipientEmail: email,
+          studentName: student.name,
+          termName: termRow?.name ?? 'Upcoming Term',
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to send'); return }
+      alert(`Enrollment form sent to ${email}`)
+    } catch {
+      alert('Failed to send enrollment form.')
+    } finally {
+      setSendingForm(false)
+    }
   }
 
   const handleConfirmBooking = async (data: any) => {
@@ -205,6 +225,12 @@ function StudentSlideOver({
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleSendEnrollmentForm}
+              disabled={sendingForm}
+              className="rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              {sendingForm ? 'Sending…' : 'Send Form'}
+            </button>
             <button onClick={() => setShowBooking(true)}
               className="rounded border border-slate-900 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
               Book
@@ -228,20 +254,17 @@ function StudentSlideOver({
         <div className="flex-1 overflow-y-auto">
           {tab === 'info' && (
             <div className="p-5 space-y-5">
-              {/* Subjects */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Subjects</p>
-                  <button onClick={() => setShowDetailsModal(true)}
-                    className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">Edit</button>
+                  <button onClick={() => setShowDetailsModal(true)} className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">Edit</button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {((() => {
                     const normalized = normalizeStringArray(student.subjects)
                     if (normalized.length > 0) return normalized
                     return student.subject ? [String(student.subject)] : []
-                  })()
-                  ).map((s: string, i: number) => (
+                  })()).map((s: string, i: number) => (
                     <Badge key={i} color="blue">{s}</Badge>
                   ))}
                   {normalizeStringArray(student.subjects).length === 0 && !student.subject && (
@@ -250,12 +273,10 @@ function StudentSlideOver({
                 </div>
               </div>
 
-              {/* Availability */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Availability</p>
-                  <button onClick={() => setShowDetailsModal(true)}
-                    className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">Edit</button>
+                  <button onClick={() => setShowDetailsModal(true)} className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">Edit</button>
                 </div>
                 {availabilityPreview.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
@@ -271,7 +292,6 @@ function StudentSlideOver({
                 )}
               </div>
 
-              {/* Stats row */}
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { label: 'Hours Left', value: student.hours_left ?? '—', icon: Clock },
@@ -286,20 +306,16 @@ function StudentSlideOver({
                 ))}
               </div>
 
-              {/* Contact */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Contact</p>
-                  <button onClick={() => setEditing(e => !e)}
-                    className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">
+                  <button onClick={() => setEditing(e => !e)} className="text-[10px] font-semibold text-blue-600 hover:text-blue-800">
                     {editing ? 'Cancel' : 'Edit'}
                   </button>
                 </div>
                 {editing ? (
                   <div className="space-y-2">
-                    {[
-                      ['Email', 'email', 'email'], ['Phone', 'phone', 'tel'], ['Grade', 'grade', 'text'],
-                    ].map(([label, field, type]) => (
+                    {[['Email', 'email', 'email'], ['Phone', 'phone', 'tel'], ['Grade', 'grade', 'text']].map(([label, field, type]) => (
                       <div key={field}>
                         <label className="text-[10px] font-semibold text-slate-400 mb-1 block">{label}</label>
                         <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={inputCls} />
@@ -461,9 +477,7 @@ export default function StudentAdminPage() {
         return { enrollments: [] }
       })
 
-    const allEnrollmentRows = Array.isArray(enrollmentsPayload?.enrollments)
-      ? enrollmentsPayload.enrollments
-      : []
+    const allEnrollmentRows = Array.isArray(enrollmentsPayload?.enrollments) ? enrollmentsPayload.enrollments : []
 
     const latestEnrollmentByStudent = allEnrollmentRows.reduce((acc: Record<string, any>, row: any) => {
       if (!acc[row.student_id]) acc[row.student_id] = row
@@ -477,23 +491,17 @@ export default function StudentAdminPage() {
         return acc
       }, {})
 
-      const studentRows = (sRes.data ?? []).map((row: any) => {
+    const studentRows = (sRes.data ?? []).map((row: any) => {
       const enrollment = enrollmentByStudentForTerm[row.id] ?? latestEnrollmentByStudent[row.id]
-        const enrollmentSubjects = normalizeStringArray(enrollment?.subjects)
-        const rowSubjects = normalizeStringArray(row.subjects)
-        const enrollmentAvailability = normalizeStringArray(enrollment?.availability_blocks)
-        const rowAvailability = normalizeStringArray(row.availability_blocks)
+      const enrollmentSubjects = normalizeStringArray(enrollment?.subjects)
+      const rowSubjects = normalizeStringArray(row.subjects)
+      const enrollmentAvailability = normalizeStringArray(enrollment?.availability_blocks)
+      const rowAvailability = normalizeStringArray(row.availability_blocks)
       return {
         ...row,
-          subjects: enrollmentSubjects.length > 0
-            ? enrollmentSubjects
-            : (rowSubjects.length > 0 ? rowSubjects : (row.subject ? [String(row.subject)] : [])),
-          availability_blocks: enrollmentAvailability.length > 0
-            ? enrollmentAvailability
-            : rowAvailability,
-        hours_left: typeof enrollment?.hours_purchased === 'number'
-          ? enrollment.hours_purchased
-          : row.hours_left,
+        subjects: enrollmentSubjects.length > 0 ? enrollmentSubjects : (rowSubjects.length > 0 ? rowSubjects : (row.subject ? [String(row.subject)] : [])),
+        availability_blocks: enrollmentAvailability.length > 0 ? enrollmentAvailability : rowAvailability,
+        hours_left: typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : row.hours_left,
         selected_term_id: preferredTermId || enrollment?.term_id || null,
       }
     })
@@ -514,10 +522,7 @@ export default function StudentAdminPage() {
   const weekDates = getWeekDates(weekStart)
   const activeDates = weekDates.filter(d => ACTIVE_DAYS.includes(dayOfWeek(toISODate(d))))
   const weekEnd = toISODate(new Date(weekStart.getTime() + 6 * 86400000))
-  const selectedTerm = useMemo(
-    () => terms.find((t: any) => t.id === selectedTermId) ?? null,
-    [terms, selectedTermId]
-  )
+  const selectedTerm = useMemo(() => terms.find((t: any) => t.id === selectedTermId) ?? null, [terms, selectedTermId])
   const selectedTermSessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
     const raw = selectedTerm?.session_times_by_day
     if (!raw || typeof raw !== 'object') return null
@@ -559,7 +564,6 @@ export default function StudentAdminPage() {
     return ids
   }, [allSessions, today])
 
-  // Per-student computed stats
   const studentStats = useMemo(() => {
     const map = new Map<string, { attendanceRate: number | null; sessionCount: number; upcoming: number; isAtRisk: boolean }>()
     students.forEach(student => {
@@ -636,14 +640,11 @@ export default function StudentAdminPage() {
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif" }}>
       <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
-      {/* Top bar */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
         <div className="flex items-center gap-3">
           <GraduationCap size={15} className="text-slate-400" />
           <span className="text-sm font-bold text-slate-900">Students</span>
-          {!loading && (
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{students.length}</span>
-          )}
+          {!loading && <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{students.length}</span>}
         </div>
         <div className="flex items-center gap-2">
           {selected.size > 0 && (
@@ -664,7 +665,6 @@ export default function StudentAdminPage() {
         </div>
       </div>
 
-      {/* Add student form */}
       {showAddForm && (
         <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center justify-between mb-3">
@@ -691,14 +691,12 @@ export default function StudentAdminPage() {
         </div>
       )}
 
-      {/* Toolbar */}
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-5">
         <div className="relative">
           <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…"
             className="h-7 rounded border border-slate-200 bg-slate-50 pl-7 pr-3 text-xs text-slate-700 outline-none focus:border-slate-400 w-52" />
         </div>
-
         <div className="flex items-center gap-1 border-l border-slate-100 pl-3">
           {([
             { key: 'all', label: 'All' },
@@ -713,27 +711,17 @@ export default function StudentAdminPage() {
             </button>
           ))}
         </div>
-
         <div className="flex items-center gap-2 border-l border-slate-100 pl-3">
           <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Term</span>
-          <select
-            value={selectedTermId}
-            onChange={e => setSelectedTermId(e.target.value)}
-            className="h-7 rounded border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700"
-          >
+          <select value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}
+            className="h-7 rounded border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700">
             {terms.length === 0 && <option value="">No terms</option>}
-            {terms.map(term => (
-              <option key={term.id} value={term.id}>{term.name}</option>
-            ))}
+            {terms.map(term => <option key={term.id} value={term.id}>{term.name}</option>)}
           </select>
         </div>
-
-        <div className="ml-auto text-[11px] text-slate-400">
-          {filtered.length} of {students.length} students
-        </div>
+        <div className="ml-auto text-[11px] text-slate-400">{filtered.length} of {students.length} students</div>
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center py-24 gap-2 text-slate-400">
@@ -751,20 +739,12 @@ export default function StudentAdminPage() {
                     </div>
                   </button>
                 </th>
-                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('name')}>
-                  Name <SortIcon col="name" />
-                </th>
-                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('grade')}>
-                  Grade <SortIcon col="grade" />
-                </th>
+                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('name')}>Name <SortIcon col="name" /></th>
+                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('grade')}>Grade <SortIcon col="grade" /></th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Subject</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('hours')}>
-                  Hours Left <SortIcon col="hours" />
-                </th>
+                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('hours')}>Hours Left <SortIcon col="hours" /></th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Booked</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('attendance')}>
-                  Attendance <SortIcon col="attendance" />
-                </th>
+                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('attendance')}>Attendance <SortIcon col="attendance" /></th>
                 <th className="w-24 px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Actions</th>
               </tr>
             </thead>
@@ -778,7 +758,6 @@ export default function StudentAdminPage() {
                 const subjects = normalizeStringArray(student.subjects).length > 0
                   ? normalizeStringArray(student.subjects)
                   : student.subject ? [String(student.subject)] : []
-
                 return (
                   <tr key={student.id}
                     className={`group cursor-pointer transition-colors ${isOpen ? 'bg-slate-50' : 'hover:bg-slate-50/60'} ${isSelected ? 'bg-blue-50/40' : ''}`}
@@ -796,9 +775,7 @@ export default function StudentAdminPage() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="h-6 w-6 shrink-0 rounded bg-slate-900 flex items-center justify-center text-[10px] font-black text-white">
-                          {student.name.charAt(0)}
-                        </div>
+                        <div className="h-6 w-6 shrink-0 rounded bg-slate-900 flex items-center justify-center text-[10px] font-black text-white">{student.name.charAt(0)}</div>
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-semibold text-slate-900">{student.name}</span>
@@ -813,32 +790,23 @@ export default function StudentAdminPage() {
                     <td className="px-3 py-2.5 text-sm text-slate-600">{student.grade ?? '—'}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex flex-wrap gap-1">
-                        {subjects.slice(0, 2).map((s: string, i: number) => (
-                          <Badge key={i} color="blue">{s}</Badge>
-                        ))}
+                        {subjects.slice(0, 2).map((s: string, i: number) => <Badge key={i} color="blue">{s}</Badge>)}
                         {subjects.length > 2 && <Badge color="gray">+{subjects.length - 2}</Badge>}
                         {subjects.length === 0 && <span className="text-xs text-slate-300">—</span>}
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      {student.hours_left != null ? (
-                        <span className={`text-sm font-semibold tabular-nums ${student.hours_left <= 2 ? 'text-red-500' : 'text-slate-700'}`}>
-                          {student.hours_left}h
-                        </span>
-                      ) : <span className="text-slate-300 text-sm">—</span>}
+                      {student.hours_left != null
+                        ? <span className={`text-sm font-semibold tabular-nums ${student.hours_left <= 2 ? 'text-red-500' : 'text-slate-700'}`}>{student.hours_left}h</span>
+                        : <span className="text-slate-300 text-sm">—</span>}
                     </td>
                     <td className="px-3 py-2.5">
-                      {isBooked
-                        ? <Badge color="green"><Check size={9} />Booked</Badge>
-                        : <Badge color="gray">Not booked</Badge>}
+                      {isBooked ? <Badge color="green"><Check size={9} />Booked</Badge> : <Badge color="gray">Not booked</Badge>}
                     </td>
-                    <td className="px-3 py-2.5">
-                      <AttBar rate={stats?.attendanceRate ?? null} />
-                    </td>
+                    <td className="px-3 py-2.5"><AttBar rate={stats?.attendanceRate ?? null} /></td>
                     <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => setActiveStudentId(isOpen ? null : student.id)}
+                        <button onClick={() => setActiveStudentId(isOpen ? null : student.id)}
                           className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
                           {isOpen ? 'Close' : 'View'}
                         </button>
@@ -850,7 +818,6 @@ export default function StudentAdminPage() {
             </tbody>
           </table>
         )}
-
         {!loading && filtered.length === 0 && (
           <div className="flex flex-col items-center py-20 text-slate-400">
             <GraduationCap size={24} className="mb-3 text-slate-200" />
@@ -860,42 +827,35 @@ export default function StudentAdminPage() {
         )}
       </div>
 
-      {/* Slide-over */}
       {activeStudent && (
         <StudentSlideOver
           student={activeStudent}
           tutors={tutors}
           allSessions={allSessions}
           allAvailableSeats={allAvailableSeats}
+          terms={terms}
           onClose={() => setActiveStudentId(null)}
           onRefetch={fetchData}
           onUpdateStudent={(updatedStudent) => {
             setStudents(prev => prev.map(st => {
               if (st.id !== updatedStudent.id) return st
-              const merged = {
+              return {
                 ...st,
                 ...updatedStudent,
-                subjects: Array.isArray(updatedStudent.subjects)
-                  ? updatedStudent.subjects
-                  : st.subjects,
-                subject: typeof updatedStudent.subject === 'string'
-                  ? updatedStudent.subject
-                  : st.subject,
+                subjects: Array.isArray(updatedStudent.subjects) ? updatedStudent.subjects : st.subjects,
+                subject: typeof updatedStudent.subject === 'string' ? updatedStudent.subject : st.subject,
                 availability_blocks: Array.isArray(updatedStudent.availability_blocks)
                   ? updatedStudent.availability_blocks
                   : Array.isArray(updatedStudent.availabilityBlocks)
                   ? updatedStudent.availabilityBlocks
                   : st.availability_blocks,
-                hours_left: typeof updatedStudent.hours_left === 'number'
-                  ? updatedStudent.hours_left
-                  : st.hours_left,
+                hours_left: typeof updatedStudent.hours_left === 'number' ? updatedStudent.hours_left : st.hours_left,
                 selected_term_id: typeof updatedStudent.selected_term_id === 'string'
                   ? updatedStudent.selected_term_id
                   : typeof updatedStudent.selectedTermId === 'string'
                   ? updatedStudent.selectedTermId
                   : st.selected_term_id,
               }
-              return merged
             }))
           }}
           onBookingSuccess={d => { setBookingToast(d); setTimeout(() => setBookingToast(null), 4000) }}

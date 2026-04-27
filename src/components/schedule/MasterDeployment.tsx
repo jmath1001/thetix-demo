@@ -957,7 +957,33 @@ export default function MasterDeployment() {
 
       {isScheduleBuilderOpen && (
         <ScheduleBuilder
-          students={students}
+          students={students.map(s => {
+            // Normalize subjects and availabilityBlocks like students page
+            const normalizeStringArray = (value: any): string[] => {
+              if (Array.isArray(value)) {
+                return value.map(v => String(v).trim()).filter(Boolean);
+              }
+              if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!trimmed) return [];
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (Array.isArray(parsed)) {
+                    return parsed.map(v => String(v).trim()).filter(Boolean);
+                  }
+                } catch {}
+                return trimmed.split(',').map(v => v.trim()).filter(Boolean);
+              }
+              return [];
+            };
+            const subjects = normalizeStringArray(s.subjects);
+            const availabilityBlocks = normalizeStringArray(s.availabilityBlocks);
+            return {
+              ...s,
+              subjects: subjects.length > 0 ? subjects : (s.subject ? [String(s.subject)] : []),
+              availabilityBlocks,
+            };
+          })}
           tutors={tutors}
           sessions={localSessions}
           allAvailableSeats={allSeatsForBuilder}

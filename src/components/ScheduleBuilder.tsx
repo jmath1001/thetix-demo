@@ -279,7 +279,24 @@ export function ScheduleBuilder({
   const [step, setStep] = useState<'select' | 'preview'>('select')
   // Map of studentId → list of subjects needed (with local needId)
   const [studentNeeds, setStudentNeeds] = useState<Record<string, { subject: string; needId: string; allowSameDayDouble: boolean }[]>>({})
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+  if (builderMode !== 'batch') return
+  const needs: Record<string, { subject: string; needId: string; allowSameDayDouble: boolean }[]> = {}
+  students.forEach(s => {
+    const subjects = getStudentSubjects(s)
+    needs[s.id] = subjects.length > 0
+      ? subjects.map((subject, idx) => ({ subject, needId: `${s.id}-${idx}`, allowSameDayDouble: false }))
+      : [{ subject: '', needId: `${s.id}-0`, allowSameDayDouble: false }]
+  })
+  setStudentNeeds(needs)
+}, [students, builderMode])
+  // Prefill: students with at least one subject for the term
+  const initialSelectedIds = useMemo<Set<string>>(() => {
+    if (builderMode !== 'batch') return new Set<string>();
+    // Select all students by default, so user can add subjects for any student
+    return new Set<string>(students.map(s => s.id));
+  }, [students, builderMode]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(initialSelectedIds);
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [generating, setGenerating] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -741,24 +758,21 @@ export function ScheduleBuilder({
       } else {
         next.add(id)
         const selectedStudent = students.find(s => s.id === id)
-        const recurringSubjects = recurringTopicsByStudent[id] ?? []
         const savedSubjects = getStudentSubjects(selectedStudent)
-        const defaultSubjects = Array.from(new Set([...recurringSubjects, ...savedSubjects])).slice(0, 3)
-        // Prefill with recurring topics first, then saved student defaults.
         setStudentNeeds(sn => ({
           ...sn,
-          [id]: defaultSubjects.length > 0
-            ? defaultSubjects.map((subject, idx) => ({ subject, needId: `${id}-${idx}`, allowSameDayDouble: false }))
+          [id]: savedSubjects.length > 0
+            ? savedSubjects.map((subject, idx) => ({ subject, needId: `${id}-${idx}`, allowSameDayDouble: false }))
             : [{ subject: '', needId: `${id}-0`, allowSameDayDouble: false }]
         }))
         setStudentAvailability(sa => ({
           ...sa,
-          [id]: [...(sa[id] ?? persistedAvailability[id] ?? selectedStudent?.availabilityBlocks ?? [])],
+          [id]: [...(selectedStudent?.availabilityBlocks ?? [])],
         }))
       }
       return next
     })
-  }, [students, availabilityOpenFor, persistedAvailability, recurringTopicsByStudent])
+  }, [students, availabilityOpenFor])
 
   const saveStudentAvailability = useCallback(async (studentId: string, availabilityBlocks: string[]) => {
     const saveVersion = (availabilitySaveVersionRef.current[studentId] ?? 0) + 1
@@ -1102,10 +1116,16 @@ export function ScheduleBuilder({
   const btnSecondary: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: '1.5px solid #94a3b8', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'white', color: '#0f172a' }
 
   useEffect(() => {
-    setStep('select')
-    setProposals([])
-    setSuggestionsByNeed({})
-  }, [selectedTermId])
+    setStep('select');
+    setProposals([]);
+    setSuggestionsByNeed({});
+    // Prefill all students on term change (batch mode only)
+    if (builderMode === 'batch') {
+      setSelectedIds(new Set(students.map(s => s.id)));
+    }
+  }, [selectedTermId, students, builderMode]);
+  // Show a message if no students have subjects for the selected term
+  const noSubjectsForTerm = students.every(s => !Array.isArray(s.subjects) || s.subjects.length === 0)
 
   return (
     <div
@@ -1162,7 +1182,9 @@ export function ScheduleBuilder({
                 <div style={{ position: 'relative' }}>
                   <select
                     value={selectedTermId}
-                    onChange={e => onChangeTerm?.(e.target.value)}
+                    onChange={e => {
+                      if (onChangeTerm) onChangeTerm(e.target.value);
+                    }}
                     style={{ padding: '5px 26px 5px 8px', borderRadius: 8, border: '1px solid #cbd5e1', background: 'white', color: '#0f172a', fontSize: 11, fontWeight: 700, appearance: 'none', cursor: 'pointer', minWidth: 170 }}
                   >
                     {terms.map(term => (
