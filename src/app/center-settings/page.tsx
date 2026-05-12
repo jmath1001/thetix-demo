@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Save, Settings } from 'lucide-react'
+import { Loader2, Save, Settings, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { DB, withCenter, withCenterPayload } from '@/lib/db'
 
@@ -261,6 +261,20 @@ export default function CenterSettingsPage() {
       return
     }
 
+    if (termDraft.end_date <= termDraft.start_date) {
+      setError('End date must be after start date.')
+      return
+    }
+
+    const overlap = terms.find(t => {
+      if (t.id === termDraft.id) return false // allow editing own dates
+      return termDraft.start_date <= t.end_date && termDraft.end_date >= t.start_date
+    })
+    if (overlap) {
+      setError(`Date range overlaps with existing term "${overlap.name}" (${overlap.start_date} – ${overlap.end_date}).`)
+      return
+    }
+
     setTermSaving(true)
     setError(null)
     try {
@@ -394,12 +408,21 @@ export default function CenterSettingsPage() {
                 <p className="text-xs text-slate-500">Manage schedule setup by academic term.</p>
               </div>
               {!termFormOpen && (
-                <button
-                  onClick={() => { resetTermDraft(); setTermFormOpen(true) }}
-                  className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  + New Term
-                </button>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="/?action=build"
+                    className="inline-flex items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    <Zap size={11} />
+                    Schedule Builder
+                  </a>
+                  <button
+                    onClick={() => { resetTermDraft(); setTermFormOpen(true) }}
+                    className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    + New Term
+                  </button>
+                </div>
               )}
             </div>
 

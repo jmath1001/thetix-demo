@@ -43,7 +43,9 @@ export type EventName =
   | 'week_cleared_non_recurring'
   | 'auto_book_used'
   | 'command_search_input'
-  | 'command_search_submitted';
+  | 'command_search_submitted'
+  | 'hours_adjusted'
+  | 'session_record_corrected';
 
 export async function logEvent(
   event_name: EventName,

@@ -1,7 +1,6 @@
 "use client"
-import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, PlusCircle, X, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { type Tutor } from '@/lib/useScheduleData';
 import { formatWeekRange } from './scheduleConstants';
 
 interface ScheduleNavProps {
@@ -12,13 +11,9 @@ interface ScheduleNavProps {
   goToPrevWeek: () => void;
   goToNextWeek: () => void;
   goToThisWeek: () => void;
-  tutors: Tutor[];
   terms?: Array<{ id: string; name: string; status?: string | null }>;
   selectedTermId?: string;
   setSelectedTermId?: (v: string) => void;
-  selectedTutorFilter: string | null;
-  setSelectedTutorFilter: (v: string | null) => void;
-  onOpenEnrollModal: () => void;
   bulkRemoveMode?: boolean;
   selectedBulkCount?: number;
   isBulkRemoving?: boolean;
@@ -27,8 +22,8 @@ interface ScheduleNavProps {
   onClearBulkSelection?: () => void;
   onClearWeekNonRecurring?: () => void;
   isClearingWeek?: boolean;
-  activeStudentCount?: number;
-  totalStudentCount?: number;
+  weeklyStudents?: number;
+  weeklySessions?: number;
   commandBarSlot?: React.ReactNode;
 }
 
@@ -40,13 +35,9 @@ export function ScheduleNav({
   goToPrevWeek,
   goToNextWeek,
   goToThisWeek,
-  tutors,
   terms = [],
   selectedTermId = '',
   setSelectedTermId,
-  selectedTutorFilter,
-  setSelectedTutorFilter,
-  onOpenEnrollModal,
   bulkRemoveMode,
   selectedBulkCount = 0,
   isBulkRemoving,
@@ -55,8 +46,8 @@ export function ScheduleNav({
   onClearBulkSelection,
   onClearWeekNonRecurring,
   isClearingWeek,
-  activeStudentCount = 0,
-  totalStudentCount = 0,
+  weeklyStudents,
+  weeklySessions,
   commandBarSlot,
 }: ScheduleNavProps) {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
@@ -106,12 +97,10 @@ export function ScheduleNav({
             </>
           )}
 
-        <div className="flex-1 min-w-0" />
-
-        {/* Assistant command bar stays inline to avoid overlapping nav controls */}
+        {/* Centered command bar */}
         {commandBarSlot && (
           <div
-            className="hidden lg:flex items-center gap-2 shrink-0 rounded-lg px-1.5 py-1"
+            className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 shrink-0 rounded-lg px-1.5 py-1"
             style={{
               background: 'linear-gradient(120deg, rgba(79,70,229,0.12) 0%, rgba(129,140,248,0.16) 52%, rgba(224,231,255,0.9) 100%)',
               border: '1px solid #c7d2fe',
@@ -121,6 +110,8 @@ export function ScheduleNav({
             {commandBarSlot}
           </div>
         )}
+
+        <div className="flex-1 min-w-0" />
 
         {!todayView && onToggleBulkRemoveMode && onBulkRemove && onClearWeekNonRecurring && (
           <div className="relative shrink-0">
@@ -189,20 +180,14 @@ export function ScheduleNav({
           </div>
         )}
 
-          <div className="hidden md:block w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
-
-          <div className="hidden md:flex items-center gap-1.5 shrink-0">
-            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider"
-              style={{ background: '#ecfdf5', border: '1px solid #bbf7d0', color: '#16a34a' }}>
-              Active {activeStudentCount}
-            </span>
-            <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider"
-              style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b' }}>
-              Inactive {Math.max(0, totalStudentCount - activeStudentCount)}
-            </span>
-          </div>
-
-          <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+          {!todayView && weeklyStudents !== undefined && weeklySessions !== undefined && (
+            <>
+              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+              <span className="text-[10px] font-semibold shrink-0" style={{ color: '#475569' }}>
+                {weeklyStudents} students · {weeklySessions} sessions
+              </span>
+            </>
+          )}
 
           {!todayView && terms.length > 0 && setSelectedTermId && (
             <>
@@ -228,40 +213,7 @@ export function ScheduleNav({
             </>
           )}
 
-          {/* Tutor filter */}
-          <div className="relative shrink-0">
-            <select
-              value={selectedTutorFilter ?? ''}
-              onChange={e => setSelectedTutorFilter(e.target.value || null)}
-              className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider cursor-pointer"
-              style={{
-                background: selectedTutorFilter ? '#eef2ff' : 'white',
-                border: `1px solid ${selectedTutorFilter ? '#a5b4fc' : '#e5e7eb'}`,
-                color: selectedTutorFilter ? '#4f46e5' : '#6b7280',
-                outline: 'none', maxWidth: 110,
-              }}>
-              <option value="">All Tutors</option>
-              {tutors.map(t => <option key={t.id} value={t.id}>{t.name.split(' ')[0]}</option>)}
-            </select>
-            <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: selectedTutorFilter ? '#4f46e5' : '#818cf8' }} />
-          </div>
-          {selectedTutorFilter && (
-            <button onClick={() => setSelectedTutorFilter(null)}
-              className="w-5 h-5 md:w-6 md:h-6 rounded-md flex items-center justify-center shrink-0"
-              style={{ background: '#e0e7ff', border: '1px solid #a5b4fc', color: '#4f46e5' }}>
-              <X size={9} />
-            </button>
-          )}
 
-          <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
-
-        <button onClick={onOpenEnrollModal}
-          className="w-7 h-7 md:w-auto md:h-auto md:px-3 md:py-1.5 flex items-center justify-center md:gap-1 rounded-lg text-xs font-bold text-white transition-all active:scale-95 shrink-0"
-          style={{ background: '#4f46e5', boxShadow: '0 1px 4px rgba(79,70,229,0.35)' }}>
-          <PlusCircle size={12} />
-          <span className="hidden md:inline">Book</span>
-        </button>
       </div>
     </div>
   );

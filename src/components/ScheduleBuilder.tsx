@@ -220,6 +220,32 @@ function clientSideMatch(
         const runAssignedHere = assignedCounts[index] ?? 0
         score += runAssignedHere * 4
 
+        // Tutor gap penalty — penalize placements that would leave holes in tutor's day
+const tutorDaySlots = Object.entries(assignedCounts)
+  .filter(([idxStr, count]) => {
+    const s = allAvailableSeats[Number(idxStr)]
+    return s && s.tutor.id === seat.tutor.id && s.date === seat.date && count > 0
+  })
+  .map(([idxStr]) => toMinutes(allAvailableSeats[Number(idxStr)].time) ?? 0)
+
+if (tutorDaySlots.length > 0) {
+  const currMin = toMinutes(seat.time)
+  if (currMin != null) {
+    const min = Math.min(...tutorDaySlots)
+    const max = Math.max(...tutorDaySlots)
+    if (currMin > min && currMin < max) {
+      // Filling a gap between existing slots — big bonus
+      score += 30
+    } else if (currMin === max || currMin === min) {
+      // Adjacent to existing block — good
+      score += 15
+    } else {
+      // Would extend the range and potentially create a gap — small penalty
+      score -= 8
+    }
+  }
+}
+
         if (!daysBooked.has(seat.dayNum)) score += 8
         else score -= 15
         
@@ -290,11 +316,9 @@ export function ScheduleBuilder({
   })
   setStudentNeeds(needs)
 }, [students, builderMode])
-  // Prefill: students with at least one subject for the term
+  // Prefill: no students selected by default in batch mode
   const initialSelectedIds = useMemo<Set<string>>(() => {
-    if (builderMode !== 'batch') return new Set<string>();
-    // Select all students by default, so user can add subjects for any student
-    return new Set<string>(students.map(s => s.id));
+    return new Set<string>();
   }, [students, builderMode]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(initialSelectedIds);
   const [proposals, setProposals] = useState<Proposal[]>([])
@@ -743,10 +767,20 @@ export function ScheduleBuilder({
     return options.slice(0, 4)
   }, [allAvailableSeats, bookedSlotsByStudent, sessions, studentById, tutorById])
 
-  const filteredStudents = useMemo(() =>
-    students.filter(s => s.name.toLowerCase().includes(search.toLowerCase())),
-    [students, search]
-  )
+  // Sort students: those with availability and subjects filled in first
+  const filteredStudents = useMemo(() => {
+    const scored = students.map(s => {
+      const hasAvail = Array.isArray(s.availabilityBlocks) && s.availabilityBlocks.length > 0;
+      const hasSubjects = Array.isArray(s.subjects) && s.subjects.length > 0;
+      return {
+        ...s,
+        _score: (hasAvail ? 2 : 0) + (hasSubjects ? 1 : 0),
+      };
+    });
+    return scored
+      .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => b._score - a._score || a.name.localeCompare(b.name));
+  }, [students, search]);
 
   const toggleStudent = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -1116,14 +1150,31 @@ export function ScheduleBuilder({
   const btnSecondary: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: '1.5px solid #94a3b8', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'white', color: '#0f172a' }
 
   useEffect(() => {
-    setStep('select');
-    setProposals([]);
-    setSuggestionsByNeed({});
-    // Prefill all students on term change (batch mode only)
-    if (builderMode === 'batch') {
-      setSelectedIds(new Set(students.map(s => s.id)));
-    }
-  }, [selectedTermId, students, builderMode]);
+  setStep('select');
+  setProposals([]);
+  setSuggestionsByNeed({});
+
+  // Reset availability to whatever the new term's students have
+  const next: Record<string, string[]> = {};
+  students.forEach(s => {
+    next[s.id] = [...(s.availabilityBlocks ?? [])];
+  });
+  setStudentAvailability(next);
+  setPersistedAvailability(next);
+  persistedAvailabilityRef.current = next;
+  setDirtyAvailability(new Set());
+
+  if (builderMode === 'batch') {
+    setSelectedIds(new Set(
+      students
+        .filter(s =>
+          Array.isArray(s.subjects) && s.subjects.length > 0 &&
+          Array.isArray(s.availabilityBlocks) && s.availabilityBlocks.length > 0
+        )
+        .map(s => s.id)
+    ));
+  }
+}, [selectedTermId, students, builderMode]);
   // Show a message if no students have subjects for the selected term
   const noSubjectsForTerm = students.every(s => !Array.isArray(s.subjects) || s.subjects.length === 0)
 
@@ -1367,81 +1418,61 @@ export function ScheduleBuilder({
 
                 </div>
               ) : filteredStudents.length === 0 ? (
-                <div style={{ padding: 40, textAlign: 'center', color: '#475569', fontSize: 13 }}>No students found</div>
+                <div style={{ padding: 24, textAlign: 'center', color: '#475569', fontSize: 13 }}>No students found</div>
               ) : filteredStudents.map(student => {
-                const isSelected = selectedIds.has(student.id)
-                const isBooked   = bookedStudentIds.has(student.id)
-                const needs      = studentNeeds[student.id] ?? []
-                const hasEmpty   = needs.some(n => !n.subject)
+                const isSelected = selectedIds.has(student.id);
+                const isBooked   = bookedStudentIds.has(student.id);
+                const needs      = studentNeeds[student.id] ?? [];
+                const hasEmpty   = needs.some(n => !n.subject);
                 const selectedSubjects = Array.from(new Set(
                   needs
                     .map(need => need.subject?.trim())
                     .filter((subject): subject is string => Boolean(subject))
-                ))
-                const activeAvailability = studentAvailability[student.id] ?? student.availabilityBlocks ?? []
-                const hasUnsavedAvailability = dirtyAvailability.has(student.id)
-                const isSavingAvailability = savingAvailability.has(student.id)
+                ));
+                const activeAvailability = studentAvailability[student.id] ?? student.availabilityBlocks ?? [];
+                const hasUnsavedAvailability = dirtyAvailability.has(student.id);
+                const isSavingAvailability = savingAvailability.has(student.id);
+                // New: indicators for availability/subjects
+                const hasAvail = Array.isArray(student.availabilityBlocks) && student.availabilityBlocks.length > 0;
+                const hasSubjects = Array.isArray(student.subjects) && student.subjects.length > 0;
 
                 return (
-                  <div key={student.id} style={{ borderBottom: '1px solid #f1f5f9', background: isSelected ? 'white' : 'white', transition: 'background 0.1s', borderLeft: isSelected ? '3px solid #7c3aed' : '3px solid transparent' }}>
+                  <div key={student.id} style={{ borderBottom: '1px solid #f1f5f9', background: isSelected ? '#fafafa' : 'white', transition: 'background 0.1s', borderLeft: isSelected ? '3px solid #7c3aed' : '3px solid transparent', padding: '6px 0' }}>
                     {/* Student row */}
                     <div
                       onClick={() => toggleStudent(student.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px', cursor: 'pointer', opacity: isBooked ? 0.82 : 1, background: isSelected ? '#fafafa' : 'white' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', cursor: 'pointer', opacity: isBooked ? 0.82 : 1, background: isSelected ? '#fafafa' : 'white', minHeight: 44 }}
                       onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#fafafa' }}
                       onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'white' }}
                     >
                       <div style={{ width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${isSelected ? '#7c3aed' : '#cbd5e1'}`, background: isSelected ? '#7c3aed' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
                         {isSelected && <Check size={11} color="white" strokeWidth={3} />}
                       </div>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: isSelected ? '#7c3aed' : '#1f2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'white', flexShrink: 0 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 7, background: isSelected ? '#7c3aed' : '#1f2937', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: 'white', flexShrink: 0 }}>
                         {student.name.charAt(0)}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', margin: 0 }}>{student.name}</p>
                         {student.grade && <p style={{ fontSize: 11, color: '#6b7280', margin: 0 }}>Grade {student.grade}</p>}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {isBooked && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>Booked</span>}
-                        {activeAvailability.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd' }}>{activeAvailability.length} avail blocks</span>}
-                        {hasUnsavedAvailability && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' }}>Unsaved</span>}
-                        {isSelected && hasEmpty && <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>Pick subject</span>}
-                        {isSelected && !hasEmpty && needs.length > 0 && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
-                            {needs.length} session{needs.length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {isSelected && selectedSubjects.length > 0 && (
-                          <span
-                            title={selectedSubjects.join(', ')}
-                            style={{
-                              maxWidth: 220,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              fontSize: 10,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 20,
-                              background: '#f1f5f9',
-                              color: '#334155',
-                              border: '1px solid #cbd5e1',
-                            }}
-                          >
-                            {selectedSubjects.join(', ')}
-                          </span>
-                        )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {/* New: compact indicators */}
+                        {hasAvail && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd' }}>Avail</span>}
+                        {hasSubjects && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>Subjects</span>}
+                        {isBooked && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }}>Booked</span>}
+                        {hasUnsavedAvailability && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d' }}>Unsaved</span>}
+                        {isSelected && hasEmpty && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' }}>Pick subject</span>}
                       </div>
                     </div>
 
                     {/* Subject rows — shown when selected */}
                     {isSelected && (
-                      <div style={{ padding: '0 24px 14px 62px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ padding: '0 16px 10px 54px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <button
                             type="button"
                             onClick={e => { e.stopPropagation(); setAvailabilityOpenFor(prev => prev === student.id ? null : student.id) }}
-                            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #c4b5fd', background: '#f5f3ff', color: '#6d28d9', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                            style={{ padding: '5px 9px', borderRadius: 8, border: '1.5px solid #c4b5fd', background: '#f5f3ff', color: '#6d28d9', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                             {availabilityOpenFor === student.id ? 'Hide availability' : 'Edit availability'}
                           </button>
                           {availabilityOpenFor === student.id && (
@@ -1450,14 +1481,14 @@ export function ScheduleBuilder({
                                 type="button"
                                 onClick={e => { e.stopPropagation(); resetAvailability(student.id) }}
                                 disabled={isSavingAvailability || !hasUnsavedAvailability}
-                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #cbd5e1', background: 'white', color: '#475569', fontSize: 11, fontWeight: 600, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
+                                style={{ padding: '5px 9px', borderRadius: 8, border: '1.5px solid #cbd5e1', background: 'white', color: '#475569', fontSize: 11, fontWeight: 600, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
                                 Discard
                               </button>
                               <button
                                 type="button"
                                 onClick={e => { e.stopPropagation(); void saveAvailabilityEdits(student.id) }}
                                 disabled={isSavingAvailability || !hasUnsavedAvailability}
-                                style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #6d28d9', background: '#7c3aed', color: 'white', fontSize: 11, fontWeight: 700, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
+                                style={{ padding: '5px 9px', borderRadius: 8, border: '1.5px solid #6d28d9', background: '#7c3aed', color: 'white', fontSize: 11, fontWeight: 700, cursor: isSavingAvailability || !hasUnsavedAvailability ? 'not-allowed' : 'pointer', opacity: isSavingAvailability || !hasUnsavedAvailability ? 0.55 : 1 }}>
                                 {isSavingAvailability ? 'Saving...' : 'Save availability'}
                               </button>
                             </>
@@ -1496,8 +1527,8 @@ export function ScheduleBuilder({
                                       <div style={{ fontSize: 10, color: '#64748b' }}>{block.display}</div>
                                     </td>
                                     {AVAILABILITY_DAYS.map(d => {
-                                      const applicable = block.days.includes(d.dow)
-                                      const active = applicable && activeAvailability.includes(`${d.dow}-${block.time}`)
+                                      const applicable = block.days.includes(d.dow);
+                                      const active = applicable && activeAvailability.includes(`${d.dow}-${block.time}`);
                                       return (
                                         <td key={d.dow} style={{ padding: 6, textAlign: 'center' }}>
                                           {applicable ? (
@@ -1521,7 +1552,7 @@ export function ScheduleBuilder({
                                             <div style={{ width: 24, height: 24, margin: '0 auto', borderRadius: 7, background: '#f1f5f9' }} />
                                           )}
                                         </td>
-                                      )
+                                      );
                                     })}
                                   </tr>
                                 ))}
@@ -1620,6 +1651,7 @@ export function ScheduleBuilder({
                 proposals={proposals}
                 suggestionsByNeed={suggestionsByNeed}
                 allAvailableSeats={previewSeatPool}
+                sessionTimesByDay={sessionTimesByDay ?? null}
                 existingSessions={sessions.map((s: any) => ({
                   date: s.date,
                   tutorId: s.tutorId,

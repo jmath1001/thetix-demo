@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Plus, Trash2, GraduationCap, Loader2, Save, X,
   Upload, ChevronDown, ChevronUp, Search, Filter,
@@ -492,7 +493,9 @@ export default function StudentAdminPage() {
       }, {})
 
     const studentRows = (sRes.data ?? []).map((row: any) => {
-      const enrollment = enrollmentByStudentForTerm[row.id] ?? latestEnrollmentByStudent[row.id]
+      const enrollment = preferredTermId
+  ? enrollmentByStudentForTerm[row.id] ?? null  // no fallback when term is selected
+  : latestEnrollmentByStudent[row.id] ?? null
       const enrollmentSubjects = normalizeStringArray(enrollment?.subjects)
       const rowSubjects = normalizeStringArray(row.subjects)
       const enrollmentAvailability = normalizeStringArray(enrollment?.availability_blocks)
@@ -810,6 +813,10 @@ export default function StudentAdminPage() {
                           className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
                           {isOpen ? 'Close' : 'View'}
                         </button>
+                        <Link href={`/students/${student.id}`}
+                          className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
+                          History
+                        </Link>
                       </div>
                     </td>
                   </tr>

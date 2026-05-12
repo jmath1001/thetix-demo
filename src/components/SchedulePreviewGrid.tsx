@@ -65,6 +65,7 @@ interface SchedulePreviewGridProps {
   suggestionsByNeed?: Record<string, SuggestionOption[]>
   allAvailableSeats: AvailableSeat[]
   existingSessions: ExistingSession[]
+  sessionTimesByDay?: Record<string, string[]> | null
   onSwap: (needId: string, slotIndex: number) => { success: boolean; reason?: string }
   onRemove: (needId: string) => void
 }
@@ -112,7 +113,7 @@ const getTutorPreviewPalette = (index: number): typeof TUTOR_PALETTES[0] => {
 }
 
 export function SchedulePreviewGrid({
-  proposals, suggestionsByNeed, allAvailableSeats, existingSessions, onSwap, onRemove,
+  proposals, suggestionsByNeed, allAvailableSeats, existingSessions, sessionTimesByDay, onSwap, onRemove,
 }: SchedulePreviewGridProps) {
   const [swapOpen, setSwapOpen] = useState<string | null>(null)
   const [expandedExplanation, setExpandedExplanation] = useState<string | null>(null)
@@ -293,8 +294,7 @@ export function SchedulePreviewGrid({
   }
 
   const getTimesForDay = (date: string) => {
-    // Use the canonical session blocks for each day.
-    return getSessionsForDay(dayOfWeek(date)).map(s => s.time)
+    return getSessionsForDay(dayOfWeek(date), sessionTimesByDay).map(s => s.time)
   }
 
   const getProposalsAt = (tutorId: string, date: string, time: string) =>

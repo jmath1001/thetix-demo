@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { DB, withCenter } from '@/lib/db';
 import {
@@ -8,8 +8,27 @@ import {
   type RecurringSeries, type Tutor, type Student, toISODate,
 } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
-import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2 } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
+
+type TermOption = { id: string; name: string; status: string; start_date: string; end_date: string };
+
+function Badge({ children, color = 'gray' }: { children: React.ReactNode; color?: 'green' | 'red' | 'blue' | 'yellow' | 'gray' | 'purple' | 'indigo' }) {
+  const map: Record<string, string> = {
+    green:  'bg-emerald-50 text-emerald-700 border-emerald-200',
+    red:    'bg-red-50 text-red-600 border-red-200',
+    blue:   'bg-blue-50 text-blue-700 border-blue-200',
+    yellow: 'bg-amber-50 text-amber-700 border-amber-200',
+    gray:   'bg-slate-100 text-slate-500 border-slate-200',
+    purple: 'bg-violet-50 text-violet-700 border-violet-200',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  };
+  return (
+    <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${map[color]}`}>
+      {children}
+    </span>
+  );
+}
 
 const DAY_NAMES: Record<number, string> = {
   1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday',7:'Sunday',
@@ -129,200 +148,190 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
   const attended = past.filter(r => r.status !== 'cancelled').length;
   const rate = attended > 0 ? Math.round((present / attended) * 100) : null;
   const statusColor = s.status === 'active' ? '#4f46e5' : s.status === 'completed' ? '#16a34a' : '#94a3b8';
-  const statusBg = s.status === 'active' ? '#eef2ff' : s.status === 'completed' ? '#f0fdf4' : '#f8fafc';
   const totalSessions = sessions.filter(r => r.status !== 'cancelled').length || s.totalWeeks;
   const completedSessions = past.filter(r => r.status !== 'cancelled').length;
   const progressPct = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden transition-all"
-      style={{ border: `1.5px solid ${expanded ? statusColor + '60' : '#f1f5f9'}` }}>
-      <div className="p-3.5">
-        <div className="flex items-start gap-3">
-          <div className="shrink-0">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white"
-              style={{ background: statusColor }}>
-              {s.studentName.charAt(0)}
-            </div>
+    <div className={`bg-white transition-all ${expanded ? 'border-b border-slate-100' : ''}`}>
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/60 cursor-pointer group" onClick={toggle}>
+        <div className="shrink-0">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black text-white bg-slate-900">
+            {s.studentName.charAt(0)}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <p className="text-sm font-black text-[#0f172a]">{s.studentName}</p>
-              <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
-                style={{ background: statusBg, color: statusColor }}>{s.status}</span>
-              {s.status === 'active' && s.endDate < today && (
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>ending</span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[11px] text-[#334155] flex items-center gap-1"><User size={10}/> {s.tutorName}</span>
-              <span className="text-[11px] text-[#334155] flex items-center gap-1"><Calendar size={10}/> {DAY_NAMES[s.dayOfWeek]}s</span>
-              <span className="text-[11px] text-[#334155] flex items-center gap-1"><Clock size={10}/> {s.time}</span>
-              <span className="text-[11px] text-[#334155] flex items-center gap-1"><BookOpen size={10}/> {s.topic}</span>
-            </div>
-            <div className="flex items-center gap-3 mt-1.5">
-              <span className="text-[10px] text-[#334155]">{s.startDate} → {s.endDate}</span>
-              <span className="text-[10px] font-bold text-[#334155]">{s.totalWeeks}wk</span>
-              {sessions.length > 0 && rate !== null && (
-                <>
-                  <span className="text-[#e2e8f0]">·</span>
-                  <span className="text-[10px] font-bold" style={{ color: rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626' }}>{rate}% attendance</span>
-                  {noShow > 0 && <span className="text-[10px] text-[#334155]">{noShow} no-show{noShow !== 1 ? 's' : ''}</span>}
-                </>
-              )}
-            </div>
-            {sessions.length > 0 && (
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 h-1.5 rounded-full bg-[#f1f5f9] overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: statusColor }}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-slate-900">{s.studentName}</span>
+            {s.status === 'active' && <Badge color="indigo">active</Badge>}
+            {s.status === 'completed' && <Badge color="green">completed</Badge>}
+            {s.status === 'cancelled' && <Badge color="gray">cancelled</Badge>}
+            {s.status === 'active' && s.endDate < today && <Badge color="yellow">ending</Badge>}
+          </div>
+          <div className="flex items-center gap-3 flex-wrap mt-0.5">
+            <span className="text-[11px] text-slate-400 flex items-center gap-1"><User size={10}/> {s.tutorName}</span>
+            <span className="text-[11px] text-slate-400 flex items-center gap-1"><Calendar size={10}/> {DAY_NAMES[s.dayOfWeek]}s</span>
+            <span className="text-[11px] text-slate-400 flex items-center gap-1"><Clock size={10}/> {s.time}</span>
+            <span className="text-[11px] text-slate-400 flex items-center gap-1"><BookOpen size={10}/> {s.topic}</span>
+          </div>
+        </div>
+        <div className="hidden sm:flex items-center gap-4 shrink-0 text-right">
+          <div className="text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Period</p>
+            <p className="text-xs text-slate-600">{s.startDate} → {s.endDate}</p>
+          </div>
+          <div className="text-center w-12">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Weeks</p>
+            <p className="text-sm font-bold text-slate-900">{s.totalWeeks}</p>
+          </div>
+          {sessions.length > 0 && rate !== null && (
+            <div className="text-center w-20">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Attendance</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${progressPct}%`, background: statusColor }}/>
                 </div>
-                <span className="text-[10px] text-[#334155] shrink-0">{completedSessions}/{totalSessions}</span>
+                <span className="text-[10px] font-semibold" style={{ color: rate >= 80 ? '#16a34a' : rate >= 60 ? '#f59e0b' : '#dc2626' }}>{rate}%</span>
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {s.status === 'active' && (
-              <>
-                <button onClick={() => onEdit(s)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1"
-                  style={{ background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4f46e5' }}>
-                  <Edit3 size={11}/> Edit
-                </button>
-                <button onClick={() => setConfirmAction('cancel')} className="p-1.5 rounded-lg text-[#94a3b8] transition-colors hover:text-[#dc2626] hover:bg-[#fff5f5]">
-                  <X size={14}/>
-                </button>
-              </>
-            )}
-            {s.status !== 'active' && (
-              <button onClick={() => setConfirmAction('delete')} className="p-1.5 rounded-lg text-[#cbd5e1] transition-colors hover:text-[#dc2626] hover:bg-[#fff5f5]">
-                <X size={14}/>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0 ml-1">
+          {s.status === 'active' && (
+            <>
+              <button onClick={e => { e.stopPropagation(); onEdit(s); }}
+                className="rounded border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Edit3 size={11}/> Edit
               </button>
-            )}
-            <button onClick={toggle} className="p-1.5 rounded-lg text-[#94a3b8] transition-colors hover:bg-[#f8fafc]">
-              {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+              <button onClick={e => { e.stopPropagation(); setConfirmAction('cancel'); }}
+                className="p-1.5 rounded border border-transparent text-slate-300 hover:text-red-500 hover:border-red-200 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
+                <X size={13}/>
+              </button>
+            </>
+          )}
+          {s.status !== 'active' && (
+            <button onClick={e => { e.stopPropagation(); setConfirmAction('delete'); }}
+              className="p-1.5 rounded border border-transparent text-slate-200 hover:text-red-500 hover:border-red-200 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
+              <X size={13}/>
+            </button>
+          )}
+          <button className="p-1.5 rounded text-slate-300 hover:text-slate-500">
+            {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+          </button>
+        </div>
+      </div>
+
+      {confirmAction && (
+        <div className="mx-4 mb-3 px-4 py-3 rounded-lg flex items-center justify-between gap-4 bg-red-50 border border-red-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={13} className="text-red-500 shrink-0"/>
+            <p className="text-xs font-semibold text-red-700">
+              {confirmAction === 'cancel' ? `Cancel all future sessions for ${s.studentName}?` : `Delete this series? This cannot be undone.`}
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => setConfirmAction(null)} className="px-3 py-1.5 rounded text-[11px] font-semibold text-slate-600 bg-white border border-slate-200">Keep</button>
+            <button onClick={() => { setConfirmAction(null); confirmAction === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
+              className="px-3 py-1.5 rounded text-[11px] font-semibold text-white bg-red-500">
+              {confirmAction === 'cancel' ? 'Yes, Cancel' : 'Yes, Delete'}
             </button>
           </div>
         </div>
-
-        {confirmAction && (
-          <div className="mt-4 px-4 py-3 rounded-xl flex items-center justify-between gap-4"
-            style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={13} style={{ color: '#dc2626' }}/>
-              <p className="text-xs font-bold text-[#dc2626]">
-                {confirmAction === 'cancel' ? `Cancel all future sessions for ${s.studentName}?` : `Delete this series record? This cannot be undone.`}
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button onClick={() => setConfirmAction(null)} className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-[#64748b]"
-                style={{ background: 'white', border: '1px solid #e2e8f0' }}>Keep</button>
-              <button onClick={() => { setConfirmAction(null); confirmAction === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white" style={{ background: '#dc2626' }}>
-                {confirmAction === 'cancel' ? 'Yes, Cancel' : 'Yes, Delete'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
 
       {expanded && (
-        <div style={{ borderTop: '1px solid #f8fafc' }}>
-          <div className="px-3.5 py-3">
-            {loadingSessions ? (
-              <div className="flex items-center gap-2 text-xs text-[#334155]"><RefreshCw size={12} className="animate-spin"/> Loading sessions…</div>
-            ) : sessions.length === 0 ? (
-              <p className="text-xs text-[#334155] italic">No sessions found</p>
-            ) : (
-              <>
-                <p className="text-[9px] font-black uppercase tracking-widest text-[#334155] mb-2.5">Session Timeline · {sessions.length} sessions</p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {sessions.sort((a, b) => (a.session?.session_date ?? '').localeCompare(b.session?.session_date ?? '')).map(row => {
-                    const date = row.session?.session_date ?? '';
-                    const isPast = date < today;
-                    const canEdit = s.status === 'active' && date >= today;
-                    return <SessionDot key={row.id} status={row.status} date={date} isPast={isPast} onClick={canEdit ? () => onEditSession(row, s) : undefined} />;
-                  })}
-                </div>
-                <div className="flex items-center gap-4 mb-4">
-                  {[['#16a34a','Present'],['#dc2626','No-show'],['#4f46e5','Upcoming'],['#f59e0b','Unmarked'],['#e2e8f0','Cancelled']].map(([c,l]) => (
-                    <div key={l} className="flex items-center gap-1.5">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: c }}/><span className="text-[9px] text-[#334155]">{l}</span>
-                    </div>
-                  ))}
-                </div>
-                {future.length > 0 && (
-                  <div>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#4f46e5] mb-2">Upcoming · {future.length}</p>
-                    <div className="space-y-1.5">
-                      {future.slice(0, 4).map(row => {
-                        const date = row.session?.session_date ?? '';
-                        const d = new Date(date + 'T00:00:00');
-                        const canEdit = s.status === 'active' && row.status !== 'cancelled';
-                        const isOverride = isInstanceOverride(row);
-                        const rowDow = dowFromIso(date);
-                        const rowTutor = row.session?.tutor_id ? (tutorNameById.get(row.session.tutor_id) ?? 'Tutor') : 'Tutor';
-                        return (
-                          <div key={row.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl group" style={{ background: '#fafafa', border: '1px solid #f1f5f9' }}>
-                            <div className="text-center shrink-0 w-8">
-                              <p className="text-[8px] font-black uppercase text-[#334155] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
-                              <p className="text-sm font-black text-[#1e293b] leading-tight">{d.getDate()}</p>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-[#1e293b] truncate">{row.topic ?? s.topic}</p>
-                              <p className="text-[10px] text-[#334155]">{DAY_NAMES[rowDow]} · {row.session?.time ?? s.time} · {rowTutor}</p>
-                              {isOverride && (
-                                <span className="inline-flex mt-1 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider" style={{ background: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }}>
-                                  Moved Instance
-                                </span>
-                              )}
-                            </div>
-                            {canEdit && (
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => onEditSession(row, s)} className="px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1" style={{ background: '#f1f5f9', color: '#64748b' }}>
-                                  <Pencil size={9}/> Edit
-                                </button>
-                                <button onClick={() => onCancelSession(row, s)} className="p-1 rounded-lg text-[#cbd5e1] hover:text-[#dc2626]"><X size={12}/></button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {future.length > 4 && <p className="text-[10px] text-[#334155] text-center pt-1">+{future.length - 4} more upcoming</p>}
-                    </div>
+        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+          {loadingSessions ? (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-2"><Loader2 size={12} className="animate-spin"/> Loading sessions…</div>
+          ) : sessions.length === 0 ? (
+            <p className="text-xs text-slate-400 italic py-2">No sessions found</p>
+          ) : (
+            <>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2.5">Session Timeline · {sessions.length} sessions</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {sessions.sort((a, b) => (a.session?.session_date ?? '').localeCompare(b.session?.session_date ?? '')).map(row => {
+                  const date = row.session?.session_date ?? '';
+                  const isPast = date < today;
+                  const canEdit = s.status === 'active' && date >= today;
+                  return <SessionDot key={row.id} status={row.status} date={date} isPast={isPast} onClick={canEdit ? () => onEditSession(row, s) : undefined} />;
+                })}
+              </div>
+              <div className="flex items-center gap-4 mb-4">
+                {[['#10b981','Present'],['#ef4444','No-show'],['#4f46e5','Upcoming'],['#f59e0b','Unmarked'],['#cbd5e1','Cancelled']].map(([c,l]) => (
+                  <div key={l} className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: c }}/><span className="text-[9px] text-slate-500">{l}</span>
                   </div>
-                )}
-                {cancelledUpcoming.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#334155] mb-2">Cancelled Upcoming · {cancelledUpcoming.length}</p>
-                    <div className="space-y-1.5">
-                      {cancelledUpcoming.slice(0, 4).map(row => {
-                        const date = row.session?.session_date ?? '';
-                        const d = new Date(date + 'T00:00:00');
-                        const canRestore = s.status === 'active';
-                        return (
-                          <div key={row.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl group" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                            <div className="text-center shrink-0 w-8">
-                              <p className="text-[8px] font-black uppercase text-[#334155] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
-                              <p className="text-sm font-black text-[#334155] leading-tight">{d.getDate()}</p>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-[#334155] truncate">Cancelled Session</p>
-                              <p className="text-[10px] text-[#334155]">{DAY_NAMES[s.dayOfWeek]} · {row.session?.time ?? s.time}</p>
-                            </div>
-                            {canRestore && (
-                              <button onClick={() => onEditSession(row, s)} className="px-2.5 py-1 rounded-lg text-[10px] font-bold" style={{ background: '#eef2ff', border: '1px solid #c7d2fe', color: '#4f46e5' }}>
-                                Restore
+                ))}
+              </div>
+              {future.length > 0 && (
+                <div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2">Upcoming · {future.length}</p>
+                  <div className="space-y-1.5">
+                    {future.slice(0, 4).map(row => {
+                      const date = row.session?.session_date ?? '';
+                      const d = new Date(date + 'T00:00:00');
+                      const canEdit = s.status === 'active' && row.status !== 'cancelled';
+                      const isOverride = isInstanceOverride(row);
+                      const rowDow = dowFromIso(date);
+                      const rowTutor = row.session?.tutor_id ? (tutorNameById.get(row.session.tutor_id) ?? 'Tutor') : 'Tutor';
+                      return (
+                        <div key={row.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg group bg-white border border-slate-100">
+                          <div className="text-center shrink-0 w-8">
+                            <p className="text-[8px] font-bold uppercase text-slate-400 leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
+                            <p className="text-sm font-black text-slate-800 leading-tight">{d.getDate()}</p>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{row.topic ?? s.topic}</p>
+                            <p className="text-[10px] text-slate-400">{DAY_NAMES[rowDow]} · {row.session?.time ?? s.time} · {rowTutor}</p>
+                            {isOverride && <Badge color="blue">Moved Instance</Badge>}
+                          </div>
+                          {canEdit && (
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => onEditSession(row, s)} className="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 flex items-center gap-1">
+                                <Pencil size={9}/> Edit
                               </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {cancelledUpcoming.length > 4 && <p className="text-[10px] text-[#334155] text-center pt-1">+{cancelledUpcoming.length - 4} more cancelled</p>}
-                    </div>
+                              <button onClick={() => onCancelSession(row, s)} className="p-1 rounded text-slate-300 hover:text-red-500"><X size={12}/></button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {future.length > 4 && <p className="text-[10px] text-slate-400 text-center pt-1">+{future.length - 4} more upcoming</p>}
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              )}
+              {cancelledUpcoming.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2">Cancelled Upcoming · {cancelledUpcoming.length}</p>
+                  <div className="space-y-1.5">
+                    {cancelledUpcoming.slice(0, 4).map(row => {
+                      const date = row.session?.session_date ?? '';
+                      const d = new Date(date + 'T00:00:00');
+                      const canRestore = s.status === 'active';
+                      return (
+                        <div key={row.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg group bg-white border border-slate-100">
+                          <div className="text-center shrink-0 w-8">
+                            <p className="text-[8px] font-bold uppercase text-slate-400 leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
+                            <p className="text-sm font-black text-slate-400 leading-tight">{d.getDate()}</p>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-400 truncate">Cancelled Session</p>
+                            <p className="text-[10px] text-slate-400">{DAY_NAMES[s.dayOfWeek]} · {row.session?.time ?? s.time}</p>
+                          </div>
+                          {canRestore && (
+                            <button onClick={() => onEditSession(row, s)} className="px-2.5 py-1 rounded border border-slate-200 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {cancelledUpcoming.length > 4 && <p className="text-[10px] text-slate-400 text-center pt-1">+{cancelledUpcoming.length - 4} more cancelled</p>}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -337,6 +346,8 @@ export default function RecurringManager() {
   const [students, setStudents] = useState<Student[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all');
   const [search, setSearch] = useState('');
+  const [terms, setTerms] = useState<TermOption[]>([]);
+  const [selectedTermId, setSelectedTermId] = useState<string>('all');
   const [editingSeries, setEditingSeries] = useState<RecurringSeries | null>(null);
   const [editTab, setEditTab] = useState<EditTab>('schedule');
   const [editing, setEditing] = useState(false);
@@ -369,12 +380,14 @@ export default function RecurringManager() {
     setLoading(true); setError(null);
     try {
       await markCompletedSeries();
-      const [seriesData, tutorRes, studentRes] = await Promise.all([
+      const [seriesData, tutorRes, studentRes, termsRes] = await Promise.all([
         fetchAllSeries(),
         withCenter(supabase.from(DB.tutors).select('*')).order('name'),
         withCenter(supabase.from(DB.students).select('*')).order('name'),
+        fetch('/api/terms').then(r => r.json()).catch(() => ({ terms: [] })),
       ]);
       setSeries(seriesData);
+      setTerms((termsRes.terms ?? []) as TermOption[]);
       setTutors((tutorRes.data ?? []).map((r: any) => ({
         id: r.id, name: r.name, subjects: r.subjects ?? [], cat: r.cat,
         availability: r.availability ?? [], availabilityBlocks: r.availability_blocks ?? [],
@@ -615,115 +628,110 @@ export default function RecurringManager() {
     } catch (e: any) { patchSingle({ saving: false, error: e.message }); }
   };
 
-  const filtered = series
-    .filter(s => statusFilter === 'all' || s.status === statusFilter)
+  const selectedTerm = terms.find(t => t.id === selectedTermId);
+  const baseFiltered = series
+    .filter(s => {
+      if (!selectedTerm) return true;
+      // Series starts within the term period
+      return s.startDate >= selectedTerm.start_date && s.startDate <= selectedTerm.end_date;
+    })
     .filter(s => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
-      return s.studentName.toLowerCase().includes(q) || s.tutorName.toLowerCase().includes(q) || s.topic.toLowerCase().includes(q);
+      return s.studentName.toLowerCase().includes(q) || s.tutorName.toLowerCase().includes(q) || (s.topic ?? '').toLowerCase().includes(q);
     });
-  const counts = { all: series.length, active: series.filter(s => s.status === 'active').length, completed: series.filter(s => s.status === 'completed').length, cancelled: series.filter(s => s.status === 'cancelled').length };
+  const filtered = baseFiltered.filter(s => statusFilter === 'all' || s.status === statusFilter);
+  const counts = { all: baseFiltered.length, active: baseFiltered.filter(s => s.status === 'active').length, completed: baseFiltered.filter(s => s.status === 'completed').length, cancelled: baseFiltered.filter(s => s.status === 'cancelled').length };
   const createBlocks = getSessionsForDay(createForm.dayOfWeek);
 
   return (
-    <div className="min-h-screen pb-20" style={{ background: 'radial-gradient(1200px 500px at 15% -10%, #dbeafe 0%, rgba(219,234,254,0) 60%), radial-gradient(1000px 480px at 95% 0%, #ede9fe 0%, rgba(237,233,254,0) 58%), #f1f5f9', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
-      <div className="sticky top-0 z-40" style={{ backdropFilter: 'blur(10px)', background: 'rgba(248,250,252,0.88)', borderBottom: '1px solid #dbe4f3' }}>
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: '#4338ca', color: '#ffffff', boxShadow: '0 8px 22px rgba(67,56,202,0.25)' }}>
-                <Repeat size={14} />
-              </div>
-              <span className="text-lg font-black tracking-tight text-[#0f172a]">Recurring Manager</span>
-              <span className="text-[10px] font-bold text-[#475569] bg-white px-2 py-1 rounded-full border border-[#cbd5e1]">
-                {series.length} total
-              </span>
-            </div>
-            <p className="mt-1 text-xs" style={{ color: '#334155' }}>Edit series safely, restore cancelled instances, and rebuild recurring plans fast.</p>
+    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif" }}>
+      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+        {/* Header */}
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+          <div className="flex items-center gap-3">
+            <Repeat size={15} className="text-slate-400" />
+            <span className="text-sm font-bold text-slate-900">Recurring Series</span>
+            {!loading && <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">{series.length}</span>}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider text-white" style={{ background: '#0f172a', boxShadow: '0 8px 22px rgba(15,23,42,0.2)' }}>
-              <Repeat size={11} /> Create Series
+            <button onClick={openCreate}
+              className="flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
+              <Repeat size={11} /> New Series
             </button>
-            <button onClick={load} disabled={loading} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#334155]" style={{ background: 'white', border: '1px solid #cbd5e1' }}>
+            <button onClick={load} disabled={loading}
+              className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
               <RefreshCw size={11} className={loading ? 'animate-spin' : ''}/> Refresh
             </button>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-5xl mx-auto px-4 pt-4 space-y-3.5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <div className="rounded-2xl px-4 py-3" style={{ background: 'white', border: '1px solid #dbe4f3' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#334155]">Active Series</p>
-            <p className="mt-1 text-2xl font-black text-[#312e81]">{counts.active}</p>
+        {/* Filter bar */}
+        <div className="flex h-10 shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-5">
+          <div className="relative">
+            <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+              className="h-7 rounded border border-slate-200 bg-slate-50 pl-7 pr-3 text-xs text-slate-700 outline-none focus:border-slate-400 w-44" />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
+                <X size={11}/>
+              </button>
+            )}
           </div>
-          <div className="rounded-2xl px-4 py-3" style={{ background: 'white', border: '1px solid #dbe4f3' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#334155]">Completed</p>
-            <p className="mt-1 text-2xl font-black text-[#166534]">{counts.completed}</p>
-          </div>
-          <div className="rounded-2xl px-4 py-3" style={{ background: 'white', border: '1px solid #dbe4f3' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#334155]">Cancelled</p>
-            <p className="mt-1 text-2xl font-black text-[#64748b]">{counts.cancelled}</p>
-          </div>
-        </div>
-
-        <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94a3b8] pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by student, tutor, or topic…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-2 rounded-xl text-xs font-medium outline-none transition-all"
-            style={{ background: 'white', border: '1.5px solid #e2e8f0', color: '#0f172a' }}
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#334155]">
-              <X size={12} />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {([
-            { key: 'all', label: 'All', color: '#0f172a', bg: 'white', activeBg: '#0f172a' },
-            { key: 'active', label: 'Active', color: '#4f46e5', bg: '#eef2ff', activeBg: '#4f46e5' },
-            { key: 'completed', label: 'Completed', color: '#16a34a', bg: '#f0fdf4', activeBg: '#16a34a' },
-            { key: 'cancelled', label: 'Cancelled', color: '#94a3b8', bg: '#f8fafc', activeBg: '#64748b' },
-          ] as const).map(f => (
-            <button key={f.key} onClick={() => setStatusFilter(f.key)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
-              style={statusFilter === f.key ? { background: f.activeBg, color: 'white' } : { background: f.bg, color: f.color, border: `1.5px solid ${f.color}20` }}>
-              {f.label} <span className="text-[9px] opacity-70">({counts[f.key]})</span>
-            </button>
-          ))}
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}>
-            <AlertTriangle size={14}/> {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center py-16 gap-3 text-[#334155]">
-            <RefreshCw size={18} className="animate-spin"/><span className="text-sm">Loading…</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl" style={{ border: '1.5px dashed #e2e8f0' }}>
-            <Repeat size={28} className="mx-auto mb-3 text-[#cbd5e1]"/>
-            <p className="text-sm font-bold text-[#334155]">No {statusFilter !== 'all' ? statusFilter : ''} recurring series</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filtered.map(s => (
-              <SeriesCard key={s.id} s={s} tutors={tutors} students={students} today={today}
-                onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete}
-                onEditSession={openSingleEdit} onCancelSession={openSingleCancel} refreshStamp={refreshStamp} />
+          <div className="flex items-center gap-1 border-l border-slate-100 pl-3">
+            {([
+              { key: 'all', label: 'All' },
+              { key: 'active', label: 'Active' },
+              { key: 'completed', label: 'Completed' },
+              { key: 'cancelled', label: 'Cancelled' },
+            ] as const).map(({ key, label }) => (
+              <button key={key} onClick={() => setStatusFilter(key)}
+                className={`rounded px-2.5 py-1 text-[11px] font-semibold transition-colors ${statusFilter === key ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
+                {label} <span className="text-[9px] opacity-60">({counts[key]})</span>
+              </button>
             ))}
           </div>
-        )}
+          {terms.length > 0 && (
+            <div className="flex items-center gap-2 border-l border-slate-100 pl-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Term</span>
+              <select value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}
+                className="h-7 rounded border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:border-slate-400">
+                <option value="all">All Terms</option>
+                {terms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="ml-auto text-[11px] text-slate-400">{filtered.length} of {series.length}</div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto">
+          {error && (
+            <div className="m-4 flex items-center gap-2 px-4 py-3 rounded-lg text-sm bg-red-50 border border-red-200 text-red-600">
+              <AlertTriangle size={14}/> {error}
+            </div>
+          )}
+          {loading ? (
+            <div className="flex items-center justify-center py-24 gap-2 text-slate-400">
+              <Loader2 size={16} className="animate-spin"/>
+              <span className="text-xs">Loading…</span>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+              <Repeat size={28} className="mb-3 text-slate-200"/>
+              <p className="text-sm font-semibold text-slate-400">No {statusFilter !== 'all' ? statusFilter : ''} series found</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {filtered.map(s => (
+                <SeriesCard key={s.id} s={s} tutors={tutors} students={students} today={today}
+                  onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete}
+                  onEditSession={openSingleEdit} onCancelSession={openSingleCancel} refreshStamp={refreshStamp} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showCreate && (

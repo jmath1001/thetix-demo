@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { DB, withCenter, withCenterPayload } from '@/lib/db'
 import type { SessionTimesByDay } from '@/components/constants'
+import { logEvent } from '@/lib/analytics'
 
 const TUTORS         = DB.tutors
 const STUDENTS       = DB.students
@@ -354,7 +355,7 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
             : (r.subject ? [r.subject] : []),
           subject:            r.subject ?? null,
           grade:              r.grade ?? null,
-          hoursLeft:          typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : r.hours_left,
+          hoursLeft:          r.hours_left ?? (typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : null),
           availabilityBlocks: enrollmentAvailability ?? (r.availability_blocks ?? []),
           email:              r.email ?? null,
           phone:              r.phone ?? null,
@@ -583,12 +584,68 @@ export async function bookStudent({
   return booked
 }
 
+// Internal helper: adjusts hours_left when the present/not-present boundary is crossed.
+async function _adjustHoursForAttendanceChange({
+  studentId, prevStatus, newStatus,
+}: {
+  studentId: string; prevStatus: string | null; newStatus: string
+}) {
+  const wasPresent = prevStatus === 'present' || prevStatus === 'confirmed'
+  const isPresent  = newStatus === 'present'
+  if (wasPresent === isPresent) return
+
+  const { data: student } = await withCenter(supabase
+    .from(STUDENTS).select('hours_left').eq('id', studentId)).single()
+  if (!student || typeof student.hours_left !== 'number') return
+
+  const delta    = isPresent ? -1 : 1
+  const newHours = Math.max(0, student.hours_left + delta)
+  await withCenter(supabase.from(STUDENTS).update({ hours_left: newHours }).eq('id', studentId))
+  await logEvent('hours_adjusted', {
+    studentId, delta, prevHours: student.hours_left, newHours,
+    reason: isPresent ? 'attendance_marked_present' : 'attendance_unmarked',
+  })
+}
+
 export async function updateAttendance({ sessionId, studentId, status }: {
   sessionId: string; studentId: string; status: 'scheduled' | 'present' | 'no-show'
 }) {
+  // Fetch current status so we can detect present-boundary crossings for hours tracking.
+  const { data: current } = await supabase
+    .from(SS).select('status').eq('session_id', sessionId).eq('student_id', studentId).single()
+  const prevStatus = current?.status ?? null
+
   const { error } = await supabase.from(SS).update({ status })
     .eq('session_id', sessionId).eq('student_id', studentId)
   if (error) throw error
+
+  await _adjustHoursForAttendanceChange({ studentId, prevStatus, newStatus: status })
+}
+
+export async function correctSessionRecord({
+  rowId, studentId, status, topic, notes,
+}: {
+  rowId: string; studentId: string; status: string; topic: string; notes: string | null
+}) {
+  // Fetch current row for audit log and hours delta.
+  const { data: current } = await supabase
+    .from(SS).select('status, topic, notes').eq('id', rowId).single()
+
+  const { error } = await supabase.from(SS)
+    .update({ status, topic, notes: notes || null })
+    .eq('id', rowId)
+  if (error) throw error
+
+  if (current) {
+    await _adjustHoursForAttendanceChange({ studentId, prevStatus: current.status, newStatus: status })
+  }
+
+  await logEvent('session_record_corrected', {
+    rowId, studentId,
+    prevStatus: current?.status ?? null, newStatus: status,
+    prevTopic:  current?.topic  ?? null, newTopic: topic,
+    prevNotes:  current?.notes  ?? null, newNotes: notes,
+  })
 }
 
 export async function removeStudentFromSession({ sessionId, studentId }: {
@@ -646,11 +703,11 @@ export async function moveStudentSession({
     return
   }
 
-  const { data: sessionsAtTime, error: satErr } = await supabase
+  const { data: sessionsAtTime, error: satErr } = await withCenter(supabase
     .from(SESSIONS)
     .select('id')
     .eq('session_date', toDate)
-    .eq('time', toTime)
+    .eq('time', toTime))
   if (satErr) throw satErr
 
   const targetSessionIds = (sessionsAtTime ?? []).map((s: any) => s.id)
@@ -667,12 +724,12 @@ export async function moveStudentSession({
     if (dup) throw new Error('Student is already booked at that date/time.')
   }
 
-  const { data: existing, error: existingErr } = await (supabase
+  const { data: existing, error: existingErr } = await (withCenter(supabase
     .from(SESSIONS)
     .select(`id, ${SS}(id)`)
     .eq('session_date', toDate)
     .eq('tutor_id', toTutorId)
-    .eq('time', toTime)
+    .eq('time', toTime))
     .maybeSingle() as any)
   if (existingErr) throw existingErr
 
@@ -685,7 +742,7 @@ export async function moveStudentSession({
   } else {
     const { data: created, error: createErr } = await supabase
       .from(SESSIONS)
-      .insert({ session_date: toDate, tutor_id: toTutorId, time: toTime })
+      .insert(withCenterPayload({ session_date: toDate, tutor_id: toTutorId, time: toTime }))
       .select('id')
       .single()
     if (createErr) throw createErr

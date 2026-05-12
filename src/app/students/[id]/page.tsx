@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation'
 import { ArrowLeft, AlertTriangle, CalendarDays, Repeat2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { DB, withCenter } from '@/lib/db'
-import { dayOfWeek, getCentralTimeNow, toISODate } from '@/lib/useScheduleData'
+import { dayOfWeek, getCentralTimeNow, toISODate, correctSessionRecord } from '@/lib/useScheduleData'
 import { getSessionsForDay } from '@/components/constants'
 
 const STUDENTS = DB.students
@@ -62,6 +62,9 @@ export default function StudentHistoryPage() {
   const [student, setStudent] = useState<any | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
   const [timelineTab, setTimelineTab] = useState<'upcoming' | 'past'>('upcoming')
+  const [editingRowId, setEditingRowId]   = useState<string | null>(null)
+  const [editDraft,    setEditDraft]      = useState({ status: '', topic: '', notes: '' })
+  const [editSaving,   setEditSaving]     = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -197,6 +200,30 @@ export default function StudentHistoryPage() {
     return { text: '→ Upcoming', bg: '#dbeafe', color: '#1e40af', shadow: '#3b82f620' }
   }
 
+  const handleSaveEdit = async () => {
+    if (!editingRowId || !student) return
+    setEditSaving(true)
+    try {
+      await correctSessionRecord({
+        rowId:     editingRowId,
+        studentId: student.id,
+        status:    editDraft.status,
+        topic:     editDraft.topic,
+        notes:     editDraft.notes || null,
+      })
+      setHistory(prev => prev.map(r =>
+        r.rowId === editingRowId
+          ? { ...r, status: editDraft.status, topic: editDraft.topic, notes: editDraft.notes || null }
+          : r
+      ))
+      setEditingRowId(null)
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to save')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%)' }}>
@@ -293,21 +320,70 @@ export default function StudentHistoryPage() {
                 const row = item.row
                 const badge = statusBadge(row)
                 const d = new Date(row.date + 'T00:00:00')
+                const isEditing = editingRowId === row.rowId
                 return (
-                  <div key={item.key} className="px-5 py-3.5 flex items-start gap-3.5 hover:bg-gradient-to-r hover:from-blue-50 hover:to-transparent transition-colors" style={{ borderLeft: `3px solid ${badge.color}` }}>
-                    <div className="w-9 shrink-0 text-center rounded-lg p-1.5" style={{ background: '#f1f5f9' }}>
-                      <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
-                      <p className="text-base font-black text-[#0f172a] leading-tight">{d.getDate()}</p>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-bold text-[#0f172a] truncate">{row.topic}</p>
-                      <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName} · {row.blockLabel}</p>
-                      {row.notes && <p className="text-[10px] mt-1 text-[#475569] truncate italic">"{row.notes}"</p>}
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 shrink-0">
-                      <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color, boxShadow: `0 2px 4px ${badge.color}20` }}>{badge.text}</span>
-                      <span className="text-[9px] text-[#94a3b8]">{row.time}</span>
-                    </div>
+                  <div key={item.key} className="group px-5 py-3.5 transition-colors" style={{ borderLeft: `3px solid ${badge.color}`, background: isEditing ? '#f8fafc' : undefined }}>
+                    {isEditing ? (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: '#64748b' }}>Correcting · {row.date}</p>
+                          <button onClick={() => setEditingRowId(null)} className="text-[10px] text-[#94a3b8] hover:text-red-500 font-semibold">✕ Cancel</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-[0.16em] text-[#94a3b8]">Status</label>
+                            <select value={editDraft.status} onChange={e => setEditDraft(d => ({ ...d, status: e.target.value }))}
+                              className="mt-1 w-full rounded border border-[#e2e8f0] bg-white px-2 py-1.5 text-xs font-semibold text-[#0f172a]">
+                              <option value="present">✓ Present</option>
+                              <option value="no-show">✕ No-show</option>
+                              <option value="scheduled">→ Scheduled</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-black uppercase tracking-[0.16em] text-[#94a3b8]">Topic</label>
+                            <input value={editDraft.topic} onChange={e => setEditDraft(d => ({ ...d, topic: e.target.value }))}
+                              className="mt-1 w-full rounded border border-[#e2e8f0] px-2 py-1.5 text-xs text-[#0f172a]" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-[0.16em] text-[#94a3b8]">Notes</label>
+                          <textarea value={editDraft.notes} onChange={e => setEditDraft(d => ({ ...d, notes: e.target.value }))}
+                            rows={2} className="mt-1 w-full rounded border border-[#e2e8f0] px-2 py-1.5 text-xs text-[#0f172a] resize-none" />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditingRowId(null)}
+                            className="px-3 py-1.5 rounded border border-[#e2e8f0] text-[10px] font-semibold text-[#64748b] hover:bg-slate-50">
+                            Cancel
+                          </button>
+                          <button onClick={handleSaveEdit} disabled={editSaving}
+                            className="px-3 py-1.5 rounded text-[10px] font-black text-white disabled:opacity-50"
+                            style={{ background: '#3b82f6' }}>
+                            {editSaving ? 'Saving…' : 'Save Changes'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-9 shrink-0 text-center rounded-lg p-1.5" style={{ background: '#f1f5f9' }}>
+                          <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
+                          <p className="text-base font-black text-[#0f172a] leading-tight">{d.getDate()}</p>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-bold text-[#0f172a] truncate">{row.topic}</p>
+                          <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName} · {row.blockLabel}</p>
+                          {row.notes && <p className="text-[10px] mt-1 text-[#475569] truncate italic">"{row.notes}"</p>}
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color, boxShadow: `0 2px 4px ${badge.shadow}` }}>{badge.text}</span>
+                          <span className="text-[9px] text-[#94a3b8]">{row.time}</span>
+                          <button
+                            onClick={() => { setEditingRowId(row.rowId); setEditDraft({ status: row.status, topic: row.topic, notes: row.notes ?? '' }) }}
+                            className="text-[9px] font-semibold text-[#94a3b8] hover:text-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity">
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               }

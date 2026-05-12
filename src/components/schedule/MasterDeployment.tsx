@@ -55,7 +55,6 @@ export default function MasterDeployment() {
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const [isScheduleBuilderOpen, setIsScheduleBuilderOpen] = useState(false);
   const [scheduleBuilderMode, setScheduleBuilderMode] = useState<'batch' | 'single'>('batch');
-  const [isSchedulerMenuOpen, setIsSchedulerMenuOpen] = useState(false);
   const [builderTerms, setBuilderTerms] = useState<TermOption[]>([]);
   const [selectedBuilderTermId, setSelectedBuilderTermId] = useState<string>('');
 
@@ -148,6 +147,21 @@ export default function MasterDeployment() {
     if (raw && typeof raw === 'object') return raw as SessionTimesByDay;
     return activeTermSessionTimesByDay ?? null;
   }, [selectedBuilderTerm, activeTermSessionTimesByDay]);
+
+  // Session times for the displayed week should come from whichever term covers
+  // the current weekStart — not from the nav dropdown selection or the DB-active term.
+  // This way switching terms navigates to that term's dates AND shows its session times,
+  // while days from a different term keep their own session times.
+  const weekDisplaySessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
+    const weekStartIso = toISODate(weekStart);
+    const matchingTerm = builderTerms.find(t =>
+      t.start_date && t.end_date &&
+      t.start_date <= weekStartIso && weekStartIso <= t.end_date
+    );
+    const raw = matchingTerm?.session_times_by_day;
+    if (raw && typeof raw === 'object') return raw as SessionTimesByDay;
+    return activeTermSessionTimesByDay ?? null;
+  }, [builderTerms, weekStart, activeTermSessionTimesByDay]);
 
   const applyInlineBookingOptimistic = useCallback((
     current: typeof localSessions,
@@ -280,6 +294,18 @@ export default function MasterDeployment() {
     bookings: { student: Student; slot: any; topic: string }[]
   ) => {
     for (const booking of bookings) {
+      let recurring = false;
+      let recurringWeeks = 1;
+      if (selectedBuilderTerm?.end_date) {
+        const slotDate = new Date(booking.slot.date + 'T00:00:00');
+        const termEnd = new Date(selectedBuilderTerm.end_date + 'T00:00:00');
+        const diffDays = Math.round((termEnd.getTime() - slotDate.getTime()) / (1000 * 60 * 60 * 24));
+        const weeks = Math.floor(diffDays / 7) + 1;
+        if (weeks > 1) {
+          recurring = true;
+          recurringWeeks = weeks;
+        }
+      }
       await bookStudent({
         tutorId: booking.slot.tutor.id,
         date: booking.slot.date,
@@ -287,14 +313,14 @@ export default function MasterDeployment() {
         student: booking.student,
         topic: booking.topic,
         notes: '',
-        recurring: false,
-        recurringWeeks: 1,
+        recurring,
+        recurringWeeks,
       });
     }
     refetch();
     setIsScheduleBuilderOpen(false);
     logEvent('schedule_builder_confirmed', { count: bookings.length });
-  }, [refetch]);
+  }, [refetch, selectedBuilderTerm]);
 
   useEffect(() => {
     if (todayView) {
@@ -334,6 +360,21 @@ export default function MasterDeployment() {
     weekDates.filter(d => ACTIVE_DAYS.includes(dayOfWeek(toISODate(d)))),
     [weekDates]
   );
+
+  const activeDateIsos = useMemo(() => new Set(activeDates.map(d => toISODate(d))), [activeDates]);
+  const weeklyStudents = useMemo(() =>
+    localSessions
+      .filter(s => activeDateIsos.has(s.date))
+      .reduce((sum, s) => sum + (s.students ?? []).filter((st: any) => st.status !== 'cancelled').length, 0),
+    [localSessions, activeDateIsos]
+  );
+  const weeklySessions = useMemo(() =>
+    localSessions
+      .filter(s => activeDateIsos.has(s.date) && (s.students ?? []).some((st: any) => st.status !== 'cancelled'))
+      .length,
+    [localSessions, activeDateIsos]
+  );
+
   const selectedBulkCount = useMemo(() => Object.keys(selectedRemovals).length, [selectedRemovals]);
 
   useEffect(() => {
@@ -635,7 +676,6 @@ export default function MasterDeployment() {
     if (action === 'build' || action === 'schedule-batch') {
       setScheduleBuilderMode('batch');
       setIsScheduleBuilderOpen(true);
-      setIsSchedulerMenuOpen(false);
       lastHandledActionRef.current = key;
       return;
     }
@@ -643,7 +683,6 @@ export default function MasterDeployment() {
     if (action === 'schedule-single') {
       setScheduleBuilderMode('single');
       setIsScheduleBuilderOpen(true);
-      setIsSchedulerMenuOpen(false);
       lastHandledActionRef.current = key;
       return;
     }
@@ -651,7 +690,6 @@ export default function MasterDeployment() {
     if (action === 'optimized-scheduler') {
       setScheduleBuilderMode('batch');
       setIsScheduleBuilderOpen(true);
-      setIsSchedulerMenuOpen(false);
       lastHandledActionRef.current = key;
       return;
     }
@@ -706,13 +744,9 @@ export default function MasterDeployment() {
         goToPrevWeek={goToPrevWeek}
         goToNextWeek={goToNextWeek}
         goToThisWeek={goToThisWeek}
-        tutors={tutors}
         terms={builderTerms.map(t => ({ id: t.id, name: t.name, status: t.status }))}
         selectedTermId={selectedBuilderTermId}
         setSelectedTermId={handleBuilderTermChange}
-        selectedTutorFilter={selectedTutorFilter}
-        setSelectedTutorFilter={setSelectedTutorFilter}
-        onOpenEnrollModal={() => setIsEnrollModalOpen(true)}
         bulkRemoveMode={bulkRemoveMode}
         selectedBulkCount={selectedBulkCount}
         isBulkRemoving={isBulkRemoving}
@@ -721,8 +755,8 @@ export default function MasterDeployment() {
         onClearBulkSelection={() => setSelectedRemovals({})}
         onClearWeekNonRecurring={handleClearWeekNonRecurring}
         isClearingWeek={isClearingWeek}
-        activeStudentCount={activeStudentIds.size}
-        totalStudentCount={students.length}
+        weeklyStudents={weeklyStudents}
+        weeklySessions={weeklySessions}
         commandBarSlot={
           <>
             <CommandBar
@@ -738,14 +772,11 @@ export default function MasterDeployment() {
               weekStart={weekStartIso}
               nextWeekStart={toISODate(nextWeekStart)}
             />
-            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-              <button
+                        <button
                 onClick={() => {
-                  const nextOpen = !isSchedulerMenuOpen;
-                  setIsSchedulerMenuOpen(nextOpen);
-                  if (nextOpen) {
-                    logEvent('auto_book_used', { action: 'menu_open', source: 'schedule_header' });
-                  }
+                  logEvent('auto_book_used', { action: 'batch_book', source: 'schedule_header' });
+                  setScheduleBuilderMode('batch');
+                  setIsScheduleBuilderOpen(true);
                 }}
                 style={{
                   display: 'flex',
@@ -762,7 +793,6 @@ export default function MasterDeployment() {
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   boxShadow: '0 10px 20px rgba(37,99,235,0.32), 0 2px 6px rgba(14,116,144,0.3)',
-                  transition: 'transform 120ms ease, box-shadow 120ms ease',
                 }}
               >
                 <span
@@ -779,39 +809,8 @@ export default function MasterDeployment() {
                 >
                   <Zap size={11} />
                 </span>
-                <span>Auto Book</span>
+                <span>Schedule Builder</span>
               </button>
-
-              {isSchedulerMenuOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    width: 280,
-                    borderRadius: 12,
-                    border: '1px solid #94a3b8',
-                    background: '#ffffff',
-                    boxShadow: '0 16px 34px rgba(15,23,42,0.26)',
-                    padding: 10,
-                    zIndex: 50,
-                  }}
-                >
-                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, color: '#0f172a', letterSpacing: '0.03em' }}>Auto Book Actions</p>
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    <button onClick={() => { logEvent('auto_book_used', { action: 'batch_book', source: 'schedule_header' }); setScheduleBuilderMode('batch'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Batch Book</button>
-                    <button onClick={() => { logEvent('auto_book_used', { action: 'single_book', source: 'schedule_header' }); setScheduleBuilderMode('single'); setIsScheduleBuilderOpen(true); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#0f172a', padding: '7px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Single Book</button>
-                    <button onClick={() => { logEvent('auto_book_used', { action: 'optimize_day', source: 'schedule_header' }); openOptimizerFromCurrentSchedule('daily'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #67e8f9', background: '#ecfeff', color: '#0e7490', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Day</button>
-                    <button onClick={() => { logEvent('auto_book_used', { action: 'optimize_week', source: 'schedule_header' }); openOptimizerFromCurrentSchedule('weekly'); setIsSchedulerMenuOpen(false); }} style={{ textAlign: 'left', borderRadius: 8, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', padding: '7px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Optimize Week</button>
-                  </div>
-
-                  <div style={{ marginTop: 8, borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', padding: 8 }}>
-                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: '#334155', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Constraints Used</p>
-                    <p style={{ margin: 0, fontSize: 11, color: '#0f172a', lineHeight: 1.5 }}>Tutor subject match, student availability blocks, tutor time-off/availability, no double-booking, and seat capacity limits.</p>
-                  </div>
-                </div>
-              )}
-            </div>
           </>
         }
       />
@@ -830,7 +829,7 @@ export default function MasterDeployment() {
           selectedDate={todayDate}
           onDateChange={handleTodayDateChange}
           onInlineBook={handleInlineBook}
-          sessionTimesByDay={activeTermSessionTimesByDay}
+          sessionTimesByDay={weekDisplaySessionTimesByDay}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();
@@ -854,7 +853,7 @@ export default function MasterDeployment() {
           selectedRemovals={selectedRemovals}
           setSelectedRemovals={setSelectedRemovals}
           onInlineBook={handleInlineBook}
-          sessionTimesByDay={activeTermSessionTimesByDay}
+          sessionTimesByDay={weekDisplaySessionTimesByDay}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();
