@@ -5,7 +5,7 @@ import { DB, withCenter } from '@/lib/db';
 import {
   Mail, Send, Clock, Check, AlertCircle, Edit3, Save,
   X, RefreshCw, ChevronDown, ChevronUp, Users, Calendar,
-  Megaphone, Loader2, CalendarRange,
+  Megaphone, Loader2,
 } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 
@@ -61,12 +61,6 @@ type BlastRecipient = {
   dadEmail: string | null;
 };
 
-type TutorEmailRecipient = {
-  tutorId: string;
-  tutorName: string;
-  email: string;
-};
-
 const baseInputCls = 'w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
 
 function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
@@ -104,10 +98,10 @@ export default function ContactCenter() {
   const [loadingLogs, setLoadingLogs]   = useState(true);
   const [logsExpanded, setLogsExpanded] = useState(false);
 
-  // Announcement blast state
+  // Availability email blast state (per-term, sends booking link)
   const [blastTermId, setBlastTermId]                       = useState('');
-const [blastSubject, setBlastSubject]                     = useState('Availability Is Now Open – Submit Your Preferences');
-  const [blastBody, setBlastBody]                           = useState("Hi {{name}},\n\nWe're now collecting availability for the upcoming term. Please use the link below to submit your preferred schedule.\n\n{{link}}\n\nThank you,\n{{center}}");
+  const [blastSubject, setBlastSubject]                     = useState('');
+  const [blastBody, setBlastBody]                           = useState('');
   const [blastRecipients, setBlastRecipients]               = useState<BlastRecipient[]>([]);
   const [blastSelected, setBlastSelected]                   = useState<Set<string>>(new Set());
   const [loadingBlastRecipients, setLoadingBlastRecipients] = useState(false);
@@ -117,16 +111,14 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
   const [blastExpanded, setBlastExpanded]                   = useState(false);
   const [editingBlastTemplate, setEditingBlastTemplate]     = useState(false);
 
-  // Tutor schedule email state
-  const [tutorEmailMode, setTutorEmailMode]                 = useState<'daily' | 'weekly'>('weekly');
-  const [tutorEmailDate, setTutorEmailDate]                 = useState(tomorrow());
-  const [tutorEmailRecipients, setTutorEmailRecipients]     = useState<TutorEmailRecipient[]>([]);
-  const [tutorEmailSelected, setTutorEmailSelected]         = useState<Set<string>>(new Set());
-  const [loadingTutorRecipients, setLoadingTutorRecipients] = useState(false);
-  const [tutorSending, setTutorSending]                     = useState(false);
-  const [tutorConfirm, setTutorConfirm]                     = useState(false);
-  const [tutorResult, setTutorResult]                       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
-  const [tutorSectionExpanded, setTutorSectionExpanded]     = useState(false);
+  // General email blast state (freeform, no term required)
+  const [generalSubject, setGeneralSubject]   = useState('');
+  const [generalBody, setGeneralBody]         = useState('');
+  const [generalSelected, setGeneralSelected] = useState<Set<string>>(new Set());
+  const [generalSending, setGeneralSending]   = useState(false);
+  const [generalConfirm, setGeneralConfirm]   = useState(false);
+  const [generalResult, setGeneralResult]     = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
+  const [generalExpanded, setGeneralExpanded] = useState(false);
 
   const formatSettingsError = (message: string) => {
     if (message.toLowerCase().includes('relation') || message.toLowerCase().includes('does not exist')) {
@@ -229,28 +221,11 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
         .filter((r: BlastRecipient) => r.studentEmail || r.momEmail || r.dadEmail);
       setBlastRecipients(recipients);
       setBlastSelected(new Set(recipients.map((r: BlastRecipient) => r.studentId)));
+      setGeneralSelected(new Set(recipients.map((r: BlastRecipient) => r.studentId)));
     } catch (e: any) {
       console.error('Failed to load blast recipients:', e);
     }
     setLoadingBlastRecipients(false);
-  }, []);
-
-  const fetchTutorEmailRecipients = useCallback(async () => {
-    setLoadingTutorRecipients(true);
-    try {
-      const { data, error } = await withCenter(
-        supabase.from(DB.tutors).select('id, name, email')
-      ).order('name', { ascending: true });
-      if (error) throw error;
-      const recipients: TutorEmailRecipient[] = (data ?? [])
-        .filter((t: any) => t.email)
-        .map((t: any) => ({ tutorId: t.id, tutorName: t.name ?? '—', email: t.email }));
-      setTutorEmailRecipients(recipients);
-      setTutorEmailSelected(new Set(recipients.map((r: TutorEmailRecipient) => r.tutorId)));
-    } catch (e: any) {
-      console.error('Failed to load tutor recipients:', e);
-    }
-    setLoadingTutorRecipients(false);
   }, []);
 
   const fetchCandidates = useCallback(async (date: string, termId?: string) => {
@@ -326,7 +301,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
     setLoadingCandidates(false);
   }, []);
 
-  useEffect(() => { fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients(); fetchTutorEmailRecipients(); }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients, fetchTutorEmailRecipients]);
+  useEffect(() => { fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients(); }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
   useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
 
   const saveTemplate = async () => {
@@ -467,38 +442,44 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
     setBlastSending(false);
   };
 
-  const handleTutorScheduleSend = async () => {
-    if (tutorEmailSelected.size === 0) return;
-    if (!tutorConfirm) {
-      setTutorConfirm(true);
-      setTimeout(() => setTutorConfirm(false), 3500);
+  const handleGeneralSend = async () => {
+    if (generalSelected.size === 0) return;
+    if (!generalConfirm) {
+      setGeneralConfirm(true);
+      setTimeout(() => setGeneralConfirm(false), 3500);
       return;
     }
-    setTutorSending(true);
-    setTutorResult(null);
-    setTutorConfirm(false);
+    setGeneralSending(true);
+    setGeneralResult(null);
+    setGeneralConfirm(false);
     try {
-      const res = await fetch('/api/send-tutor-schedule', {
+      const res = await fetch('/api/announce', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tutorIds: [...tutorEmailSelected],
-          mode: tutorEmailMode,
-          date: tutorEmailDate,
+          studentIds: [...generalSelected],
+          subject: generalSubject,
+          body: generalBody,
           baseUrl: window.location.origin,
         }),
       });
       const data = await res.json();
       if (data.error) {
-        setTutorResult({ sent: 0, failed: tutorEmailSelected.size, errors: [data.error] });
+        setGeneralResult({ sent: 0, failed: generalSelected.size, errors: [data.error] });
       } else {
-        setTutorResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, errors: data.errors ?? [], mode: data.mode, redirectedTo: data.redirectedTo ?? null });
-        logEvent('reminder_sent', { sent: data.sent ?? 0, mode: tutorEmailMode });
+        setGeneralResult({
+          sent: data.sent ?? 0,
+          failed: data.failed ?? 0,
+          errors: data.errors ?? [],
+          mode: data.mode,
+          redirectedTo: data.redirectedTo ?? null,
+        });
+        logEvent('reminder_sent', { sent: data.sent ?? 0 });
       }
     } catch (e: any) {
-      setTutorResult({ sent: 0, failed: tutorEmailSelected.size, errors: [e.message ?? 'Request failed'] });
+      setGeneralResult({ sent: 0, failed: generalSelected.size, errors: [e.message ?? 'Request failed'] });
     }
-    setTutorSending(false);
+    setGeneralSending(false);
   };
 
   const selectedBlastTerm = terms.find(t => t.id === blastTermId);
@@ -678,9 +659,9 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
               <div>
                 <div className="flex items-center gap-2">
                   <Megaphone size={12} className="text-slate-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Announcement Blast</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Availability Emails</p>
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">Send a mass email to all students &amp; parents with a per-term availability link.</p>
+                <p className="mt-0.5 text-xs text-slate-500">Send per-term availability links to students and parents. Pick a term to generate the booking link.</p>
               </div>
               <button
                 onClick={() => setBlastExpanded(v => !v)}
@@ -695,19 +676,13 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
               <div className="mt-4 space-y-4">
                 {/* Term selector */}
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Term (availability link will be scoped to this term)</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-500">Term</label>
                   <select
                     value={blastTermId}
                     onChange={e => {
-                      const newTermId = e.target.value;
-                      setBlastTermId(newTermId);
+                      setBlastTermId(e.target.value);
                       setBlastResult(null);
                       setBlastConfirm(false);
-                      const t = terms.find(t => t.id === newTermId);
-                      if (t?.name) {
-                        setBlastSubject(`Availability Is Now Open for ${t.name} – Submit Your Preferences`);
-                        setBlastBody(`Hi {{name}},\n\nWe're now collecting availability for ${t.name}. Please use the link below to submit your preferred schedule.\n\n{{link}}\n\nThank you,\n{{center}}`);
-                      }
                     }}
                     className={baseInputCls}
                   >
@@ -879,103 +854,106 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
           </div>
 
 
-          {/* --- Tutor Schedule Emails --- */}
+          {/* ─── General Email Blast ─── */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <CalendarRange size={12} className="text-slate-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tutor Schedule Emails</p>
+                  <Send size={12} className="text-slate-400" />
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">General Email Blast</p>
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">Send each tutor their upcoming schedule — daily or for the whole week.</p>
+                <p className="mt-0.5 text-xs text-slate-500">Send any email to students and parents — write whatever you want, no term required.</p>
               </div>
               <button
-                onClick={() => setTutorSectionExpanded(v => !v)}
+                onClick={() => setGeneralExpanded(v => !v)}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
               >
-                {tutorSectionExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                {tutorSectionExpanded ? 'Collapse' : 'Expand'}
+                {generalExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                {generalExpanded ? 'Collapse' : 'Expand'}
               </button>
             </div>
 
-            {tutorSectionExpanded && (
+            {generalExpanded && (
               <div className="mt-4 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex overflow-hidden rounded border border-slate-200">
-                    {(['daily', 'weekly'] as const).map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setTutorEmailMode(m)}
-                        className="px-3 py-1.5 text-xs font-semibold capitalize transition-colors"
-                        style={{ background: tutorEmailMode === m ? '#0f172a' : 'white', color: tutorEmailMode === m ? 'white' : '#64748b', borderRight: m === 'daily' ? '1px solid #e2e8f0' : undefined }}
-                      >
-                        {m}
-                      </button>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {["{{name}}", "{{center}}"].map(v => (
+                      <span key={v} className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
                     ))}
+                    <span className="text-[10px] text-slate-400">available variables</span>
                   </div>
-                  <div className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5">
-                    <Calendar size={11} className="text-slate-400" />
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">Subject</label>
                     <input
-                      type="date"
-                      value={tutorEmailDate}
-                      onChange={e => setTutorEmailDate(e.target.value)}
-                      className="bg-transparent text-xs text-slate-700 outline-none"
+                      value={generalSubject}
+                      onChange={e => { setGeneralSubject(e.target.value); setGeneralResult(null); }}
+                      placeholder="e.g. Important update from the center"
+                      className={baseInputCls}
                     />
                   </div>
-                  <span className="text-[11px] text-slate-400">
-                    {tutorEmailMode === 'weekly' ? 'Sends Mon\u2013Sat schedule starting this date' : 'Sends schedule for this date only'}
-                  </span>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">Body</label>
+                    <textarea
+                      value={generalBody}
+                      onChange={e => { setGeneralBody(e.target.value); setGeneralResult(null); }}
+                      rows={7}
+                      placeholder={"Hi {{name}},\n\n..."}
+                      className={`${baseInputCls} resize-none`}
+                      style={{ lineHeight: '1.6' }}
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-semibold text-slate-500">
-                      Tutors with email \u2014 {tutorEmailRecipients.length}
+                      Recipients — {blastRecipients.length} student{blastRecipients.length !== 1 ? 's' : ''} with email
                     </p>
                     <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
                       <div
                         onClick={() => {
-                          setTutorConfirm(false);
-                          const allSel = tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId));
-                          setTutorEmailSelected(allSel ? new Set() : new Set(tutorEmailRecipients.map(r => r.tutorId)));
+                          setGeneralConfirm(false);
+                          const allSel = blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId));
+                          setGeneralSelected(allSel ? new Set() : new Set(blastRecipients.map(r => r.studentId)));
                         }}
                         className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all"
                         style={{
-                          background: tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) ? '#0f172a' : tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) ? '#e2e8f0' : 'white',
-                          border: `2px solid ${tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) ? '#0f172a' : '#d1d5db'}`,
+                          background: blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) ? '#0f172a' : blastRecipients.some(r => generalSelected.has(r.studentId)) ? '#e2e8f0' : 'white',
+                          border: `2px solid ${blastRecipients.some(r => generalSelected.has(r.studentId)) ? '#0f172a' : '#d1d5db'}`,
                         }}
                       >
-                        {tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) && <Check size={9} color="white" strokeWidth={3} />}
-                        {tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) && !tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
+                        {blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) && <Check size={9} color="white" strokeWidth={3} />}
+                        {blastRecipients.some(r => generalSelected.has(r.studentId)) && !blastRecipients.every(r => generalSelected.has(r.studentId)) && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
                       </div>
-                      {tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) ? 'Deselect all' : 'Select all'}
+                      {blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) ? 'Deselect all' : 'Select all'}
                     </label>
                   </div>
 
-                  {loadingTutorRecipients ? (
+                  {loadingBlastRecipients ? (
                     <div className="flex items-center gap-2 py-4 text-slate-400">
                       <Loader2 size={13} className="animate-spin" />
-                      <span className="text-xs">Loading tutors\u2026</span>
+                      <span className="text-xs">Loading recipients…</span>
                     </div>
-                  ) : tutorEmailRecipients.length === 0 ? (
+                  ) : blastRecipients.length === 0 ? (
                     <div className="rounded border border-dashed border-slate-200 bg-white py-6 text-center">
                       <Users size={20} className="mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs text-slate-400">No tutors with email addresses found</p>
+                      <p className="text-xs text-slate-400">No students with email addresses found</p>
                     </div>
                   ) : (
-                    <div className="max-h-48 overflow-y-auto rounded border border-slate-200 bg-white">
-                      {tutorEmailRecipients.map((r, i) => {
-                        const isChecked = tutorEmailSelected.has(r.tutorId);
+                    <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white">
+                      {blastRecipients.map((r, i) => {
+                        const isChecked = generalSelected.has(r.studentId);
+                        const emails = [r.studentEmail, r.momEmail, r.dadEmail].filter(Boolean);
                         return (
                           <div
-                            key={r.tutorId}
+                            key={r.studentId}
                             className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-slate-50"
                             style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}
                             onClick={() => {
-                              setTutorConfirm(false);
-                              setTutorEmailSelected(prev => {
+                              setGeneralConfirm(false);
+                              setGeneralSelected(prev => {
                                 const next = new Set(prev);
-                                next.has(r.tutorId) ? next.delete(r.tutorId) : next.add(r.tutorId);
+                                next.has(r.studentId) ? next.delete(r.studentId) : next.add(r.studentId);
                                 return next;
                               });
                             }}
@@ -987,8 +965,8 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                               {isChecked && <Check size={9} color="white" strokeWidth={3} />}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800">{r.tutorName}</p>
-                              <p className="truncate text-[10px] text-slate-400">{r.email}</p>
+                              <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
+                              <p className="truncate text-[10px] text-slate-400">{emails.join(', ')}</p>
                             </div>
                           </div>
                         );
@@ -997,36 +975,37 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                   )}
                 </div>
 
-                {tutorResult && (
-                  <div className={`flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${tutorResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                    {tutorResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+                {generalResult && (
+                  <div className={`flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${generalResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    {generalResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
                     <div>
-                      {tutorResult.mode === 'redirect' && tutorResult.redirectedTo && (
-                        <p>Protected mode \u2014 redirected to {tutorResult.redirectedTo}.</p>
+                      {generalResult.mode === 'redirect' && generalResult.redirectedTo && (
+                        <p>Protected mode — redirected to {generalResult.redirectedTo}.</p>
                       )}
-                      {tutorResult.sent > 0 && <p>{tutorResult.sent} schedule email{tutorResult.sent !== 1 ? 's' : ''} sent.</p>}
-                      {tutorResult.failed > 0 && <p>{tutorResult.failed} failed.{tutorResult.errors[0] ? ` (${tutorResult.errors[0]})` : ''}</p>}
+                      {generalResult.sent > 0 && <p>{generalResult.sent} email{generalResult.sent !== 1 ? 's' : ''} sent.</p>}
+                      {generalResult.failed > 0 && <p>{generalResult.failed} failed.{generalResult.errors[0] ? ` (${generalResult.errors[0]})` : ''}</p>}
                     </div>
                   </div>
                 )}
 
                 <div className="flex justify-end">
                   <button
-                    onClick={handleTutorScheduleSend}
-                    disabled={tutorEmailSelected.size === 0 || tutorSending}
+                    onClick={handleGeneralSend}
+                    disabled={generalSelected.size === 0 || generalSending || !generalSubject.trim() || !generalBody.trim()}
                     className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                    style={{ background: tutorConfirm ? '#92400e' : '#0f172a' }}
+                    style={{ background: generalConfirm ? '#92400e' : '#0f172a' }}
                   >
-                    {tutorSending
-                      ? <><Loader2 size={12} className="animate-spin" /> Sending\u2026</>
-                      : tutorConfirm
-                        ? <><AlertCircle size={12} /> Confirm \u2014 send to {tutorEmailSelected.size}</>
-                        : <><Send size={12} /> Send to {tutorEmailSelected.size} tutor{tutorEmailSelected.size !== 1 ? 's' : ''}</>}
+                    {generalSending
+                      ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
+                      : generalConfirm
+                        ? <><AlertCircle size={12} /> Confirm — send to {generalSelected.size}</>
+                        : <><Send size={12} /> Send to {generalSelected.size} student{generalSelected.size !== 1 ? 's' : ''}</>}
                   </button>
                 </div>
               </div>
             )}
           </div>
+
           {/* â”€â”€â”€ Reminder Email Template â”€â”€â”€ */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between gap-3">

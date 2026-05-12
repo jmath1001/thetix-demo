@@ -38,6 +38,14 @@ function buildAnnouncementHtml(
 ): string {
   const BRAND = '#0f172a';
   const safeBody = bodyText.replace(/\n/g, '<br>').trim();
+  const linkSection = availabilityLink
+    ? `<table cellpadding="0" cellspacing="0" style="margin:24px 0 0;"><tr>
+        <td style="border-radius:8px;background:${BRAND};">
+          <a href="${availabilityLink}" style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:700;color:white;text-decoration:none;border-radius:8px;">Submit Availability →</a>
+        </td>
+      </tr></table>
+      <p style="margin:14px 0 0;font-size:11px;color:#9ca3af;">If the button doesn't work: <a href="${availabilityLink}" style="color:${BRAND};">${availabilityLink}</a></p>`
+    : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f9fafb;font-family:ui-sans-serif,system-ui,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:32px 16px;">
@@ -49,12 +57,7 @@ function buildAnnouncementHtml(
     </td></tr>
     <tr><td style="padding:28px;">
       <p style="margin:0 0 16px;font-size:15px;color:#111827;line-height:1.65;">${safeBody}</p>
-      <table cellpadding="0" cellspacing="0" style="margin:24px 0 0;"><tr>
-        <td style="border-radius:8px;background:${BRAND};">
-          <a href="${availabilityLink}" style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:700;color:white;text-decoration:none;border-radius:8px;">Submit Availability →</a>
-        </td>
-      </tr></table>
-      <p style="margin:14px 0 0;font-size:11px;color:#9ca3af;">If the button doesn't work: <a href="${availabilityLink}" style="color:${BRAND};">${availabilityLink}</a></p>
+      ${linkSection}
     </td></tr>
     <tr><td style="padding:16px 28px;background:#f9fafb;border-top:1px solid #f3f4f6;">
       <p style="margin:0;font-size:11px;color:#9ca3af;">— ${centerName}</p>
@@ -72,9 +75,6 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
       return NextResponse.json({ error: 'No student IDs provided.' }, { status: 400 });
     }
-    if (!termId) {
-      return NextResponse.json({ error: 'termId is required.' }, { status: 400 });
-    }
     if (!subject || !body) {
       return NextResponse.json({ error: 'subject and body are required.' }, { status: 400 });
     }
@@ -85,13 +85,16 @@ export async function POST(req: NextRequest) {
     ).maybeSingle();
     const centerName: string = settingsData?.center_name ?? 'Tutoring Center';
 
-    // Load term name
-    const { data: termData } = await supabase
-      .from(DB.terms)
-      .select('name')
-      .eq('id', termId)
-      .maybeSingle();
-    const termName: string = termData?.name ?? '';
+    // Load term name (optional)
+    let termName = '';
+    if (termId) {
+      const { data: termData } = await supabase
+        .from(DB.terms)
+        .select('name')
+        .eq('id', termId)
+        .maybeSingle();
+      termName = termData?.name ?? '';
+    }
 
     // Load students
     const { data: students, error: studentsError } = await withCenter(
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: studentsError.message }, { status: 500 });
     }
 
-    const availabilityLink = `${baseUrl}/booking?termId=${termId}`;
+    const availabilityLink = termId ? `${baseUrl}/booking?termId=${termId}` : '';
     const guard = getDeliveryGuard();
 
     if (guard.mode === 'disabled') {
