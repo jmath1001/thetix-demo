@@ -8,7 +8,7 @@ import {
   type RecurringSeries, type Tutor, type Student, toISODate,
 } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
-import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2 } from 'lucide-react';
+import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2, LayoutGrid, List } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 
 type TermOption = { id: string; name: string; status: string; start_date: string; end_date: string };
@@ -95,6 +95,165 @@ function SessionDot({ status, date, isPast, onClick }: { status: string; date: s
         style={{ background: '#0f172a', color: 'white' }}>
         {label}<br/>{status}{onClick ? ' · click to edit' : ''}
       </div>
+    </div>
+  );
+}
+
+const GRID_DAYS: { dow: number; label: string; short: string }[] = [
+  { dow: 1, label: 'Monday',    short: 'Mon' },
+  { dow: 2, label: 'Tuesday',   short: 'Tue' },
+  { dow: 3, label: 'Wednesday', short: 'Wed' },
+  { dow: 4, label: 'Thursday',  short: 'Thu' },
+  { dow: 6, label: 'Saturday',  short: 'Sat' },
+];
+
+const AVATAR_PALETTES = [
+  { bg: '#dbeafe', text: '#1d4ed8' },
+  { bg: '#ede9fe', text: '#6d28d9' },
+  { bg: '#fce7f3', text: '#be185d' },
+  { bg: '#ffedd5', text: '#c2410c' },
+  { bg: '#dcfce7', text: '#15803d' },
+  { bg: '#fef3c7', text: '#b45309' },
+  { bg: '#e0f2fe', text: '#0369a1' },
+  { bg: '#fae8ff', text: '#9333ea' },
+];
+
+function avatarPalette(str: string) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTES[h % AVATAR_PALETTES.length];
+}
+
+function fmt12(time: string) {
+  const [hStr, mStr] = time.split(':');
+  const h = Number(hStr); const m = Number(mStr);
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete }: {
+  s: RecurringSeries; today: string;
+  onEdit: (s: RecurringSeries) => void;
+  onCancelSeries: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const pal = avatarPalette(s.tutorId);
+  const isActive = s.status === 'active';
+  const isCompleted = s.status === 'completed';
+  const isEnding = isActive && s.endDate < today;
+
+  const borderColor = isActive ? (isEnding ? '#f59e0b' : '#6366f1') : isCompleted ? '#10b981' : '#cbd5e1';
+  const opacity = isActive ? 1 : 0.55;
+
+  const initials = s.studentName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+  return (
+    <div
+      className="relative rounded-xl overflow-hidden bg-white transition-shadow"
+      style={{
+        border: '1px solid #e2e8f0',
+        borderLeft: `3px solid ${borderColor}`,
+        boxShadow: hovered ? '0 4px 16px rgba(0,0,0,0.10)' : '0 1px 4px rgba(0,0,0,0.04)',
+        opacity,
+        cursor: 'default',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setConfirm(null); }}
+    >
+      <div className="px-3 pt-3 pb-2.5">
+        {/* Avatar + name row */}
+        <div className="flex items-start gap-2 mb-2">
+          <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black"
+            style={{ background: pal.bg, color: pal.text }}>
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-bold leading-tight text-slate-900 truncate">{s.studentName}</p>
+            <p className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">{s.tutorName}</p>
+          </div>
+        </div>
+
+        {/* Time + topic */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+          <span className="text-[10px] font-bold text-slate-500">{fmt12(s.time)}</span>
+          <span className="text-slate-200">·</span>
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+            style={{ background: '#eef2ff', color: '#4338ca' }}>
+            {s.topic}
+          </span>
+          {isEnding && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#b45309' }}>ending</span>
+          )}
+          {isCompleted && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#dcfce7', color: '#15803d' }}>done</span>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[9px] font-semibold text-slate-400">{s.startDate} → {s.endDate}</span>
+            <span className="text-[9px] font-bold text-slate-500">{s.totalWeeks}wk</span>
+          </div>
+          <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-full rounded-full transition-all"
+              style={{ width: (() => {
+                const start = new Date(s.startDate + 'T00:00:00').getTime();
+                const end   = new Date(s.endDate   + 'T00:00:00').getTime();
+                const now   = new Date(today        + 'T00:00:00').getTime();
+                if (now <= start) return '0%';
+                if (now >= end)   return '100%';
+                return `${Math.round(((now - start) / (end - start)) * 100)}%`;
+              })(), background: borderColor }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Action strip — always visible on hover */}
+      {hovered && !confirm && (
+        <div className="flex border-t border-slate-100">
+          {isActive && (
+            <>
+              <button
+                onClick={() => onEdit(s)}
+                className="flex-1 py-1.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 flex items-center justify-center gap-1 transition-colors">
+                <Edit3 size={9} /> Edit
+              </button>
+              <button
+                onClick={() => setConfirm('cancel')}
+                className="flex-1 py-1.5 text-[10px] font-semibold text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-1 transition-colors border-l border-slate-100">
+                <X size={9} /> Cancel
+              </button>
+            </>
+          )}
+          {!isActive && (
+            <button
+              onClick={() => setConfirm('delete')}
+              className="flex-1 py-1.5 text-[10px] font-semibold text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-1 transition-colors">
+              <X size={9} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {confirm && (
+        <div className="border-t border-red-100 bg-red-50 px-3 py-2">
+          <p className="text-[10px] font-semibold text-red-700 mb-1.5">
+            {confirm === 'cancel' ? 'Cancel all future sessions?' : 'Delete this series?'}
+          </p>
+          <div className="flex gap-1.5">
+            <button onClick={() => setConfirm(null)} className="flex-1 py-1 rounded text-[10px] font-semibold text-slate-600 bg-white border border-slate-200">Keep</button>
+            <button
+              onClick={() => { setConfirm(null); confirm === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
+              className="flex-1 py-1 rounded text-[10px] font-semibold text-white bg-red-500">
+              Yes
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -360,6 +519,7 @@ export default function RecurringManager() {
   const [sessionsToRemove, setSessionsToRemove] = useState(0);
   const [singleEdit, setSingleEdit] = useState<SingleSessionEdit | null>(null);
   const [refreshStamp, setRefreshStamp] = useState(0);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -632,8 +792,8 @@ export default function RecurringManager() {
   const baseFiltered = series
     .filter(s => {
       if (!selectedTerm) return true;
-      // Series starts within the term period
-      return s.startDate >= selectedTerm.start_date && s.startDate <= selectedTerm.end_date;
+      // Show series that overlap with the selected term period
+      return s.startDate <= selectedTerm.end_date && s.endDate >= selectedTerm.start_date;
     })
     .filter(s => {
       if (!search.trim()) return true;
@@ -643,6 +803,8 @@ export default function RecurringManager() {
   const filtered = baseFiltered.filter(s => statusFilter === 'all' || s.status === statusFilter);
   const counts = { all: baseFiltered.length, active: baseFiltered.filter(s => s.status === 'active').length, completed: baseFiltered.filter(s => s.status === 'completed').length, cancelled: baseFiltered.filter(s => s.status === 'cancelled').length };
   const createBlocks = getSessionsForDay(createForm.dayOfWeek);
+  const gridTimes = [...new Set(filtered.map(s => s.time))].sort();
+  const gridActiveCols = GRID_DAYS.filter(({ dow }) => filtered.some(s => s.dayOfWeek === dow));
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif" }}>
@@ -702,7 +864,25 @@ export default function RecurringManager() {
               </select>
             </div>
           )}
-          <div className="ml-auto text-[11px] text-slate-400">{filtered.length} of {series.length}</div>
+          <div className="ml-auto flex items-center gap-1 text-[11px] text-slate-400">
+            {filtered.length} of {series.length}
+            <div className="ml-2 flex items-center rounded border border-slate-200 overflow-hidden">
+              <button
+                onClick={() => setViewMode('grid')}
+                className="px-2 py-1 flex items-center gap-1 transition-colors"
+                style={viewMode === 'grid' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
+                title="Day grid view">
+                <LayoutGrid size={11} />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className="px-2 py-1 flex items-center gap-1 transition-colors border-l border-slate-200"
+                style={viewMode === 'list' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
+                title="List view">
+                <List size={11} />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Body */}
@@ -721,6 +901,60 @@ export default function RecurringManager() {
             <div className="flex flex-col items-center justify-center py-24 text-slate-400">
               <Repeat size={28} className="mb-3 text-slate-200"/>
               <p className="text-sm font-semibold text-slate-400">No {statusFilter !== 'all' ? statusFilter : ''} series found</p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="overflow-auto h-full">
+              <table className="border-collapse w-full" style={{ minWidth: 520 }}>
+                <thead>
+                  <tr style={{ background: '#1f2937' }}>
+                    <th className="sticky left-0 z-10 px-3 py-2 text-left"
+                      style={{ background: '#1f2937', width: 88, minWidth: 88, borderRight: '1px solid rgba(255,255,255,0.08)' }}>
+                      <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>Time</span>
+                    </th>
+                    {gridActiveCols.map(({ dow, label, short }) => (
+                      <th key={dow} className="px-3 py-2 text-center"
+                        style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 160 }}>
+                        <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.85)' }}>{short}</span>
+                        <span className="ml-1.5 text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{label}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {gridTimes.length === 0 ? (
+                    <tr>
+                      <td colSpan={gridActiveCols.length + 1} className="py-20 text-center">
+                        <p className="text-xs text-slate-400">No series match the current filters</p>
+                      </td>
+                    </tr>
+                  ) : gridTimes.map((time, ti) => (
+                    <tr key={time} style={{ borderBottom: '1px solid #e5e7eb', background: ti % 2 === 0 ? 'white' : '#f8fafc' }}>
+                      <td className="sticky left-0 z-10 px-3 py-3 align-top"
+                        style={{ background: ti % 2 === 0 ? '#e2e8f0' : '#d8e0e8', borderRight: '1px solid #94a3b8', width: 88, minWidth: 88 }}>
+                        <span className="text-[11px] font-black text-slate-600 whitespace-nowrap">{fmt12(time)}</span>
+                      </td>
+                      {gridActiveCols.map(({ dow }) => {
+                        const cell = filtered.filter(s => s.dayOfWeek === dow && s.time === time);
+                        return (
+                          <td key={dow} className="p-2 align-top"
+                            style={{ borderRight: '1px solid #e5e7eb', verticalAlign: 'top', minWidth: 160 }}>
+                            {cell.length === 0 ? (
+                              <div className="min-h-10 rounded-lg border border-dashed border-slate-200" />
+                            ) : (
+                              <div className="space-y-1.5">
+                                {cell.map(s => (
+                                  <SeriesGridCard key={s.id} s={s} today={today}
+                                    onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete} />
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="divide-y divide-slate-50">

@@ -384,7 +384,7 @@ console.log('[debug] students[0]:', students[0])
           date:     r.session_date,
           tutorId:  r.tutor_id,
           time:     r.time,
-          students: (r[SS] ?? []).map((ss: any) => ({
+          students: (r[SS] ?? []).filter((ss: any) => ss.status !== 'cancelled').map((ss: any) => ({
             id:                 ss.student_id,
             rowId:              ss.id,
             name:               ss.name,

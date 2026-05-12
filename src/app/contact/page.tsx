@@ -5,7 +5,7 @@ import { DB, withCenter } from '@/lib/db';
 import {
   Mail, Send, Clock, Check, AlertCircle, Edit3, Save,
   X, RefreshCw, ChevronDown, ChevronUp, Users, Calendar,
-  Megaphone, Loader2,
+  Megaphone, Loader2, CalendarRange,
 } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 
@@ -61,6 +61,12 @@ type BlastRecipient = {
   dadEmail: string | null;
 };
 
+type TutorEmailRecipient = {
+  tutorId: string;
+  tutorName: string;
+  email: string;
+};
+
 const baseInputCls = 'w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
 
 function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
@@ -110,6 +116,17 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
   const [blastResult, setBlastResult]                       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
   const [blastExpanded, setBlastExpanded]                   = useState(false);
   const [editingBlastTemplate, setEditingBlastTemplate]     = useState(false);
+
+  // Tutor schedule email state
+  const [tutorEmailMode, setTutorEmailMode]                 = useState<'daily' | 'weekly'>('weekly');
+  const [tutorEmailDate, setTutorEmailDate]                 = useState(tomorrow());
+  const [tutorEmailRecipients, setTutorEmailRecipients]     = useState<TutorEmailRecipient[]>([]);
+  const [tutorEmailSelected, setTutorEmailSelected]         = useState<Set<string>>(new Set());
+  const [loadingTutorRecipients, setLoadingTutorRecipients] = useState(false);
+  const [tutorSending, setTutorSending]                     = useState(false);
+  const [tutorConfirm, setTutorConfirm]                     = useState(false);
+  const [tutorResult, setTutorResult]                       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
+  const [tutorSectionExpanded, setTutorSectionExpanded]     = useState(false);
 
   const formatSettingsError = (message: string) => {
     if (message.toLowerCase().includes('relation') || message.toLowerCase().includes('does not exist')) {
@@ -204,7 +221,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
       const recipients: BlastRecipient[] = (data ?? [])
         .map((s: any) => ({
           studentId: s.id,
-          studentName: s.name ?? 'â€”',
+          studentName: s.name ?? '—',
           studentEmail: s.email ?? null,
           momEmail: s.mom_email ?? null,
           dadEmail: s.dad_email ?? null,
@@ -216,6 +233,24 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
       console.error('Failed to load blast recipients:', e);
     }
     setLoadingBlastRecipients(false);
+  }, []);
+
+  const fetchTutorEmailRecipients = useCallback(async () => {
+    setLoadingTutorRecipients(true);
+    try {
+      const { data, error } = await withCenter(
+        supabase.from(DB.tutors).select('id, name, email')
+      ).order('name', { ascending: true });
+      if (error) throw error;
+      const recipients: TutorEmailRecipient[] = (data ?? [])
+        .filter((t: any) => t.email)
+        .map((t: any) => ({ tutorId: t.id, tutorName: t.name ?? '—', email: t.email }));
+      setTutorEmailRecipients(recipients);
+      setTutorEmailSelected(new Set(recipients.map((r: TutorEmailRecipient) => r.tutorId)));
+    } catch (e: any) {
+      console.error('Failed to load tutor recipients:', e);
+    }
+    setLoadingTutorRecipients(false);
   }, []);
 
   const fetchCandidates = useCallback(async (date: string, termId?: string) => {
@@ -256,10 +291,10 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
         return {
           rowId:        r.id,
           studentId:    r.student_id,
-          studentName:  student?.name ?? 'â€”',
+          studentName:  student?.name ?? '—',
           sessionDate:  sess?.session_date ?? date,
           sessionTime:  sess?.time ?? '',
-          tutorName:    tutor?.name ?? 'â€”',
+          tutorName:    tutor?.name ?? '—',
           studentEmail: student?.email ?? null,
           momEmail:     student?.mom_email ?? null,
           dadEmail:     student?.dad_email ?? null,
@@ -291,7 +326,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
     setLoadingCandidates(false);
   }, []);
 
-  useEffect(() => { fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients(); }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
+  useEffect(() => { fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients(); fetchTutorEmailRecipients(); }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients, fetchTutorEmailRecipients]);
   useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
 
   const saveTemplate = async () => {
@@ -432,6 +467,40 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
     setBlastSending(false);
   };
 
+  const handleTutorScheduleSend = async () => {
+    if (tutorEmailSelected.size === 0) return;
+    if (!tutorConfirm) {
+      setTutorConfirm(true);
+      setTimeout(() => setTutorConfirm(false), 3500);
+      return;
+    }
+    setTutorSending(true);
+    setTutorResult(null);
+    setTutorConfirm(false);
+    try {
+      const res = await fetch('/api/send-tutor-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tutorIds: [...tutorEmailSelected],
+          mode: tutorEmailMode,
+          date: tutorEmailDate,
+          baseUrl: window.location.origin,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setTutorResult({ sent: 0, failed: tutorEmailSelected.size, errors: [data.error] });
+      } else {
+        setTutorResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, errors: data.errors ?? [], mode: data.mode, redirectedTo: data.redirectedTo ?? null });
+        logEvent('reminder_sent', { sent: data.sent ?? 0, mode: tutorEmailMode });
+      }
+    } catch (e: any) {
+      setTutorResult({ sent: 0, failed: tutorEmailSelected.size, errors: [e.message ?? 'Request failed'] });
+    }
+    setTutorSending(false);
+  };
+
   const selectedBlastTerm = terms.find(t => t.id === blastTermId);
   const blastLinkPreview = typeof window !== 'undefined'
     ? `${window.location.origin}/booking?termId=${blastTermId}`
@@ -511,7 +580,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                 {sendResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
                 <div>
                   {sendResult.mode === 'redirect' && sendResult.redirectedTo && (
-                    <p>Protected mode â€” redirected to {sendResult.redirectedTo}.</p>
+                    <p>Protected mode — redirected to {sendResult.redirectedTo}.</p>
                   )}
                   {sendResult.skipped && sendResult.reason && <p>{sendResult.reason}</p>}
                   {sendResult.sent > 0 && <p>{sendResult.sent} reminder{sendResult.sent !== 1 ? 's' : ''} sent.</p>}
@@ -542,9 +611,9 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                   style={{ background: confirmSend ? '#92400e' : '#0f172a' }}
                 >
                   {sending
-                    ? <><Loader2 size={12} className="animate-spin" /> Sendingâ€¦</>
+                    ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
                     : confirmSend
-                      ? <><AlertCircle size={12} /> Confirm â€” send to {selected.size}</>
+                      ? <><AlertCircle size={12} /> Confirm — send to {selected.size}</>
                       : <><Send size={12} /> Send to {selected.size}</>}
                 </button>
               </div>
@@ -553,7 +622,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
             {loadingCandidates ? (
               <div className="flex items-center gap-2 py-4 text-slate-400">
                 <Loader2 size={13} className="animate-spin" />
-                <span className="text-xs">Loading sessions for {dispatchDate}â€¦</span>
+                <span className="text-xs">Loading sessions for {dispatchDate}…</span>
               </div>
             ) : candidates.length === 0 ? (
               <div className="rounded border border-dashed border-slate-200 bg-white py-8 text-center">
@@ -590,9 +659,9 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                           {noEmail && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">No email</span>}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-slate-500">{c.sessionTime} Â· {c.tutorName}</span>
+                          <span className="text-[11px] text-slate-500">{c.sessionTime} · {c.tutorName}</span>
                           {(c.studentEmail || c.momEmail || c.dadEmail) && !c.reminderSent && (
-                            <span className="text-[10px] text-slate-400">â†’ {[c.studentEmail, c.momEmail, c.dadEmail].filter(Boolean).join(', ')}</span>
+                            <span className="text-[10px] text-slate-400">→ {[c.studentEmail, c.momEmail, c.dadEmail].filter(Boolean).join(', ')}</span>
                           )}
                         </div>
                       </div>
@@ -719,7 +788,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-xs font-semibold text-slate-500">
-                      Recipients â€” {blastRecipients.length} student{blastRecipients.length !== 1 ? 's' : ''} with email
+                      Recipients — {blastRecipients.length} student{blastRecipients.length !== 1 ? 's' : ''} with email
                     </p>
                     <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
                       <div
@@ -737,7 +806,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                   {loadingBlastRecipients ? (
                     <div className="flex items-center gap-2 py-4 text-slate-400">
                       <Loader2 size={13} className="animate-spin" />
-                      <span className="text-xs">Loading recipientsâ€¦</span>
+                      <span className="text-xs">Loading recipients…</span>
                     </div>
                   ) : blastRecipients.length === 0 ? (
                     <div className="rounded border border-dashed border-slate-200 bg-white py-6 text-center">
@@ -778,7 +847,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                     {blastResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
                     <div>
                       {blastResult.mode === 'redirect' && blastResult.redirectedTo && (
-                        <p>Protected mode â€” redirected to {blastResult.redirectedTo}.</p>
+                        <p>Protected mode — redirected to {blastResult.redirectedTo}.</p>
                       )}
                       {blastResult.sent > 0 && <p>{blastResult.sent} announcement{blastResult.sent !== 1 ? 's' : ''} sent.</p>}
                       {blastResult.failed > 0 && <p>{blastResult.failed} failed.{blastResult.errors[0] ? ` (${blastResult.errors[0]})` : ''}</p>}
@@ -798,9 +867,9 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
                       style={{ background: blastConfirm ? '#92400e' : '#0f172a' }}
                     >
                       {blastSending
-                        ? <><Loader2 size={12} className="animate-spin" /> Sendingâ€¦</>
+                        ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
                         : blastConfirm
-                          ? <><AlertCircle size={12} /> Confirm â€” blast to {blastSelected.size}</>
+                          ? <><AlertCircle size={12} /> Confirm — blast to {blastSelected.size}</>
                           : <><Megaphone size={12} /> Blast to {blastSelected.size} student{blastSelected.size !== 1 ? 's' : ''}</>}
                     </button>
                   </div>
@@ -809,6 +878,155 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
             )}
           </div>
 
+
+          {/* --- Tutor Schedule Emails --- */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CalendarRange size={12} className="text-slate-400" />
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tutor Schedule Emails</p>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">Send each tutor their upcoming schedule — daily or for the whole week.</p>
+              </div>
+              <button
+                onClick={() => setTutorSectionExpanded(v => !v)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {tutorSectionExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                {tutorSectionExpanded ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {tutorSectionExpanded && (
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex overflow-hidden rounded border border-slate-200">
+                    {(['daily', 'weekly'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setTutorEmailMode(m)}
+                        className="px-3 py-1.5 text-xs font-semibold capitalize transition-colors"
+                        style={{ background: tutorEmailMode === m ? '#0f172a' : 'white', color: tutorEmailMode === m ? 'white' : '#64748b', borderRight: m === 'daily' ? '1px solid #e2e8f0' : undefined }}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5">
+                    <Calendar size={11} className="text-slate-400" />
+                    <input
+                      type="date"
+                      value={tutorEmailDate}
+                      onChange={e => setTutorEmailDate(e.target.value)}
+                      className="bg-transparent text-xs text-slate-700 outline-none"
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    {tutorEmailMode === 'weekly' ? 'Sends Mon\u2013Sat schedule starting this date' : 'Sends schedule for this date only'}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold text-slate-500">
+                      Tutors with email \u2014 {tutorEmailRecipients.length}
+                    </p>
+                    <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
+                      <div
+                        onClick={() => {
+                          setTutorConfirm(false);
+                          const allSel = tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId));
+                          setTutorEmailSelected(allSel ? new Set() : new Set(tutorEmailRecipients.map(r => r.tutorId)));
+                        }}
+                        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all"
+                        style={{
+                          background: tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) ? '#0f172a' : tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) ? '#e2e8f0' : 'white',
+                          border: `2px solid ${tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) ? '#0f172a' : '#d1d5db'}`,
+                        }}
+                      >
+                        {tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) && <Check size={9} color="white" strokeWidth={3} />}
+                        {tutorEmailRecipients.some(r => tutorEmailSelected.has(r.tutorId)) && !tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
+                      </div>
+                      {tutorEmailRecipients.length > 0 && tutorEmailRecipients.every(r => tutorEmailSelected.has(r.tutorId)) ? 'Deselect all' : 'Select all'}
+                    </label>
+                  </div>
+
+                  {loadingTutorRecipients ? (
+                    <div className="flex items-center gap-2 py-4 text-slate-400">
+                      <Loader2 size={13} className="animate-spin" />
+                      <span className="text-xs">Loading tutors\u2026</span>
+                    </div>
+                  ) : tutorEmailRecipients.length === 0 ? (
+                    <div className="rounded border border-dashed border-slate-200 bg-white py-6 text-center">
+                      <Users size={20} className="mx-auto mb-2 text-slate-300" />
+                      <p className="text-xs text-slate-400">No tutors with email addresses found</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto rounded border border-slate-200 bg-white">
+                      {tutorEmailRecipients.map((r, i) => {
+                        const isChecked = tutorEmailSelected.has(r.tutorId);
+                        return (
+                          <div
+                            key={r.tutorId}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-slate-50"
+                            style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}
+                            onClick={() => {
+                              setTutorConfirm(false);
+                              setTutorEmailSelected(prev => {
+                                const next = new Set(prev);
+                                next.has(r.tutorId) ? next.delete(r.tutorId) : next.add(r.tutorId);
+                                return next;
+                              });
+                            }}
+                          >
+                            <div
+                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all"
+                              style={{ background: isChecked ? '#0f172a' : 'white', border: `2px solid ${isChecked ? '#0f172a' : '#d1d5db'}` }}
+                            >
+                              {isChecked && <Check size={9} color="white" strokeWidth={3} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold text-slate-800">{r.tutorName}</p>
+                              <p className="truncate text-[10px] text-slate-400">{r.email}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {tutorResult && (
+                  <div className={`flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${tutorResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    {tutorResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
+                    <div>
+                      {tutorResult.mode === 'redirect' && tutorResult.redirectedTo && (
+                        <p>Protected mode \u2014 redirected to {tutorResult.redirectedTo}.</p>
+                      )}
+                      {tutorResult.sent > 0 && <p>{tutorResult.sent} schedule email{tutorResult.sent !== 1 ? 's' : ''} sent.</p>}
+                      {tutorResult.failed > 0 && <p>{tutorResult.failed} failed.{tutorResult.errors[0] ? ` (${tutorResult.errors[0]})` : ''}</p>}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleTutorScheduleSend}
+                    disabled={tutorEmailSelected.size === 0 || tutorSending}
+                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    style={{ background: tutorConfirm ? '#92400e' : '#0f172a' }}
+                  >
+                    {tutorSending
+                      ? <><Loader2 size={12} className="animate-spin" /> Sending\u2026</>
+                      : tutorConfirm
+                        ? <><AlertCircle size={12} /> Confirm \u2014 send to {tutorEmailSelected.size}</>
+                        : <><Send size={12} /> Send to {tutorEmailSelected.size} tutor{tutorEmailSelected.size !== 1 ? 's' : ''}</>}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
           {/* â”€â”€â”€ Reminder Email Template â”€â”€â”€ */}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start justify-between gap-3">
@@ -848,7 +1066,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
               <div className="mt-4 space-y-3">
                 {loadingSettings ? (
                   <div className="flex items-center gap-2 py-3 text-slate-400">
-                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loadingâ€¦</span>
+                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loading…</span>
                   </div>
                 ) : (
                   <>
@@ -901,7 +1119,7 @@ const [blastSubject, setBlastSubject]                     = useState('Availabili
               <div className="mt-3 overflow-hidden rounded border border-slate-200 bg-white">
                 {loadingLogs ? (
                   <div className="flex items-center gap-2 px-3 py-4 text-slate-400">
-                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loading historyâ€¦</span>
+                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loading history…</span>
                   </div>
                 ) : logs.length === 0 ? (
                   <div className="px-3 py-8 text-center">

@@ -154,9 +154,13 @@ export default function MasterDeployment() {
   // while days from a different term keep their own session times.
   const weekDisplaySessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
     const weekStartIso = toISODate(weekStart);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const weekEndIso = toISODate(weekEnd);
+    // Use any term that overlaps with the displayed week (covers mid-week term starts)
     const matchingTerm = builderTerms.find(t =>
       t.start_date && t.end_date &&
-      t.start_date <= weekStartIso && weekStartIso <= t.end_date
+      t.start_date <= weekEndIso && t.end_date >= weekStartIso
     );
     const raw = matchingTerm?.session_times_by_day;
     if (raw && typeof raw === 'object') return raw as SessionTimesByDay;
