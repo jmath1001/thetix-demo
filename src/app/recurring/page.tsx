@@ -8,7 +8,7 @@ import {
   type RecurringSeries, type Tutor, type Student, toISODate,
 } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
-import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2, LayoutGrid, List } from 'lucide-react';
+import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2, LayoutGrid, List, CheckSquare, Square, Trash2 } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 
 type TermOption = { id: string; name: string; status: string; start_date: string; end_date: string };
@@ -132,11 +132,14 @@ function fmt12(time: string) {
   return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
-function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete }: {
+function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete, bulkSelectMode, selected, onToggleSelect }: {
   s: RecurringSeries; today: string;
   onEdit: (s: RecurringSeries) => void;
   onCancelSeries: (id: string) => void;
   onDelete: (id: string) => void;
+  bulkSelectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [confirm, setConfirm] = useState<'cancel' | 'delete' | null>(null);
   const [hovered, setHovered] = useState(false);
@@ -145,120 +148,113 @@ function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete }: {
   const isCompleted = s.status === 'completed';
   const isEnding = isActive && s.endDate < today;
 
-  const borderColor = isActive ? (isEnding ? '#f59e0b' : '#6366f1') : isCompleted ? '#10b981' : '#cbd5e1';
-  const opacity = isActive ? 1 : 0.55;
-
+  const accentColor = selected ? '#4f46e5' : isActive ? (isEnding ? '#f59e0b' : '#6366f1') : isCompleted ? '#10b981' : '#cbd5e1';
+  const opacity = (bulkSelectMode || isActive) ? 1 : 0.6;
   const initials = s.studentName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+
+  const tutorShort = s.tutorName.split(' ')[0];
 
   return (
     <div
-      className="relative rounded-xl overflow-hidden bg-white transition-shadow"
+      className="relative flex items-center gap-1.5 rounded-md overflow-hidden transition-all"
       style={{
-        border: '1px solid #e2e8f0',
-        borderLeft: `3px solid ${borderColor}`,
-        boxShadow: hovered ? '0 4px 16px rgba(0,0,0,0.10)' : '0 1px 4px rgba(0,0,0,0.04)',
+        borderStyle: 'solid',
+        borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderLeftWidth: 3,
+        borderTopColor: selected ? '#4f46e5' : hovered ? '#c7d2fe' : '#e2e8f0',
+        borderRightColor: selected ? '#4f46e5' : hovered ? '#c7d2fe' : '#e2e8f0',
+        borderBottomColor: selected ? '#4f46e5' : hovered ? '#c7d2fe' : '#e2e8f0',
+        borderLeftColor: accentColor,
+        background: selected ? '#eef2ff' : hovered ? '#f8faff' : 'white',
+        boxShadow: selected ? '0 0 0 1px #c7d2fe' : hovered ? '0 2px 8px rgba(79,70,229,0.1)' : 'none',
         opacity,
-        cursor: 'default',
+        cursor: bulkSelectMode ? 'pointer' : 'default',
+        minHeight: 28,
+        paddingLeft: 6,
+        paddingRight: confirm ? 0 : (hovered && !bulkSelectMode ? 0 : 6),
+        paddingTop: 3,
+        paddingBottom: 3,
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setConfirm(null); }}
+      onClick={() => bulkSelectMode && onToggleSelect?.(s.id)}
     >
-      <div className="px-3 pt-3 pb-2.5">
-        {/* Avatar + name row */}
-        <div className="flex items-start gap-2 mb-2">
-          <div className="w-7 h-7 rounded-lg shrink-0 flex items-center justify-center text-[10px] font-black"
-            style={{ background: pal.bg, color: pal.text }}>
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-bold leading-tight text-slate-900 truncate">{s.studentName}</p>
-            <p className="text-[10px] text-slate-400 truncate leading-tight mt-0.5">{s.tutorName}</p>
-          </div>
+      {/* Bulk checkbox */}
+      {bulkSelectMode ? (
+        <div className="shrink-0">
+          {selected
+            ? <CheckSquare size={12} style={{ color: '#4f46e5' }} />
+            : <Square size={12} style={{ color: '#94a3b8' }} />}
         </div>
-
-        {/* Time + topic */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
-          <span className="text-[10px] font-bold text-slate-500">{fmt12(s.time)}</span>
-          <span className="text-slate-200">·</span>
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-            style={{ background: '#eef2ff', color: '#4338ca' }}>
-            {s.topic}
-          </span>
-          {isEnding && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#b45309' }}>ending</span>
-          )}
-          {isCompleted && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#dcfce7', color: '#15803d' }}>done</span>
-          )}
-        </div>
-
-        {/* Progress bar */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[9px] font-semibold text-slate-400">{s.startDate} → {s.endDate}</span>
-            <span className="text-[9px] font-bold text-slate-500">{s.totalWeeks}wk</span>
-          </div>
-          <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full rounded-full transition-all"
-              style={{ width: (() => {
-                const start = new Date(s.startDate + 'T00:00:00').getTime();
-                const end   = new Date(s.endDate   + 'T00:00:00').getTime();
-                const now   = new Date(today        + 'T00:00:00').getTime();
-                if (now <= start) return '0%';
-                if (now >= end)   return '100%';
-                return `${Math.round(((now - start) / (end - start)) * 100)}%`;
-              })(), background: borderColor }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Action strip — always visible on hover */}
-      {hovered && !confirm && (
-        <div className="flex border-t border-slate-100">
-          {isActive && (
-            <>
-              <button
-                onClick={() => onEdit(s)}
-                className="flex-1 py-1.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-800 flex items-center justify-center gap-1 transition-colors">
-                <Edit3 size={9} /> Edit
-              </button>
-              <button
-                onClick={() => setConfirm('cancel')}
-                className="flex-1 py-1.5 text-[10px] font-semibold text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-1 transition-colors border-l border-slate-100">
-                <X size={9} /> Cancel
-              </button>
-            </>
-          )}
-          {!isActive && (
-            <button
-              onClick={() => setConfirm('delete')}
-              className="flex-1 py-1.5 text-[10px] font-semibold text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center gap-1 transition-colors">
-              <X size={9} /> Delete
-            </button>
-          )}
+      ) : (
+        /* Avatar */
+        <div className="w-4 h-4 rounded shrink-0 flex items-center justify-center text-[8px] font-black leading-none"
+          style={{ background: pal.bg, color: pal.text }}>
+          {initials}
         </div>
       )}
 
-      {confirm && (
-        <div className="border-t border-red-100 bg-red-50 px-3 py-2">
-          <p className="text-[10px] font-semibold text-red-700 mb-1.5">
-            {confirm === 'cancel' ? 'Cancel all future sessions?' : 'Delete this series?'}
-          </p>
-          <div className="flex gap-1.5">
-            <button onClick={() => setConfirm(null)} className="flex-1 py-1 rounded text-[10px] font-semibold text-slate-600 bg-white border border-slate-200">Keep</button>
+      {/* Student + tutor */}
+      <div className="flex-1 min-w-0 flex items-center gap-1 overflow-hidden">
+        <span className="text-[11px] font-bold text-slate-800 truncate leading-none">{s.studentName}</span>
+        <span className="text-[9px] text-slate-400 shrink-0 leading-none hidden sm:inline truncate" style={{ maxWidth: 60 }}>{tutorShort}</span>
+      </div>
+
+      {/* Topic chip */}
+      {!hovered && !confirm && (
+        <span className="text-[8px] font-bold px-1 py-0.5 rounded shrink-0 leading-none"
+          style={{ background: '#eef2ff', color: '#4338ca' }}>
+          {s.topic}
+        </span>
+      )}
+
+      {/* Status badge (if not active normal) */}
+      {!hovered && !confirm && isEnding && (
+        <span className="text-[8px] font-bold px-1 py-0.5 rounded shrink-0 leading-none" style={{ background: '#fef3c7', color: '#b45309' }}>end</span>
+      )}
+      {!hovered && !confirm && isCompleted && (
+        <span className="text-[8px] font-bold px-1 py-0.5 rounded shrink-0 leading-none" style={{ background: '#dcfce7', color: '#15803d' }}>✓</span>
+      )}
+
+      {/* Hover actions */}
+      {hovered && !confirm && !bulkSelectMode && (
+        <div className="flex shrink-0 items-stretch self-stretch">
+          {isActive && (
             <button
-              onClick={() => { setConfirm(null); confirm === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
-              className="flex-1 py-1 rounded text-[10px] font-semibold text-white bg-red-500">
-              Yes
+              onClick={e => { e.stopPropagation(); onEdit(s); }}
+              className="px-1.5 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+              title="Edit">
+              <Edit3 size={10} />
             </button>
-          </div>
+          )}
+          <button
+            onClick={e => { e.stopPropagation(); setConfirm(isActive ? 'cancel' : 'delete'); }}
+            className="px-1.5 flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+            title={isActive ? 'Cancel series' : 'Delete'}>
+            <X size={10} />
+          </button>
+        </div>
+      )}
+
+      {/* Inline confirm */}
+      {confirm && !bulkSelectMode && (
+        <div className="flex shrink-0 items-stretch self-stretch border-l border-red-100">
+          <button
+            onClick={e => { e.stopPropagation(); setConfirm(null); }}
+            className="px-1.5 text-[9px] font-bold text-slate-500 hover:bg-slate-50 transition-colors">
+            keep
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setConfirm(null); confirm === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
+            className="px-1.5 text-[9px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors rounded-r-sm">
+            yes
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDelete, onEditSession, onCancelSession, refreshStamp }: {
+function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDelete, onEditSession, onCancelSession, refreshStamp, bulkSelectMode, selected, onToggleSelect }: {
   s: RecurringSeries; tutors: Tutor[]; students: Student[]; today: string;
   onEdit: (s: RecurringSeries) => void;
   onCancelSeries: (id: string) => void;
@@ -266,6 +262,9 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
   onEditSession: (row: SessionRow, s: RecurringSeries) => void;
   onCancelSession: (row: SessionRow, s: RecurringSeries) => void;
   refreshStamp: number;
+  bulkSelectMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
@@ -312,8 +311,18 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
   const progressPct = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
 
   return (
-    <div className={`bg-white transition-all ${expanded ? 'border-b border-slate-100' : ''}`}>
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/60 cursor-pointer group" onClick={toggle}>
+    <div className={`bg-white transition-all ${expanded ? 'border-b border-slate-100' : ''}`}
+      style={selected ? { background: '#eef2ff', borderLeft: '3px solid #4f46e5' } : {}}>
+      <div
+        className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/60 cursor-pointer group"
+        onClick={bulkSelectMode ? () => onToggleSelect?.(s.id) : toggle}>
+        {bulkSelectMode && (
+          <div className="shrink-0">
+            {selected
+              ? <CheckSquare size={15} style={{ color: '#4f46e5' }} />
+              : <Square size={15} style={{ color: '#cbd5e1' }} />}
+          </div>
+        )}
         <div className="shrink-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black text-white bg-slate-900">
             {s.studentName.charAt(0)}
@@ -356,7 +365,7 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0 ml-1">
-          {s.status === 'active' && (
+          {!bulkSelectMode && s.status === 'active' && (
             <>
               <button onClick={e => { e.stopPropagation(); onEdit(s); }}
                 className="rounded border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -368,15 +377,17 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
               </button>
             </>
           )}
-          {s.status !== 'active' && (
+          {!bulkSelectMode && s.status !== 'active' && (
             <button onClick={e => { e.stopPropagation(); setConfirmAction('delete'); }}
               className="p-1.5 rounded border border-transparent text-slate-200 hover:text-red-500 hover:border-red-200 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
               <X size={13}/>
             </button>
           )}
-          <button className="p-1.5 rounded text-slate-300 hover:text-slate-500">
-            {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-          </button>
+          {!bulkSelectMode && (
+            <button className="p-1.5 rounded text-slate-300 hover:text-slate-500">
+              {expanded ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+            </button>
+          )}
         </div>
       </div>
 
@@ -523,6 +534,30 @@ export default function RecurringManager() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Bulk select
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkActing, setBulkActing] = useState(false);
+
+  const toggleBulkSelect = (id: string) =>
+    setBulkSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const selectAll = () => setBulkSelected(new Set(filtered.map(s => s.id)));
+  const deselectAll = () => setBulkSelected(new Set());
+  const exitBulkMode = () => { setBulkSelectMode(false); setBulkSelected(new Set()); setBulkConfirm(false); };
+
+  const handleBulkCancel = async () => {
+    setBulkActing(true);
+    const ids = [...bulkSelected].filter(id => series.find(s => s.id === id)?.status === 'active');
+    for (const id of ids) {
+      try { await cancelSeries(id); logEvent('recurring_series_cancelled', { seriesId: id, bulk: true }); } catch {}
+    }
+    setBulkConfirm(false);
+    setBulkActing(false);
+    exitBulkMode();
+    await load();
+  };
   const [createForm, setCreateForm] = useState<CreateRecurringForm>({
     studentId: '',
     tutorId: '',
@@ -822,6 +857,14 @@ export default function RecurringManager() {
               className="flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
               <Repeat size={11} /> New Series
             </button>
+            <button
+              onClick={() => { if (bulkSelectMode) exitBulkMode(); else setBulkSelectMode(true); }}
+              className="flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors"
+              style={bulkSelectMode
+                ? { background: '#312e81', border: '1px solid #312e81', color: 'white' }
+                : { background: 'white', border: '1px solid #e2e8f0', color: '#475569' }}>
+              <CheckSquare size={11} /> {bulkSelectMode ? 'Exit Select' : 'Select'}
+            </button>
             <button onClick={load} disabled={loading}
               className="flex items-center gap-1.5 rounded border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
               <RefreshCw size={11} className={loading ? 'animate-spin' : ''}/> Refresh
@@ -864,24 +907,45 @@ export default function RecurringManager() {
               </select>
             </div>
           )}
-          <div className="ml-auto flex items-center gap-1 text-[11px] text-slate-400">
-            {filtered.length} of {series.length}
-            <div className="ml-2 flex items-center rounded border border-slate-200 overflow-hidden">
-              <button
-                onClick={() => setViewMode('grid')}
-                className="px-2 py-1 flex items-center gap-1 transition-colors"
-                style={viewMode === 'grid' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
-                title="Day grid view">
-                <LayoutGrid size={11} />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className="px-2 py-1 flex items-center gap-1 transition-colors border-l border-slate-200"
-                style={viewMode === 'list' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
-                title="List view">
-                <List size={11} />
-              </button>
-            </div>
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-slate-400">
+            {bulkSelectMode ? (
+              <>
+                <span className="font-semibold text-slate-500">{bulkSelected.size} selected</span>
+                <button onClick={bulkSelected.size === filtered.length ? deselectAll : selectAll}
+                  className="px-2 py-1 rounded border border-slate-200 text-[10px] font-semibold text-slate-500 hover:bg-slate-50">
+                  {bulkSelected.size === filtered.length ? 'Deselect All' : 'Select All'}
+                </button>
+                {bulkSelected.size > 0 && (
+                  <button
+                    onClick={() => setBulkConfirm(true)}
+                    disabled={bulkActing || ![...bulkSelected].some(id => series.find(s => s.id === id)?.status === 'active')}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded border text-[10px] font-bold transition-colors"
+                    style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c' }}>
+                    <X size={10}/> Cancel {[...bulkSelected].filter(id => series.find(s => s.id === id)?.status === 'active').length} Active
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                {filtered.length} of {series.length}
+                <div className="ml-2 flex items-center rounded border border-slate-200 overflow-hidden">
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className="px-2 py-1 flex items-center gap-1 transition-colors"
+                    style={viewMode === 'grid' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
+                    title="Day grid view">
+                    <LayoutGrid size={11} />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className="px-2 py-1 flex items-center gap-1 transition-colors border-l border-slate-200"
+                    style={viewMode === 'list' ? { background: '#0f172a', color: 'white' } : { background: 'white', color: '#94a3b8' }}
+                    title="List view">
+                    <List size={11} />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -944,7 +1008,8 @@ export default function RecurringManager() {
                               <div className="space-y-1.5">
                                 {cell.map(s => (
                                   <SeriesGridCard key={s.id} s={s} today={today}
-                                    onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete} />
+                                    onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete}
+                                    bulkSelectMode={bulkSelectMode} selected={bulkSelected.has(s.id)} onToggleSelect={toggleBulkSelect} />
                                 ))}
                               </div>
                             )}
@@ -961,12 +1026,44 @@ export default function RecurringManager() {
               {filtered.map(s => (
                 <SeriesCard key={s.id} s={s} tutors={tutors} students={students} today={today}
                   onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete}
-                  onEditSession={openSingleEdit} onCancelSession={openSingleCancel} refreshStamp={refreshStamp} />
+                  onEditSession={openSingleEdit} onCancelSession={openSingleCancel} refreshStamp={refreshStamp}
+                  bulkSelectMode={bulkSelectMode} selected={bulkSelected.has(s.id)} onToggleSelect={toggleBulkSelect} />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Bulk cancel confirm dialog */}
+      {bulkConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }}
+          onClick={e => { if (e.target === e.currentTarget && !bulkActing) setBulkConfirm(false); }}>
+          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #fca5a5' }}>
+            <div className="px-5 py-4 flex items-center gap-3" style={{ background: '#fef2f2' }}>
+              <AlertTriangle size={18} className="text-red-500 shrink-0" />
+              <div>
+                <p className="text-sm font-black text-red-800">Cancel Active Series?</p>
+                <p className="text-[11px] text-red-500 mt-0.5">
+                  This will cancel all future sessions for {[...bulkSelected].filter(id => series.find(s => s.id === id)?.status === 'active').length} active series.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 justify-end">
+              <button onClick={() => setBulkConfirm(false)} disabled={bulkActing}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50">
+                Keep
+              </button>
+              <button
+                onClick={handleBulkCancel}
+                disabled={bulkActing}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-1.5"
+                style={{ background: '#dc2626' }}>
+                {bulkActing ? <><Loader2 size={12} className="animate-spin"/> Working…</> : 'Yes, Cancel All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}

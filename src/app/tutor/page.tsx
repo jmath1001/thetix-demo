@@ -161,6 +161,14 @@ function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
 
+function getMondayOfCurrentWeek(): string {
+  const d = new Date();
+  const dow = d.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  return toISODate(d);
+}
+
 // ── Subject Pills ─────────────────────────────────────────────────────────────
 function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
   const toggle = (s: string) =>
@@ -1076,6 +1084,10 @@ export default function TutorManagementPage() {
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [activeTutorId, setActiveTutorId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sendScheduleOpen, setSendScheduleOpen] = useState(false);
+  const [sendWeekDate, setSendWeekDate] = useState(() => getMondayOfCurrentWeek());
+  const [sendingSched, setSendingSched] = useState(false);
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -1175,7 +1187,28 @@ export default function TutorManagementPage() {
     else { setAdding(false); setNewTutor(EMPTY_TUTOR); fetchAll(); logEvent('tutor_created', { tutorName: newTutor.name }); }
   };
 
+  const handleSendSchedules = async () => {
+    setSendingSched(true);
+    setSendResult(null);
+    try {
+      const ids = tutors.filter(t => t.email).map(t => t.id);
+      const res = await fetch('/api/send-tutor-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorIds: ids, mode: 'weekly', date: sendWeekDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) setSendResult({ sent: 0, failed: ids.length, errors: [data.error ?? 'Request failed'] });
+      else setSendResult(data);
+    } catch (e: any) {
+      setSendResult({ sent: 0, failed: 0, errors: [e?.message ?? 'Unknown error'] });
+    } finally {
+      setSendingSched(false);
+    }
+  };
+
   const allSelected = tutors.length > 0 && tutors.every(t => selected.has(t.id));
+  const tutorsWithEmail = tutors.filter(t => !!t.email);
   const tutorsWithContact = tutors.filter(t => t.email || t.phone).length;
   const tutorsWithTimeOff = new Set(timeOffList.map(entry => entry.tutor_id)).size;
   const filteredTutors = tutors.filter(tutor => {
@@ -1236,7 +1269,13 @@ export default function TutorManagementPage() {
               </button>
             )}
             <button
-              onClick={() => { setAdding(a => !a); setNewTutor(EMPTY_TUTOR); }}
+              onClick={() => { setSendScheduleOpen(o => !o); setAdding(false); setSendResult(null); }}
+              className={`flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors ${sendScheduleOpen ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+              <Mail size={13} />
+              {sendScheduleOpen ? 'Close' : 'Send Schedules'}
+            </button>
+            <button
+              onClick={() => { setAdding(a => !a); setNewTutor(EMPTY_TUTOR); setSendScheduleOpen(false); }}
               className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white transition-colors ${adding ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-900 hover:bg-slate-800'}`}>
               {adding ? <><X size={13} /> Cancel</> : <><UserPlus size={13} /> Add Tutor</>}
             </button>
@@ -1333,6 +1372,58 @@ export default function TutorManagementPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Send schedules panel */}
+        {sendScheduleOpen && !adding && (
+          <div className="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="h-4 w-1 rounded-full bg-indigo-500" />
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-600">Send Weekly Schedules</p>
+            </div>
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-1">Week starting</label>
+                <input type="date" value={sendWeekDate} onChange={e => setSendWeekDate(e.target.value)}
+                  className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-indigo-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] font-semibold text-slate-400 mb-1">Recipients</p>
+                <p className="text-xs font-medium text-slate-700">
+                  {tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''} with email
+                  {tutors.length - tutorsWithEmail.length > 0 && (
+                    <span className="ml-2 text-slate-400">({tutors.length - tutorsWithEmail.length} without email will be skipped)</span>
+                  )}
+                </p>
+              </div>
+              <button onClick={handleSendSchedules} disabled={sendingSched || tutorsWithEmail.length === 0}
+                className="flex items-center gap-1.5 rounded px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-white transition-all disabled:opacity-50"
+                style={{ background: '#4f46e5' }}>
+                {sendingSched ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <><Mail size={12} /> Send All</>}
+              </button>
+            </div>
+            {sendResult && (
+              <div className={`mt-3 rounded-lg border px-3 py-2 text-xs font-medium ${
+                sendResult.mode === 'disabled' ? 'border-slate-200 bg-slate-50 text-slate-600' :
+                sendResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' :
+                'border-green-200 bg-green-50 text-green-700'
+              }`}>
+                {sendResult.mode === 'disabled'
+                  ? 'Email sending is disabled (EMAIL_SEND_MODE=disabled).'
+                  : (
+                    <>
+                      Sent {sendResult.sent}, failed {sendResult.failed}.
+                      {sendResult.redirectedTo && <span className="ml-2 text-slate-500">Redirected to {sendResult.redirectedTo}.</span>}
+                      {sendResult.errors.length > 0 && (
+                        <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                          {sendResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                        </ul>
+                      )}
+                    </>
+                  )}
+              </div>
+            )}
           </div>
         )}
 

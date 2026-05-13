@@ -120,6 +120,15 @@ export default function ContactCenter() {
   const [generalResult, setGeneralResult]     = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
   const [generalExpanded, setGeneralExpanded] = useState(false);
 
+  // Tutor schedule email state
+  const [tutorSchedExpanded, setTutorSchedExpanded]   = useState(false);
+  const [tutorSchedWeek, setTutorSchedWeek]           = useState(() => {
+    const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow)); return toISODate(d);
+  });
+  const [tutorsWithEmail, setTutorsWithEmail]         = useState<{ id: string; name: string; email: string }[]>([]);
+  const [tutorSchedSending, setTutorSchedSending]     = useState(false);
+  const [tutorSchedResult, setTutorSchedResult]       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null; skipped?: boolean; reason?: string } | null>(null);
+
   const formatSettingsError = (message: string) => {
     if (message.toLowerCase().includes('relation') || message.toLowerCase().includes('does not exist')) {
       return `Missing table: ${DB.centerSettings}. Create that table in Supabase.`;
@@ -301,8 +310,34 @@ export default function ContactCenter() {
     setLoadingCandidates(false);
   }, []);
 
-  useEffect(() => { fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients(); }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
+  useEffect(() => {
+    fetchSettings(); fetchLogs(); fetchTerms(); fetchBlastRecipients();
+    withCenter(supabase.from(DB.tutors).select('id, name, email').order('name'))
+      .then(({ data }: { data: any[] | null }) => {
+        setTutorsWithEmail(((data ?? []) as any[]).filter((t: any) => !!t.email).map((t: any) => ({ id: t.id, name: t.name, email: t.email })));
+      })
+      .catch(() => {});
+  }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
   useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
+
+  const handleSendTutorSchedules = async () => {
+    setTutorSchedSending(true);
+    setTutorSchedResult(null);
+    try {
+      const res = await fetch('/api/send-tutor-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorIds: tutorsWithEmail.map(t => t.id), mode: 'weekly', date: tutorSchedWeek }),
+      });
+      const data = await res.json();
+      if (!res.ok) setTutorSchedResult({ sent: 0, failed: tutorsWithEmail.length, errors: [data.error ?? 'Request failed'] });
+      else setTutorSchedResult(data);
+    } catch (e: any) {
+      setTutorSchedResult({ sent: 0, failed: 0, errors: [e?.message ?? 'Unknown error'] });
+    } finally {
+      setTutorSchedSending(false);
+    }
+  };
 
   const saveTemplate = async () => {
     if (!settings) return;
@@ -507,27 +542,27 @@ export default function ContactCenter() {
   const previewBody = applyTemplate(draftBody || DEFAULT_SETTINGS.reminder_body, previewValues);
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5">
-      <div className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="min-h-screen px-4 py-5" style={{ background: '#f1f5f9' }}>
+      <div className="mx-auto w-full max-w-5xl rounded-2xl bg-white" style={{ border: '1px solid #cbd5e1', boxShadow: '0 4px 20px rgba(15,23,42,0.08)' }}>
 
-        {/* â”€â”€â”€ Page Header â”€â”€â”€ */}
-        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-900 text-white">
-            <Mail size={15} />
+        {/* Page Header */}
+        <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc', borderRadius: '1rem 1rem 0 0' }}>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ background: '#1e293b' }}>
+            <Mail size={16} />
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Operations</p>
-            <h1 className="text-base font-bold text-slate-900">Contact Center</h1>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#6366f1' }}>Operations</p>
+            <h1 className="text-base font-black text-slate-900">Contact Center</h1>
           </div>
         </div>
 
         <div className="space-y-5 p-5">
 
-          {/* â”€â”€â”€ Send Reminders â”€â”€â”€ */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        {/* Send Reminders */}
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Send Reminders</p>
+                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Send Reminders</p>
                 <p className="text-xs text-slate-500">Dispatch session reminders. Two-step confirmation enabled.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -654,12 +689,12 @@ export default function ContactCenter() {
           </div>
 
           {/* â”€â”€â”€ Announcement Blast â”€â”€â”€ */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <Megaphone size={12} className="text-slate-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Availability Emails</p>
+                  <Megaphone size={13} style={{ color: '#4338ca' }} />
+                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Availability Emails</p>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Send per-term availability links to students and parents. Pick a term to generate the booking link.</p>
               </div>
@@ -676,7 +711,7 @@ export default function ContactCenter() {
               <div className="mt-4 space-y-4">
                 {/* Term selector */}
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-500">Term</label>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Term</label>
                   <select
                     value={blastTermId}
                     onChange={e => {
@@ -710,11 +745,11 @@ export default function ContactCenter() {
                   {!editingBlastTemplate ? (
                     <div className="space-y-1.5 px-3 py-3">
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Subject</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Subject</p>
                         <p className="mt-0.5 text-sm text-slate-700">{blastSubject || '(empty)'}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Body</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Body</p>
                         <p className="mt-0.5 line-clamp-3 whitespace-pre-line text-xs text-slate-500">{blastBody || '(empty)'}</p>
                       </div>
                     </div>
@@ -727,16 +762,16 @@ export default function ContactCenter() {
                         <span className="text-[10px] text-slate-400">available variables</span>
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs font-semibold text-slate-500">Subject</label>
+                        <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
                         <input value={blastSubject} onChange={e => setBlastSubject(e.target.value)} className={baseInputCls} />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs font-semibold text-slate-500">Body</label>
+                        <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
                         <textarea value={blastBody} onChange={e => setBlastBody(e.target.value)} rows={7} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
                       </div>
                       {blastTermId && (
                         <div className="space-y-1.5 rounded border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Preview</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Preview</p>
                           <p className="text-xs font-semibold text-slate-700">
                             {applyTemplate(blastSubject, {
                               name: 'Alex Student',
@@ -854,13 +889,13 @@ export default function ContactCenter() {
           </div>
 
 
-          {/* ─── General Email Blast ─── */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          {/* General Email Blast */}
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <Send size={12} className="text-slate-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">General Email Blast</p>
+                  <Send size={13} style={{ color: '#4338ca' }} />
+                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>General Email Blast</p>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-500">Send any email to students and parents — write whatever you want, no term required.</p>
               </div>
@@ -883,7 +918,7 @@ export default function ContactCenter() {
                     <span className="text-[10px] text-slate-400">available variables</span>
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-500">Subject</label>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
                     <input
                       value={generalSubject}
                       onChange={e => { setGeneralSubject(e.target.value); setGeneralResult(null); }}
@@ -892,7 +927,7 @@ export default function ContactCenter() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-500">Body</label>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
                     <textarea
                       value={generalBody}
                       onChange={e => { setGeneralBody(e.target.value); setGeneralResult(null); }}
@@ -1006,11 +1041,82 @@ export default function ContactCenter() {
             )}
           </div>
 
-          {/* â”€â”€â”€ Reminder Email Template â”€â”€â”€ */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          {/* Tutor Schedule Emails */}
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Reminder Email Template</p>
+                <div className="flex items-center gap-2">
+                  <Calendar size={13} style={{ color: '#4338ca' }} />
+                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Tutor Weekly Schedules</p>
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">Email each tutor their sessions for the selected week.</p>
+              </div>
+              <button
+                onClick={() => { setTutorSchedExpanded(v => !v); setTutorSchedResult(null); }}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                {tutorSchedExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                {tutorSchedExpanded ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {tutorSchedExpanded && (
+              <div className="mt-4 space-y-3">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Week starting</label>
+                    <input type="date" value={tutorSchedWeek}
+                      onChange={e => { setTutorSchedWeek(e.target.value); setTutorSchedResult(null); }}
+                      className={baseInputCls}
+                      style={{ width: 'auto' }}
+                    />
+                  </div>
+                  <div className="flex-1 text-xs text-slate-500">
+                    {tutorsWithEmail.length > 0
+                      ? <><span className="font-semibold text-slate-700">{tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</span> will receive their schedule.</>
+                      : 'No tutors with email addresses found.'}
+                  </div>
+                </div>
+
+                {tutorSchedResult && (
+                  <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                    tutorSchedResult.skipped ? 'border-slate-200 bg-slate-50 text-slate-600' :
+                    tutorSchedResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' :
+                    'border-green-200 bg-green-50 text-green-700'
+                  }`}>
+                    {tutorSchedResult.skipped
+                      ? tutorSchedResult.reason
+                      : (
+                        <>
+                          {tutorSchedResult.sent} sent, {tutorSchedResult.failed} failed.
+                          {tutorSchedResult.redirectedTo && <span className="ml-2 text-slate-500">Redirected to {tutorSchedResult.redirectedTo}.</span>}
+                          {tutorSchedResult.errors.map((e, i) => <p key={i} className="mt-0.5">{e}</p>)}
+                        </>
+                      )}
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSendTutorSchedules}
+                    disabled={tutorSchedSending || tutorsWithEmail.length === 0}
+                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    style={{ background: '#0f172a' }}
+                  >
+                    {tutorSchedSending
+                      ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
+                      : <><Send size={12} /> Send to {tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</>}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* â”€â”€â”€ Reminder Email Template â”€â”€â”€ */}
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Reminder Email Template</p>
                 <p className="text-xs text-slate-500">Subject and body used for session reminder emails.</p>
               </div>
               {!editingTemplate ? (
@@ -1056,15 +1162,15 @@ export default function ContactCenter() {
                       <span className="text-[10px] text-slate-400">available variables</span>
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-500">Subject</label>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
                       <input value={draftSubject} onChange={e => setDraftSubject(e.target.value)} className={baseInputCls} />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-500">Body</label>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
                       <textarea value={draftBody} onChange={e => setDraftBody(e.target.value)} rows={8} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
                     </div>
                     <div className="space-y-2 rounded border border-slate-200 bg-white p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Preview</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Preview</p>
                       <p className="text-xs font-semibold text-slate-700">{previewSubject}</p>
                       <p className="whitespace-pre-line text-xs text-slate-500">{previewBody}</p>
                     </div>
@@ -1079,19 +1185,19 @@ export default function ContactCenter() {
           </div>
 
           {/* â”€â”€â”€ Send History â”€â”€â”€ */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
             <button className="flex w-full items-center justify-between" onClick={() => setLogsExpanded(v => !v)}>
               <div>
                 <div className="flex items-center gap-2">
-                  <Clock size={12} className="text-slate-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Send History</p>
+                  <Clock size={13} style={{ color: '#4338ca' }} />
+                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Send History</p>
                   {logs.length > 0 && (
                     <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{logs.length}</span>
                   )}
                 </div>
                 <p className="mt-0.5 text-left text-xs text-slate-500">Log of all reminder emails dispatched.</p>
               </div>
-              {logsExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+              {logsExpanded ? <ChevronUp size={14} className="text-slate-600" /> : <ChevronDown size={14} className="text-slate-600" />}
             </button>
 
             {logsExpanded && (
@@ -1136,7 +1242,7 @@ export default function ContactCenter() {
             )}
           </div>
 
-        </div>
+        </div>{/* end space-y-5 p-5 */}
       </div>
     </div>
   );

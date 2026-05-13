@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { User, X, Check, ChevronDown, ChevronLeft, ChevronRight, CalendarDays, Loader2 } from "lucide-react";
 
 import { MAX_CAPACITY, getSessionsForDay } from '@/components/constants';
+import { supabase } from '@/lib/supabaseClient';
+import { withCenter } from '@/lib/db';
 import {
   useScheduleData,
   updateAttendance,
@@ -86,10 +88,20 @@ export default function TutorPortal() {
 
   const { tutors, sessions, loading, error, refetch } = useScheduleData(weekStart);
   const [selectedTutor, setSelectedTutor] = useState<Tutor | null>(null);
+  const [portalMessage, setPortalMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (tutors.length > 0 && !selectedTutor) setSelectedTutor(tutors[0]);
   }, [tutors]);
+
+  React.useEffect(() => {
+    withCenter(supabase.from('slake_center_settings').select('tutor_portal_message').limit(1))
+      .maybeSingle()
+      .then(({ data }: { data: { tutor_portal_message: string | null } | null }) => {
+        if (data?.tutor_portal_message) setPortalMessage(data.tutor_portal_message);
+      })
+      .catch(() => {});
+  }, []);
 
   const goToPrevWeek = () => setWeekStart(p => { const d = new Date(p); d.setDate(d.getDate() - 7); return d; });
   const goToNextWeek = () => setWeekStart(p => { const d = new Date(p); d.setDate(d.getDate() + 7); return d; });
@@ -137,6 +149,11 @@ export default function TutorPortal() {
           </div>
           <TutorDropdown tutors={tutors} selected={selectedTutor} onSelect={setSelectedTutor} />
         </div>
+        {portalMessage && (
+          <div className="max-w-[1600px] mx-auto px-4 md:px-8 pb-2">
+            <p className="text-xs text-[#78716c] leading-relaxed">{portalMessage}</p>
+          </div>
+        )}
       </div>
 
       <div className="relative z-10 max-w-[1600px] mx-auto px-4 md:px-8">

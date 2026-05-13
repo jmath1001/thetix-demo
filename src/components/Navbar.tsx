@@ -6,8 +6,8 @@ import {
   Repeat, Mail, Settings, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
-const CENTER_NAME  = process.env.NEXT_PUBLIC_CENTER_NAME       ?? 'Scheduler';
-const CENTER_SHORT = process.env.NEXT_PUBLIC_CENTER_SHORT_NAME ?? 'S';
+const ENV_CENTER_NAME  = process.env.NEXT_PUBLIC_CENTER_NAME       ?? 'Scheduler';
+const ENV_CENTER_SHORT = process.env.NEXT_PUBLIC_CENTER_SHORT_NAME ?? 'S';
 
 const navItems = [
   { name: 'Schedule',  icon: Calendar,      href: '/' },
@@ -29,7 +29,17 @@ function setNavCookie(value: boolean) {
   document.cookie = `navbarCollapsed=${value};path=/;max-age=31536000`;
 }
 
-export function Navbar({ initialCollapsed = false }: { initialCollapsed?: boolean }) {
+export function Navbar({
+  initialCollapsed = false,
+  centerName: nameProp,
+  centerShort: shortProp,
+}: {
+  initialCollapsed?: boolean;
+  centerName?: string;
+  centerShort?: string;
+}) {
+  const CENTER_NAME  = nameProp  ?? ENV_CENTER_NAME;
+  const CENTER_SHORT = shortProp ?? ENV_CENTER_SHORT;
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const pathname = usePathname();
   const current = pathname || '/';

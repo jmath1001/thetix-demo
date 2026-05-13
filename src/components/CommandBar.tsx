@@ -731,7 +731,7 @@ export function CommandBar({
   const isStudentResult = result?.type === 'student_contact' || result?.type === 'student_sessions' || result?.type === 'student_profile'
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', maxWidth: '680px' }}>
       {showDropdown && (
         <div onClick={() => { setResult(null); setIsFocused(false) }}
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} />
@@ -788,7 +788,7 @@ export function CommandBar({
       {showDropdown && (
         <div style={{
           position: 'fixed', top: '72px', left: '50%', transform: 'translateX(-50%)',
-          width: '95%', maxWidth: '680px',
+          width: '95%', maxWidth: '860px',
           background: C.bg, borderRadius: 14,
           border: `1.5px solid ${C.border}`,
           boxShadow: '0 20px 48px -8px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)',

@@ -35,8 +35,13 @@ export function getTutorPaletteByIndex(index: number): TutorPalette {
 export function formatWeekRange(weekStart: Date): string {
   const end = new Date(weekStart);
   end.setDate(end.getDate() + 6);
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
-  const s = weekStart.toLocaleDateString('en-US', opts);
-  const e = end.toLocaleDateString('en-US', { ...opts, year: 'numeric' });
-  return `${s} – ${e}`;
+  const startMonth = weekStart.toLocaleDateString('en-US', { month: 'short' });
+  const endMonth = end.toLocaleDateString('en-US', { month: 'short' });
+  const startDay = weekStart.getDate();
+  const endDay = end.getDate();
+  const year = end.getFullYear();
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay}–${endDay}, ${year}`;
+  }
+  return `${startMonth} ${startDay} – ${endMonth} ${endDay}, ${year}`;
 }

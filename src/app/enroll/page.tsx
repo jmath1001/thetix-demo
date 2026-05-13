@@ -2,6 +2,8 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Check, Loader2 } from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient'
+import { withCenter } from '@/lib/db'
 
 const SUBJECTS = [
   { group: 'Math & Science', subjects: ['Algebra', 'Geometry', 'Precalculus', 'Calculus', 'Statistics', 'IB Math', 'Biology', 'Chemistry', 'Physics'] },
@@ -51,6 +53,16 @@ function EnrollForm() {
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([])
   const [recurring, setRecurring] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [enrollmentInstructions, setEnrollmentInstructions] = useState<string | null>(null)
+
+  useEffect(() => {
+    withCenter(supabase.from('slake_center_settings').select('enrollment_instructions').limit(1))
+      .maybeSingle()
+      .then(({ data }: { data: { enrollment_instructions: string | null } | null }) => {
+        if (data?.enrollment_instructions) setEnrollmentInstructions(data.enrollment_instructions)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!token) { setErrorMsg('Missing enrollment token.'); setStatus('error'); return }
@@ -145,6 +157,13 @@ function EnrollForm() {
             <p style={{ fontSize: 10, color: '#94a3b8', margin: '4px 0 0' }}>Update your availability below</p>
           </div>
         </div>
+
+        {/* Enrollment instructions */}
+        {enrollmentInstructions && (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '10px 14px', marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: '#1e40af', lineHeight: 1.6, margin: 0 }}>{enrollmentInstructions}</p>
+          </div>
+        )}
 
         {/* Subjects — compact pill row */}
         <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>

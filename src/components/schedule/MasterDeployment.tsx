@@ -35,6 +35,7 @@ import { logEvent } from '@/lib/analytics';
 import { CommandBar } from '@/components/CommandBar';
 import { ScheduleBuilder } from '@/components/ScheduleBuilder';
 import { ScheduleOptimizerController, type OptimizerScope } from '@/components/optimizer/ScheduleOptimizerController';
+import { ConfirmWeekModal } from './ConfirmWeekModal';
 
 const SCHEDULE_VIEW_STORAGE_KEY = 'schedule:viewMode';
 
@@ -51,6 +52,7 @@ export default function MasterDeployment() {
   const searchParams = useSearchParams();
   const lastHandledActionRef = useRef<string | null>(null);
   const optimizerRunRef = useRef<(scope?: OptimizerScope) => void>(() => {});
+  const weekBeforeTodayRef = useRef<Date | null>(null);
   const [todayDate, setTodayDate] = useState<Date>(() => getCentralTimeNow());
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const [isScheduleBuilderOpen, setIsScheduleBuilderOpen] = useState(false);
@@ -92,10 +94,23 @@ export default function MasterDeployment() {
   const [isBulkRemoving, setIsBulkRemoving] = useState(false);
   const [isClearingWeek, setIsClearingWeek] = useState(false);
   const [localSessions, setLocalSessions] = useState(sessions);
+  const [isConfirmWeekOpen, setIsConfirmWeekOpen] = useState(false);
+  const [weekConfirmedAt, setWeekConfirmedAt] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalSessions(sessions);
   }, [sessions]);
+
+  useEffect(() => {
+    const iso = toISODate(weekStart);
+    const key = `week-confirmed-${iso}`;
+    try {
+      const stored = localStorage.getItem(key);
+      setWeekConfirmedAt(stored ?? null);
+    } catch {
+      setWeekConfirmedAt(null);
+    }
+  }, [weekStart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,13 +301,22 @@ export default function MasterDeployment() {
     setWeekStart(getWeekStart(parsed));
   }, [searchParams, todayDate]);
 
-  useEffect(() => {
-    if (!todayView) return;
-    const selectedWeek = getWeekStart(todayDate);
-    if (toISODate(selectedWeek) !== toISODate(weekStart)) {
-      setWeekStart(selectedWeek);
+  const handleSetTodayView = useCallback((v: boolean) => {
+    if (v) {
+      // Save current week before jumping to today
+      weekBeforeTodayRef.current = weekStart;
+      const now = getCentralTimeNow();
+      setTodayDate(now);
+      setWeekStart(getWeekStart(now));
+    } else {
+      // Restore week position from before Today view was entered
+      if (weekBeforeTodayRef.current) {
+        setWeekStart(weekBeforeTodayRef.current);
+        weekBeforeTodayRef.current = null;
+      }
     }
-  }, [todayView, todayDate, weekStart]);
+    setTodayView(v);
+  }, [weekStart]);
 
   const handleScheduleBuilderConfirm = useCallback(async (
     bookings: { student: Student; slot: any; topic: string }[]
@@ -742,7 +766,7 @@ export default function MasterDeployment() {
 
       <ScheduleNav
         todayView={todayView}
-        setTodayView={setTodayView}
+        setTodayView={handleSetTodayView}
         weekStart={weekStart}
         isCurrentWeek={isCurrentWeek}
         goToPrevWeek={goToPrevWeek}
@@ -761,6 +785,8 @@ export default function MasterDeployment() {
         isClearingWeek={isClearingWeek}
         weeklyStudents={weeklyStudents}
         weeklySessions={weeklySessions}
+        onConfirmWeek={() => setIsConfirmWeekOpen(true)}
+        weekConfirmedAt={weekConfirmedAt}
         commandBarSlot={
           <>
             <CommandBar
@@ -999,6 +1025,17 @@ export default function MasterDeployment() {
           initialMode={scheduleBuilderMode}
           onConfirm={handleScheduleBuilderConfirm}
           onClose={() => setIsScheduleBuilderOpen(false)}
+        />
+      )}
+
+      {isConfirmWeekOpen && (
+        <ConfirmWeekModal
+          weekStart={weekStart}
+          tutors={tutors}
+          sessions={localSessions}
+          weekConfirmedAt={weekConfirmedAt}
+          onConfirmed={(confirmedAt) => setWeekConfirmedAt(confirmedAt)}
+          onClose={() => setIsConfirmWeekOpen(false)}
         />
       )}
     </div>

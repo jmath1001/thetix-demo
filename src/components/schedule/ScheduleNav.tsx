@@ -1,5 +1,5 @@
 "use client"
-import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2, Check } from 'lucide-react';
 import { useState } from 'react';
 import { formatWeekRange } from './scheduleConstants';
 
@@ -25,6 +25,8 @@ interface ScheduleNavProps {
   weeklyStudents?: number;
   weeklySessions?: number;
   commandBarSlot?: React.ReactNode;
+  onConfirmWeek?: () => void;
+  weekConfirmedAt?: string | null;
 }
 
 export function ScheduleNav({
@@ -49,6 +51,8 @@ export function ScheduleNav({
   weeklyStudents,
   weeklySessions,
   commandBarSlot,
+  onConfirmWeek,
+  weekConfirmedAt,
 }: ScheduleNavProps) {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
 
@@ -102,6 +106,7 @@ export function ScheduleNav({
           <div
             className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 shrink-0 rounded-lg px-1.5 py-1"
             style={{
+              width: '680px',
               background: 'linear-gradient(120deg, rgba(79,70,229,0.12) 0%, rgba(129,140,248,0.16) 52%, rgba(224,231,255,0.9) 100%)',
               border: '1px solid #c7d2fe',
               boxShadow: '0 6px 14px rgba(79,70,229,0.1)',
@@ -120,21 +125,36 @@ export function ScheduleNav({
               disabled={!!isClearingWeek || !!isBulkRemoving}
               className="w-7 h-7 md:w-auto md:h-auto md:px-2.5 md:py-1.5 flex items-center justify-center md:gap-1 rounded-lg text-xs font-semibold transition-all"
               style={{
-                background: bulkRemoveMode ? '#312e81' : 'white',
-                border: `1px solid ${bulkRemoveMode ? '#312e81' : '#fca5a5'}`,
-                color: bulkRemoveMode ? 'white' : '#b91c1c',
+                background: bulkRemoveMode ? '#312e81' : weekConfirmedAt ? '#dcfce7' : 'white',
+                border: `1px solid ${bulkRemoveMode ? '#312e81' : weekConfirmedAt ? '#86efac' : '#fca5a5'}`,
+                color: bulkRemoveMode ? 'white' : weekConfirmedAt ? '#15803d' : '#b91c1c',
                 cursor: (isClearingWeek || isBulkRemoving) ? 'not-allowed' : 'pointer',
               }}>
-              <Trash2 size={12} />
+              {weekConfirmedAt ? <Check size={12} /> : <Trash2 size={12} />}
               <span className="hidden md:inline">
-                {bulkRemoveMode ? `Bulk Remove (${selectedBulkCount})` : (isClearingWeek ? 'Clearing…' : 'Clear')}
+                {bulkRemoveMode ? `Bulk Remove (${selectedBulkCount})` : isClearingWeek ? 'Clearing…' : weekConfirmedAt ? 'Week OK' : 'Manage'}
               </span>
               <ChevronDown size={12} />
             </button>
 
             {clearMenuOpen && (
               <div className="absolute right-0 mt-1 z-40 rounded-lg overflow-hidden"
-                style={{ background: 'white', border: '1px solid #e2e8f0', boxShadow: '0 8px 24px rgba(15,23,42,0.16)', minWidth: 180 }}>
+                style={{ background: 'white', border: '1px solid #e2e8f0', boxShadow: '0 8px 24px rgba(15,23,42,0.16)', minWidth: 200 }}>
+
+                {onConfirmWeek && (
+                  <button
+                    onClick={() => { setClearMenuOpen(false); onConfirmWeek(); }}
+                    className="w-full text-left px-3 py-2.5 text-xs font-bold flex items-center gap-2"
+                    style={{
+                      color: weekConfirmedAt ? '#15803d' : '#4f46e5',
+                      background: weekConfirmedAt ? '#f0fdf4' : 'white',
+                      borderBottom: '1px solid #f1f5f9',
+                    }}>
+                    <Check size={12} />
+                    {weekConfirmedAt ? 'Week confirmed ✓' : 'Confirm & Send Week…'}
+                  </button>
+                )}
+
                 <button
                   onClick={() => { setClearMenuOpen(false); onClearWeekNonRecurring(); }}
                   disabled={!!isClearingWeek}
@@ -191,28 +211,33 @@ export function ScheduleNav({
 
           {!todayView && terms.length > 0 && setSelectedTermId && (
             <>
-              <div className="relative shrink-0">
-                <select
-                  value={selectedTermId}
-                  onChange={e => setSelectedTermId(e.target.value)}
-                  className="appearance-none pl-2 pr-6 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wider cursor-pointer"
-                  style={{
-                    background: '#eff6ff',
-                    border: '1px solid #93c5fd',
-                    color: '#1d4ed8',
-                    outline: 'none', maxWidth: 132,
-                  }}>
-                  {terms.map(term => (
-                    <option key={term.id} value={term.id}>{term.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: '#2563eb' }} />
+              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+              <div className="relative shrink-0 flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest shrink-0" style={{ color: '#818cf8' }}>Term</span>
+                <div className="relative">
+                  <select
+                    value={selectedTermId}
+                    onChange={e => setSelectedTermId(e.target.value)}
+                    className="appearance-none pl-3 pr-7 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide cursor-pointer"
+                    style={{
+                      background: '#4f46e5',
+                      border: '1.5px solid #4338ca',
+                      color: 'white',
+                      outline: 'none',
+                      maxWidth: 160,
+                      boxShadow: '0 2px 6px rgba(79,70,229,0.35)',
+                    }}>
+                    {terms.map(term => (
+                      <option key={term.id} value={term.id}>{term.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{ color: 'rgba(255,255,255,0.75)' }} />
+                </div>
               </div>
               <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
             </>
           )}
-
 
       </div>
     </div>
