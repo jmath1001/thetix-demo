@@ -22,6 +22,7 @@ export type Tutor = {
   cat: string
   availability: number[]
   availabilityBlocks: string[]
+  email: string | null
 }
 
 export type Student = {
@@ -331,6 +332,7 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
             cat:                r.cat,
             availability:       resolvedAvailabilityDays.length > 0 ? resolvedAvailabilityDays : (r.availability ?? []),
             availabilityBlocks: resolvedAvailabilityBlocks,
+            email:              r.email ?? null,
           }
         })
 

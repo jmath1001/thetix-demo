@@ -201,42 +201,40 @@ export function ScheduleNav({
         )}
 
           {!todayView && weeklyStudents !== undefined && weeklySessions !== undefined && (
-            <>
-              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
-              <span className="text-[10px] font-semibold shrink-0" style={{ color: '#475569' }}>
+            <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+              <div className="w-px h-5" style={{ background: '#a5b4fc' }} />
+              <span className="text-[10px] font-semibold" style={{ color: '#475569' }}>
                 {weeklyStudents} students · {weeklySessions} sessions
               </span>
-            </>
+            </div>
           )}
 
           {!todayView && terms.length > 0 && setSelectedTermId && (
-            <>
-              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
-              <div className="relative shrink-0 flex items-center gap-1.5">
-                <span className="text-[9px] font-black uppercase tracking-widest shrink-0" style={{ color: '#818cf8' }}>Term</span>
-                <div className="relative">
-                  <select
-                    value={selectedTermId}
-                    onChange={e => setSelectedTermId(e.target.value)}
-                    className="appearance-none pl-3 pr-7 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide cursor-pointer"
-                    style={{
-                      background: '#4f46e5',
-                      border: '1.5px solid #4338ca',
-                      color: 'white',
-                      outline: 'none',
-                      maxWidth: 160,
-                      boxShadow: '0 2px 6px rgba(79,70,229,0.35)',
-                    }}>
-                    {terms.map(term => (
-                      <option key={term.id} value={term.id}>{term.name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
-                    style={{ color: 'rgba(255,255,255,0.75)' }} />
-                </div>
+            <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+              <div className="w-px h-5" style={{ background: '#a5b4fc' }} />
+              <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: '#818cf8' }}>Term</span>
+              <div className="relative">
+                <select
+                  value={selectedTermId}
+                  onChange={e => setSelectedTermId(e.target.value)}
+                  className="appearance-none pl-3 pr-7 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide cursor-pointer"
+                  style={{
+                    background: '#4f46e5',
+                    border: '1.5px solid #4338ca',
+                    color: 'white',
+                    outline: 'none',
+                    maxWidth: 160,
+                    boxShadow: '0 2px 6px rgba(79,70,229,0.35)',
+                  }}>
+                  {terms.map(term => (
+                    <option key={term.id} value={term.id}>{term.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: 'rgba(255,255,255,0.75)' }} />
               </div>
-              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
-            </>
+              <div className="w-px h-5" style={{ background: '#a5b4fc' }} />
+            </div>
           )}
 
       </div>
