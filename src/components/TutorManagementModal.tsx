@@ -148,7 +148,7 @@ function AvailabilityGrid({ blocks, onChange }: { blocks: string[]; onChange: (b
 // ─── Tutor Row ────────────────────────────────────────────────────────────────
 
 const EMPTY_TUTOR: Omit<Tutor, 'id'> = {
-  name: '', subjects: [], cat: 'math', availability: [], availabilityBlocks: [],
+  name: '', subjects: [], cat: 'math', availability: [], availabilityBlocks: [], email: null,
 };
 
 function TutorRow({ tutor, onSave, onDelete }: { tutor: Tutor; onSave: (u: Tutor) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
