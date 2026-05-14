@@ -153,11 +153,15 @@ const EMPTY_TUTOR: Omit<Tutor, 'id'> = {
   name: '', subjects: [], cat: 'math', availability: [], availabilityBlocks: [], email: null,
 };
 
-function TutorRow({ tutor, onSave, onDelete, centerSubjects }: { tutor: Tutor; onSave: (u: Tutor) => Promise<void>; onDelete: (id: string) => Promise<void>; centerSubjects: string[] }) {
+function TutorRow({ tutor, onSave, onDelete, centerSubjects, termLabel, hasTermOverride }: { tutor: Tutor; onSave: (u: Tutor) => Promise<void>; onDelete: (id: string) => Promise<void>; centerSubjects: string[]; termLabel?: string; hasTermOverride?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<Tutor>(tutor);
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
+
+  // Reset draft when tutor availability changes (e.g. term switch forces remount via key,
+  // but also guard against prop updates).
+  React.useEffect(() => { setDraft(tutor); }, [tutor.id]);
 
   const dirty = JSON.stringify(tutor.availabilityBlocks) !== JSON.stringify(draft.availabilityBlocks) ||
     tutor.name !== draft.name || tutor.cat !== draft.cat ||
@@ -215,6 +219,16 @@ function TutorRow({ tutor, onSave, onDelete, centerSubjects }: { tutor: Tutor; o
             subjects={centerSubjects}
           />
 
+          {termLabel && (
+            <div className="rounded-lg px-3 py-2 flex items-center gap-2 text-[10px] font-semibold"
+              style={hasTermOverride
+                ? { background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d' }
+                : { background: '#fefce8', border: '1px solid #fde68a', color: '#854d0e' }}
+            >
+              <span>{hasTermOverride ? '✓ Term-specific availability saved' : 'No term-specific availability saved yet — showing defaults'}</span>
+              <span className="ml-auto font-bold">{termLabel}</span>
+            </div>
+          )}
           <AvailabilityGrid blocks={draft.availabilityBlocks}
             onChange={b => setDraft({ ...draft, availabilityBlocks: b, availability: Array.from(new Set(b.map(x => parseInt(x.split('-')[0])))).sort((a, b) => a - b) })}
           />
@@ -415,23 +429,26 @@ export function TutorManagementModal({
             <h2 className="text-lg font-bold" style={{ color: '#1c1917' }}>Manage Tutors</h2>
             <p className="text-xs mt-0.5" style={{ color: '#a8a29e' }}>{tutors.length} tutor{tutors.length !== 1 ? 's' : ''}</p>
             {selectedTermId && (
-              <p className="text-[10px] mt-1 font-semibold" style={{ color: '#6d28d9' }}>Editing availability for selected term</p>
+              <p className="text-[10px] mt-1 font-semibold" style={{ color: '#6d28d9' }}>Availability saved per-term · switch term to change</p>
             )}
           </div>
           <div className="flex items-center gap-2">
             {terms.length > 0 && (
-              <div className="relative">
-                <select
-                  value={selectedTermId}
-                  onChange={e => onSelectTerm(e.target.value)}
-                  className="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg text-[11px] font-semibold"
-                  style={{ border: '1px solid #d6d3d1', color: '#57534e', background: 'white' }}
-                >
-                  {terms.map(term => (
-                    <option key={term.id} value={term.id}>{term.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#a8a29e' }} />
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#a8a29e' }}>Term</span>
+                <div className="relative">
+                  <select
+                    value={selectedTermId}
+                    onChange={e => onSelectTerm(e.target.value)}
+                    className="appearance-none pl-2.5 pr-6 py-1.5 rounded-lg text-[11px] font-semibold"
+                    style={{ border: '1px solid #c4b5fd', color: '#6d28d9', background: '#f5f3ff' }}
+                  >
+                    {terms.map(term => (
+                      <option key={term.id} value={term.id}>{term.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: '#6d28d9' }} />
+                </div>
               </div>
             )}
             {!adding && (
@@ -501,7 +518,15 @@ export function TutorManagementModal({
           )}
 
           {effectiveTutors.map(t => (
-            <TutorRow key={t.id} tutor={t} onSave={handleSave} onDelete={handleDelete} centerSubjects={centerSubjects} />
+            <TutorRow
+              key={`${t.id}-${selectedTermId}`}
+              tutor={t}
+              onSave={handleSave}
+              onDelete={handleDelete}
+              centerSubjects={centerSubjects}
+              termLabel={terms.find(term => term.id === selectedTermId)?.name}
+              hasTermOverride={!!termAvailabilityByTutor[t.id]}
+            />
           ))}
 
           {tutors.length === 0 && !adding && (
