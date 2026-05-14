@@ -519,7 +519,7 @@ export function TutorManagementModal({
 
           {effectiveTutors.map(t => (
             <TutorRow
-              key={`${t.id}-${selectedTermId}`}
+              key={`${t.id}-${selectedTermId}-${loadingTermAvailability ? 'loading' : 'loaded'}`}
               tutor={t}
               onSave={handleSave}
               onDelete={handleDelete}

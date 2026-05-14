@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Trash2, UserPlus, ChevronDown, ChevronUp, AlertTriangle, CalendarOff, Plus, Loader2, Mail, Phone, Save, CheckSquare, Square } from 'lucide-react';
-import { SESSION_BLOCKS } from '@/components/constants';
+import { SESSION_BLOCKS, getSessionsForDay } from '@/components/constants';
+import type { SessionBlock, SessionTimesByDay } from '@/components/constants';
 import { supabase } from '@/lib/supabaseClient';
 import { DB, withCenter, withCenterPayload } from '@/lib/db';
 import type { Tutor } from '@/lib/useScheduleData';
@@ -32,6 +33,7 @@ type TimeOff = { id: string; tutor_id: string; date: string; note: string; };
 type TimeOffGroup = { ids: string[]; startDate: string; endDate: string; note: string; totalDays: number };
 type ScheduledStudent = { id: string; name: string; status: string; seriesId: string | null; };
 type ScheduledSession = { id: string; tutorId: string; date: string; time: string; students: ScheduledStudent[]; };
+type TermOption = { id: string; name: string; status: string; session_times_by_day?: SessionTimesByDay | null };
 
 const EMPTY_TUTOR: Omit<TutorWithContact, 'id'> = {
   name: '', subjects: [], cat: 'math', availability: [], availabilityBlocks: [],
@@ -203,11 +205,38 @@ function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChang
 }
 
 // ── Availability Grid ─────────────────────────────────────────────────────────
-function AvailabilityGrid({ blocks, onChange }: { blocks: string[]; onChange: (b: string[]) => void }) {
+function AvailabilityGrid({
+  blocks,
+  onChange,
+  sessionTimesByDay,
+}: {
+  blocks: string[];
+  onChange: (b: string[]) => void;
+  sessionTimesByDay?: SessionTimesByDay | null;
+}) {
   const toggle = (d: number, t: string) => {
     const key = `${d}-${t}`;
     onChange(blocks.includes(key) ? blocks.filter(b => b !== key) : [...blocks, key]);
   };
+
+  // Build per-day session blocks using the term's session times (falls back to default if null)
+  const dayBlocksMap: Record<number, SessionBlock[]> = {};
+  for (const d of ACTIVE_DAYS_INFO) {
+    dayBlocksMap[d.dow] = getSessionsForDay(d.dow, sessionTimesByDay);
+  }
+
+  // Union of all times across all days, sorted chronologically
+  const seenTimes = new Set<string>();
+  const rowDescriptors: { time: string; label: string; display: string }[] = [];
+  for (const d of ACTIVE_DAYS_INFO) {
+    for (const b of dayBlocksMap[d.dow]) {
+      if (!seenTimes.has(b.time)) {
+        seenTimes.add(b.time);
+        rowDescriptors.push({ time: b.time, label: b.label, display: b.display });
+      }
+    }
+  }
+  rowDescriptors.sort((a, b) => a.time.localeCompare(b.time));
 
   return (
     <div className="space-y-2">
@@ -223,19 +252,19 @@ function AvailabilityGrid({ blocks, onChange }: { blocks: string[]; onChange: (b
             </tr>
           </thead>
           <tbody>
-            {SESSION_BLOCKS.map((block, bi) => (
-              <tr key={block.id} style={{ borderBottom: bi < SESSION_BLOCKS.length - 1 ? '1px solid #e2e8f0' : 'none', background: bi % 2 === 0 ? 'white' : '#f8fafc' }}>
+            {rowDescriptors.map((row, bi) => (
+              <tr key={row.time} style={{ borderBottom: bi < rowDescriptors.length - 1 ? '1px solid #e2e8f0' : 'none', background: bi % 2 === 0 ? 'white' : '#f8fafc' }}>
                 <td className="border-r border-[#e2e8f0] px-2 py-2">
-                  <p className="text-[10px] font-black text-[#0f172a] leading-none">{block.label}</p>
-                  <p className="text-[9px] text-[#94a3b8] mt-0.5">{block.display}</p>
+                  <p className="text-[10px] font-black text-[#0f172a] leading-none">{row.label}</p>
+                  <p className="text-[9px] text-[#94a3b8] mt-0.5">{row.display}</p>
                 </td>
                 {ACTIVE_DAYS_INFO.map(d => {
-                  const applicable = block.days.includes(d.dow);
-                  const active = applicable && blocks.includes(`${d.dow}-${block.time}`);
+                  const applicable = dayBlocksMap[d.dow].some(b => b.time === row.time);
+                  const active = applicable && blocks.includes(`${d.dow}-${row.time}`);
                   return (
                     <td key={d.dow} className="p-1 text-center">
                       {applicable ? (
-                        <button type="button" onClick={() => toggle(d.dow, block.time)}
+                        <button type="button" onClick={() => toggle(d.dow, row.time)}
                           className="mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-all"
                           style={{
                             background: active ? '#4f46e5' : 'white',
@@ -496,6 +525,9 @@ function TutorDetailPanel({
   onSave,
   onDelete,
   onRefetch,
+  selectedTermId,
+  termAvailabilityBlocks,
+  sessionTimesByDay,
 }: {
   tutor: TutorWithContact;
   timeOffList: TimeOff[];
@@ -503,25 +535,40 @@ function TutorDetailPanel({
   onSave: (u: TutorWithContact) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRefetch: () => Promise<void>;
+  selectedTermId: string;
+  termAvailabilityBlocks: string[] | undefined;
+  sessionTimesByDay: SessionTimesByDay | null;
 }) {
   const [tab, setTab] = useState<'details' | 'timeoff'>('details');
   const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState<TutorWithContact>(tutor);
+  const effectiveBlocks = termAvailabilityBlocks ?? tutor.availabilityBlocks;
+  const [draft, setDraft] = useState<TutorWithContact>({
+    ...tutor,
+    availabilityBlocks: effectiveBlocks,
+    availability: Array.from(new Set(effectiveBlocks.map(b => parseInt(b.split('-')[0])))).sort((a, b) => a - b),
+  });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    setDraft(tutor);
+    const blocks = termAvailabilityBlocks ?? tutor.availabilityBlocks;
+    setDraft({
+      ...tutor,
+      availabilityBlocks: blocks,
+      availability: Array.from(new Set(blocks.map(b => parseInt(b.split('-')[0])))).sort((a, b) => a - b),
+    });
     setIsEditing(false);
     setConfirmDelete(false);
     setTab('details');
   }, [tutor]);
 
+  const hasTermOverride = termAvailabilityBlocks !== undefined;
+
   const dirty =
     tutor.name !== draft.name || tutor.cat !== draft.cat ||
     tutor.email !== draft.email || tutor.phone !== draft.phone ||
     JSON.stringify(tutor.subjects) !== JSON.stringify(draft.subjects) ||
-    JSON.stringify(tutor.availabilityBlocks) !== JSON.stringify(draft.availabilityBlocks);
+    JSON.stringify(effectiveBlocks) !== JSON.stringify(draft.availabilityBlocks);
 
   const timeOffCount = timeOffList.filter(t => t.tutor_id === tutor.id).length;
   const availabilitySummary = summarizeAvailability(draft.availabilityBlocks);
@@ -688,9 +735,15 @@ function TutorDetailPanel({
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                {selectedTermId && (
+                  <div className={`mb-3 rounded border px-3 py-2 text-[11px] font-medium ${hasTermOverride ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                    {hasTermOverride ? '✓ Showing term-specific availability' : 'No term override yet — saving will create one for this term'}
+                  </div>
+                )}
                 {isEditing ? (
                   <AvailabilityGrid
                     blocks={draft.availabilityBlocks}
+                    sessionTimesByDay={sessionTimesByDay}
                     onChange={blocks => setDraft({
                       ...draft,
                       availabilityBlocks: blocks,
@@ -1084,6 +1137,10 @@ export default function TutorManagementPage() {
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [activeTutorId, setActiveTutorId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [terms, setTerms] = useState<TermOption[]>([]);
+  const [selectedTermId, setSelectedTermId] = useState<string>('');
+  const [termAvailabilityByTutor, setTermAvailabilityByTutor] = useState<Record<string, string[]>>({});
+  const [loadingTermAvailability, setLoadingTermAvailability] = useState(false);
   const [sendScheduleOpen, setSendScheduleOpen] = useState(false);
   const [sendWeekDate, setSendWeekDate] = useState(() => getMondayOfCurrentWeek());
   const [sendingSched, setSendingSched] = useState(false);
@@ -1135,6 +1192,37 @@ export default function TutorManagementPage() {
   useEffect(() => { fetchAll(); }, []);
 
   useEffect(() => {
+    fetch('/api/terms', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        const rows: TermOption[] = Array.isArray(d?.terms) ? d.terms : [];
+        setTerms(rows);
+        const active = rows.find(t => (t.status ?? '').trim().toLowerCase() === 'active');
+        if (active) setSelectedTermId(active.id);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTermId) { setTermAvailabilityByTutor({}); return; }
+    setLoadingTermAvailability(true);
+    fetch(`/api/tutor-availability?termId=${encodeURIComponent(selectedTermId)}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => {
+        const rows = Array.isArray(d?.overrides) ? d.overrides : [];
+        const map = rows.reduce((acc: Record<string, string[]>, row: any) => {
+          if (row?.tutor_id && Array.isArray(row?.availability_blocks)) {
+            acc[row.tutor_id] = row.availability_blocks;
+          }
+          return acc;
+        }, {});
+        setTermAvailabilityByTutor(map);
+      })
+      .catch(() => setTermAvailabilityByTutor({}))
+      .finally(() => setLoadingTermAvailability(false));
+  }, [selectedTermId]);
+
+  useEffect(() => {
     if (tutors.length === 0) {
       setActiveTutorId(null);
       return;
@@ -1147,13 +1235,27 @@ export default function TutorManagementPage() {
 
   const handleSave = async (updated: TutorWithContact) => {
     setError(null);
-    const { error } = await withCenter(supabase.from(TUTORS).update({
+    const baseUpdate: Record<string, unknown> = {
       name: updated.name, subjects: updated.subjects, cat: updated.cat,
-      availability: updated.availability, availability_blocks: updated.availabilityBlocks,
       email: updated.email || null, phone: updated.phone || null,
-    })).eq('id', updated.id);
-    if (error) setError(error.message);
-    else fetchAll();
+    };
+    if (!selectedTermId) {
+      baseUpdate.availability = updated.availability;
+      baseUpdate.availability_blocks = updated.availabilityBlocks;
+    }
+    const { error } = await withCenter(supabase.from(TUTORS).update(baseUpdate)).eq('id', updated.id);
+    if (error) { setError(error.message); return; }
+    if (selectedTermId) {
+      const res = await fetch('/api/tutor-availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tutorId: updated.id, termId: selectedTermId, availabilityBlocks: updated.availabilityBlocks }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(payload?.error || 'Failed to save term availability'); return; }
+      setTermAvailabilityByTutor(prev => ({ ...prev, [updated.id]: updated.availabilityBlocks }));
+    }
+    fetchAll();
   };
 
   const handleDelete = async (id: string) => {
@@ -1208,6 +1310,7 @@ export default function TutorManagementPage() {
   };
 
   const allSelected = tutors.length > 0 && tutors.every(t => selected.has(t.id));
+  const selectedTermSessionTimes = terms.find(t => t.id === selectedTermId)?.session_times_by_day ?? null;
   const tutorsWithEmail = tutors.filter(t => !!t.email);
   const tutorsWithContact = tutors.filter(t => t.email || t.phone).length;
   const tutorsWithTimeOff = new Set(timeOffList.map(entry => entry.tutor_id)).size;
@@ -1427,6 +1530,31 @@ export default function TutorManagementPage() {
           </div>
         )}
 
+        {/* Term availability scope selector */}
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Term</span>
+          <select
+            value={selectedTermId}
+            onChange={e => setSelectedTermId(e.target.value)}
+            className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+          >
+            <option value="">Default (no term override)</option>
+            {terms.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.name}{(t.status ?? '').trim().toLowerCase() === 'active' ? ' · Active' : (t.status ?? '').trim().toLowerCase() === 'upcoming' ? ' · Upcoming' : ''}
+              </option>
+            ))}
+          </select>
+          {loadingTermAvailability && <Loader2 size={12} className="animate-spin text-slate-400" />}
+          {selectedTermId && !loadingTermAvailability && (
+            <span className="text-[11px] text-slate-500">
+              {Object.keys(termAvailabilityByTutor).length > 0
+                ? `${Object.keys(termAvailabilityByTutor).length} tutor${Object.keys(termAvailabilityByTutor).length === 1 ? '' : 's'} with term overrides`
+                : 'No term overrides saved yet'}
+            </span>
+          )}
+        </div>
+
         {/* Tutors list */}
         {tutors.length === 0 && !adding ? (
           <div className="rounded-xl bg-white py-20 text-center shadow-[0_16px_32px_rgba(15,23,42,0.07)]" style={{ border: '1.5px dashed #cbd5e1' }}>
@@ -1497,12 +1625,16 @@ export default function TutorManagementPage() {
             <div className="min-h-0">
               {activeTutor ? (
                 <TutorDetailPanel
+                  key={`${activeTutor.id}-${selectedTermId}${loadingTermAvailability ? '-loading' : ''}`}
                   tutor={activeTutor}
                   timeOffList={timeOffList}
                   scheduledSessions={scheduledSessions}
                   onSave={handleSave}
                   onDelete={handleDelete}
                   onRefetch={fetchAll}
+                  selectedTermId={selectedTermId}
+                  termAvailabilityBlocks={termAvailabilityByTutor[activeTutor.id]}
+                  sessionTimesByDay={selectedTermSessionTimes}
                 />
               ) : (
                 <div className="rounded-[28px] border border-[#cbd5e1] bg-white px-6 py-16 text-center shadow-[0_24px_60px_rgba(15,23,42,0.12)]">

@@ -33,6 +33,7 @@ type ReminderStudent = {
 
 type ReminderEntry = {
   id: string;
+  student_id?: string;
   reminder_sent?: boolean;
   confirmation_token?: string | null;
   [STUDENTS]?: ReminderStudent | ReminderStudent[];
@@ -166,7 +167,7 @@ async function sendProtectedMail({
   const recipient = guard.mode === "live" ? to : guard.redirectTo!;
 
   await transporter.sendMail({
-    from: `"Prep Center" <${process.env.GOOGLE_EMAIL}>`,
+    from: `"${process.env.EMAIL_FROM_NAME}" <${process.env.GOOGLE_EMAIL}>`,
     to: recipient,
     subject,
     text,
@@ -311,11 +312,36 @@ export async function GET() {
       supabase
         .from(SESSIONS)
         .select(`id, session_date, time,
-          ${SS} ( id, status, reminder_sent, confirmation_token, topic,
+          ${SS} ( id, student_id, status, reminder_sent, confirmation_token, topic,
             ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ) )`)
         .in("session_date", [todayStr, tomorrowStr])
     ) as any);
     if (error) throw error;
+
+    // Build a set of enrolled student IDs for the active term (if one exists).
+    // If no active term is found, enrolled set is null and all students are eligible.
+    let enrolledStudentIds: Set<string> | null = null;
+    try {
+      const { data: termRows } = await withCenter(
+        supabase.from(DB.terms).select('id, status, start_date, end_date').order('start_date', { ascending: false })
+      );
+      const activeTerm = (termRows ?? []).find((t: any) =>
+        (t.status ?? '').trim().toLowerCase() === 'active'
+      ) ?? (termRows ?? []).find((t: any) => {
+        const s = t.start_date ?? '';
+        const e = t.end_date ?? '';
+        return s && e && s <= todayStr && todayStr <= e;
+      });
+      if (activeTerm?.id) {
+        const { data: enrollRows } = await withCenter(
+          supabase.from(TERM_ENROLLMENTS).select('student_id').eq('term_id', activeTerm.id)
+        );
+        enrolledStudentIds = new Set((enrollRows ?? []).map((r: any) => r.student_id));
+      }
+    } catch {
+      // If we can't load term data, fall back to sending all reminders.
+      enrolledStudentIds = null;
+    }
 
     if (guard.mode === "disabled") {
       return NextResponse.json({
@@ -334,6 +360,10 @@ export async function GET() {
     for (const session of sessions ?? []) {
       for (const entry of (session[SS] as ReminderEntry[] | undefined) ?? []) {
         if (entry.reminder_sent) continue;
+        // Skip if an active term exists and this student is not enrolled in it.
+        if (enrolledStudentIds !== null && entry.student_id && !enrolledStudentIds.has(entry.student_id)) {
+          continue;
+        }
         const result = await sendReminderForEntry({ entry, session, settings, transporter, guard, appBaseUrl });
         if (!result.skipped) {
           sent += result.sent ?? 0;
