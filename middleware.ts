@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const CORRECT_PASSWORD = process.env.APP_PASSWORD || 'password123';
+const CORRECT_PASSWORD = process.env.SITE_PASSWORD || 'password123';
 
 export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -10,9 +10,12 @@ export function middleware(request: NextRequest) {
   if (
     pathname === '/login' ||
     pathname === '/confirm' ||
+    pathname.startsWith('/enroll') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/confirm') ||
-    pathname.startsWith('/api/enrollment-form')
+    pathname.startsWith('/api/enrollment-form') ||
+    pathname.startsWith('/api/student-availability') ||
+    pathname.startsWith('/api/term-enrollment')
 
 
   ) {

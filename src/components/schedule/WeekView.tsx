@@ -105,6 +105,8 @@ export function WeekView({
   const [topicDropdownCurrent, setTopicDropdownCurrent] = useState('');
   const [topicDropdownTutorRowId, setTopicDropdownTutorRowId] = useState<string | null>(null);
   const [slotFilterQuery, setSlotFilterQuery] = useState('');
+  // Optimistic status overrides keyed by session-student rowId so the checkbox flips instantly.
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
 
   const normalizedSlotFilter = slotFilterQuery.trim().toLowerCase();
   const hasSlotFilter = normalizedSlotFilter.length > 0;
@@ -745,16 +747,24 @@ export function WeekView({
                                                 <button
                                                   onClick={async e => {
                                                     e.stopPropagation();
-                                                    const next = student.status === 'present' ? 'scheduled' : 'present';
-                                                    await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
-                                                    logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' });
-                                                    refetch();
+                                                    const rowId = student.rowId || student.id;
+                                                    const curStatus = optimisticStatuses[rowId] ?? student.status;
+                                                    const next = curStatus === 'present' ? 'scheduled' : 'present';
+                                                    setOptimisticStatuses(prev => ({ ...prev, [rowId]: next }));
+                                                    try {
+                                                      await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
+                                                      logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' }).catch(() => {});
+                                                      refetch();
+                                                    } catch {
+                                                      // Roll back on error
+                                                      setOptimisticStatuses(prev => ({ ...prev, [rowId]: curStatus }));
+                                                    }
                                                   }}
                                                   className="shrink-0 w-4 h-4 rounded-md flex items-center justify-center transition-all"
-                                                  style={student.status === 'present'
+                                                  style={(optimisticStatuses[student.rowId || student.id] ?? student.status) === 'present'
                                                     ? { background: '#16a34a', border: '1.5px solid #16a34a' }
                                                     : { background: 'white', border: '1.5px solid #d1d5db' }}>
-                                                  {student.status === 'present' && <Check size={9} strokeWidth={3} color="white" />}
+                                                  {(optimisticStatuses[student.rowId || student.id] ?? student.status) === 'present' && <Check size={9} strokeWidth={3} color="white" />}
                                                 </button>
                                                 <button
                                                   title={removingId === (student.rowId || student.id) ? 'Tap again to confirm' : 'Remove student'}
@@ -931,16 +941,23 @@ export function WeekView({
                                               <button
                                                 onClick={async e => {
                                                   e.stopPropagation();
-                                                  const next = student.status === 'present' ? 'scheduled' : 'present';
-                                                  await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
-                                                  logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' });
-                                                  refetch();
+                                                  const rowId = student.rowId || student.id;
+                                                  const curStatus = optimisticStatuses[rowId] ?? student.status;
+                                                  const next = curStatus === 'present' ? 'scheduled' : 'present';
+                                                  setOptimisticStatuses(prev => ({ ...prev, [rowId]: next }));
+                                                  try {
+                                                    await updateAttendance({ sessionId: session.id, studentId: student.id, status: next });
+                                                    logEvent('attendance_marked', { status: next, studentName: student.name, source: 'week_grid' }).catch(() => {});
+                                                    refetch();
+                                                  } catch {
+                                                    setOptimisticStatuses(prev => ({ ...prev, [rowId]: curStatus }));
+                                                  }
                                                 }}
                                                 className="shrink-0 w-3 h-3 rounded flex items-center justify-center"
-                                                style={student.status === 'present'
+                                                style={(optimisticStatuses[student.rowId || student.id] ?? student.status) === 'present'
                                                   ? { background: '#16a34a', border: '1.5px solid #16a34a' }
                                                   : { background: 'white', border: '1.5px solid #d1d5db' }}>
-                                                {student.status === 'present' && <Check size={7} strokeWidth={3} color="white" />}
+                                                {(optimisticStatuses[student.rowId || student.id] ?? student.status) === 'present' && <Check size={7} strokeWidth={3} color="white" />}
                                               </button>
                                               <button
                                                 onClick={async e => {

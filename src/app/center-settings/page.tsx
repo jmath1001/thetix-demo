@@ -153,10 +153,6 @@ export default function CenterSettingsPage() {
   const [newExceptionClosed, setNewExceptionClosed] = useState(true)
 
   const [tab, setTab] = useState<'general' | 'terms' | 'notifications' | 'portals' | 'subjects'>('general')
-  // Global session times — apply to all terms
-  const [globalSessionTimesByDay, setGlobalSessionTimesByDay] = useState<Record<string, string[]>>(DEFAULT_SESSION_TIMES_BY_DAY)
-  const [globalSessionTimesSaving, setGlobalSessionTimesSaving] = useState(false)
-  const [globalNewTimeByDay, setGlobalNewTimeByDay] = useState<Record<string, { start: string; end: string }>>({})
   const [centerSubjects, setCenterSubjects] = useState<string[]>([])
   const [subjectsLoading, setSubjectsLoading] = useState(true)
   const [subjectsSaving, setSubjectsSaving] = useState(false)
@@ -181,12 +177,6 @@ export default function CenterSettingsPage() {
         ).maybeSingle()
 
         if (readErr) throw readErr
-
-        // Load global session times
-        const stbd = (data as any)?.session_times_by_day
-        if (stbd && typeof stbd === 'object' && !Array.isArray(stbd)) {
-          if (!cancelled) setGlobalSessionTimesByDay(stbd as Record<string, string[]>)
-        }
 
         if (!data) {
           const { data: inserted, error: insertErr } = await supabase
@@ -344,7 +334,6 @@ export default function CenterSettingsPage() {
     // still works before the migration is run in Supabase.
     const extendedPayload = {
       center_name: centerName.trim() || DEFAULTS.center_name,
-      session_times_by_day: globalSessionTimesByDay,
       center_short_name: centerShortName.trim() || null,
       center_email: centerEmail.trim() || null,
       center_phone: centerPhone.trim() || null,
@@ -604,69 +593,6 @@ export default function CenterSettingsPage() {
                 </div>
               </div>
 
-              {/* ── Global Session Times ── */}
-              <div className="border-t border-slate-100 pt-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-800">Session Times</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">These session slots apply globally across all terms.</p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!rowId) return
-                      setGlobalSessionTimesSaving(true)
-                      setError(null)
-                      try {
-                        const { error: upErr } = await withCenter(
-                          supabase.from(DB.centerSettings).update({ session_times_by_day: globalSessionTimesByDay })
-                        ).eq('id', rowId)
-                        if (upErr) throw upErr
-                        setSuccess('Session times saved.')
-                      } catch (err: any) {
-                        setError(err?.message ?? 'Failed to save session times')
-                      } finally {
-                        setGlobalSessionTimesSaving(false)
-                      }
-                    }}
-                    disabled={globalSessionTimesSaving}
-                    className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-                  >
-                    {globalSessionTimesSaving ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><Save size={11} /> Save Times</>}
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {ALL_DAYS.map(({ dow, label }) => {
-                    const slots = globalSessionTimesByDay[dow] ?? []
-                    const pending = globalNewTimeByDay[dow] ?? { start: '', end: '' }
-                    return (
-                      <div key={dow} className="rounded border border-slate-200 bg-slate-50 p-3">
-                        <p className="mb-2 text-xs font-bold text-slate-700">{label}</p>
-                        {slots.length === 0 && <p className="text-[11px] italic text-slate-400">No sessions — day is closed.</p>}
-                        {slots.map((slot, slotIdx) => {
-                          const { start, end } = parseSlot(slot)
-                          return (
-                            <div key={slot} className="mb-1 flex items-center gap-2">
-                              <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-500">Session {slotIdx + 1}</span>
-                              <input type="time" value={start} onChange={e => { const newSlot = end ? `${e.target.value}-${end}` : e.target.value; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).map(s => s === slot ? newSlot : s) })) }} className="rounded border border-slate-200 px-2 py-1 text-xs" />
-                              <span className="text-xs text-slate-400">→</span>
-                              <input type="time" value={end} onChange={e => { const newSlot = `${start}-${e.target.value}`; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).map(s => s === slot ? newSlot : s) })) }} className="rounded border border-slate-200 px-2 py-1 text-xs" />
-                              <span className="w-32 shrink-0 text-[11px] text-slate-400">{start && end ? `${fmt12(start)} – ${fmt12(end)}` : ''}</span>
-                              <button type="button" onClick={() => setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).filter(s => s !== slot) }))} className="text-slate-300 hover:text-red-500 text-sm leading-none">&times;</button>
-                            </div>
-                          )
-                        })}
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-400">New</span>
-                          <input type="time" value={pending.start} onChange={e => setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: e.target.value, end: prev[dow]?.end ?? '' } }))} className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs" />
-                          <span className="text-xs text-slate-400">→</span>
-                          <input type="time" value={pending.end} onChange={e => setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: prev[dow]?.start ?? '', end: e.target.value } }))} className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs" />
-                          <button type="button" disabled={!pending.start || !pending.end} onClick={() => { if (!pending.start || !pending.end) return; const newSlot = `${pending.start}-${pending.end}`; if (slots.includes(newSlot)) return; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: [...(prev[dow] ?? []), newSlot].sort() })); setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: '', end: '' } })) }} className="rounded bg-slate-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-40">+ Add</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
             </div>
           )}
 

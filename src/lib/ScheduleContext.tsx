@@ -1,5 +1,5 @@
 'use client';
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { getWeekStart, getWeekDates, toISODate, getCentralTimeNow } from '@/lib/useScheduleData';
 
 interface ScheduleContextValue {
@@ -21,6 +21,22 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(getCentralTimeNow()));
   const [todayView, setTodayView] = useState(false);
   const [selectedTutorFilter, setSelectedTutorFilter] = useState<string | null>(null);
+
+  // On first client mount, restore the saved week from sessionStorage.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('scheduleWeekStart');
+      if (saved) {
+        const d = new Date(saved + 'T00:00:00');
+        if (!isNaN(d.getTime())) setWeekStart(getWeekStart(d));
+      }
+    } catch {}
+  }, []);
+
+  // Persist weekStart whenever it changes.
+  useEffect(() => {
+    try { sessionStorage.setItem('scheduleWeekStart', toISODate(weekStart)); } catch {}
+  }, [weekStart]);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const isCurrentWeek = toISODate(weekStart) === toISODate(getWeekStart(new Date()));

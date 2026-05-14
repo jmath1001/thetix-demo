@@ -632,16 +632,37 @@ async function _adjustHoursForAttendanceChange({
 export async function updateAttendance({ sessionId, studentId, status }: {
   sessionId: string; studentId: string; status: 'scheduled' | 'present' | 'no-show'
 }) {
-  // Fetch current status so we can detect present-boundary crossings for hours tracking.
-  const { data: current } = await supabase
-    .from(SS).select('status').eq('session_id', sessionId).eq('student_id', studentId).single()
+  // Fetch current SS status and student hours in parallel — both are independent reads.
+  const [{ data: current }, { data: student }] = await Promise.all([
+    supabase.from(SS).select('status').eq('session_id', sessionId).eq('student_id', studentId).single(),
+    withCenter(supabase.from(STUDENTS).select('hours_left, session_hours').eq('id', studentId)).single(),
+  ])
   const prevStatus = current?.status ?? null
 
-  const { error } = await supabase.from(SS).update({ status })
-    .eq('session_id', sessionId).eq('student_id', studentId)
-  if (error) throw error
+  // Determine hours delta before any write.
+  const wasPresent     = prevStatus === 'present' || prevStatus === 'confirmed'
+  const isPresent      = status === 'present'
+  const hoursPerSession = typeof student?.session_hours === 'number' && student.session_hours > 0 ? student.session_hours : 2
+  const needsHoursUpdate = wasPresent !== isPresent && student && typeof student.hours_left === 'number'
+  const newHours = needsHoursUpdate ? Math.max(0, student!.hours_left + (isPresent ? -hoursPerSession : hoursPerSession)) : null
 
-  await _adjustHoursForAttendanceChange({ studentId, prevStatus, newStatus: status })
+  // Run status update and (if needed) hours update in parallel.
+  const statusWrite = supabase.from(SS).update({ status }).eq('session_id', sessionId).eq('student_id', studentId)
+  const hoursWrite  = needsHoursUpdate && newHours !== null
+    ? withCenter(supabase.from(STUDENTS).update({ hours_left: newHours }).eq('id', studentId))
+    : null
+
+  const [statusResult] = await Promise.all([statusWrite, ...(hoursWrite ? [hoursWrite] : [])])
+  if (statusResult.error) throw statusResult.error
+
+  // Fire-and-forget the audit log — never block the UI on this.
+  if (needsHoursUpdate) {
+    logEvent('hours_adjusted', {
+      studentId, prevHours: student!.hours_left, newHours,
+      delta: isPresent ? -hoursPerSession : hoursPerSession,
+      reason: isPresent ? 'attendance_marked_present' : 'attendance_unmarked',
+    }).catch(() => {})
+  }
 }
 
 export async function correctSessionRecord({
