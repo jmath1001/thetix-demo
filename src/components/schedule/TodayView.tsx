@@ -72,6 +72,8 @@ interface TodayViewProps {
     toTime: string;
   }) => Promise<void>;
   sessionTimesByDay?: SessionTimesByDay | null;
+  termName?: string | null;
+  dateExceptions?: Array<{ date: string; closed: boolean; label?: string }> | null;
 }
 
 
@@ -348,6 +350,8 @@ export function TodayView({
   onDateChange,
   onMoveStudent,
   sessionTimesByDay,
+  termName,
+  dateExceptions,
 }: TodayViewProps) {
 
   // one InlineForm per slot key
@@ -1024,6 +1028,24 @@ export function TodayView({
               style={{ color: '#374151', cursor: 'pointer' }} />
           </div>
         </div>
+
+        {/* Holiday / special day banner */}
+        {(() => {
+          const ex = dateExceptions?.find(e => e.date === todayIso) ?? null
+          if (!ex) return null
+          return (
+            <div className="mb-3 shrink-0 rounded-xl border px-4 py-3 flex items-center gap-3"
+              style={{ background: ex.closed ? '#fef2f2' : '#fffbeb', borderColor: ex.closed ? '#fca5a5' : '#fcd34d' }}>
+              <span className="text-lg">{ex.closed ? '🚫' : '⚠️'}</span>
+              <div>
+                <p className="text-sm font-bold" style={{ color: ex.closed ? '#991b1b' : '#92400e' }}>
+                  {ex.closed ? 'Closed' : 'Special Day'}{ex.label ? ` — ${ex.label}` : ''}
+                </p>
+                {ex.closed && <p className="text-xs mt-0.5" style={{ color: '#b91c1c' }}>No sessions scheduled for this date.</p>}
+              </div>
+            </div>
+          )
+        })()}
         <div className="md:hidden mb-3 px-3 py-2 rounded-xl"
           style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)', border: '1.5px solid #cbd5e1' }}>
           <p className="text-[10px] font-black uppercase tracking-[0.11em]" style={{ color: '#64748b' }}>Students / Session</p>
@@ -1091,6 +1113,7 @@ export function TodayView({
                         <th className="px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider"
                           style={{ color: 'rgba(255,255,255,0.5)', borderRight: '1px solid rgba(255,255,255,0.08)', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#1f2937' }}>
                           Instructor
+                          {termName && <div style={{ color: '#fbbf24', fontSize: 9, fontWeight: 700, marginTop: 2, textTransform: 'none', letterSpacing: 0 }}>{termName}</div>}
                         </th>
                         {filteredDaySessions.map(block => (
                           <th key={block.id} className="px-4 py-2.5 text-center"

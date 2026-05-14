@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Save, X } from 'lucide-react'
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants'
 
-const ALL_SUBJECTS = [
+const DEFAULT_SUBJECTS = [
   'Algebra', 'Geometry', 'Precalculus', 'Calculus', 'Statistics',
   'IB Math', 'Physics', 'Chemistry', 'Biology', 'Psychology',
   'SAT Math', 'ACT Math', 'ACT Science', 'ACT English', 'SAT R/W',
@@ -72,10 +72,23 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
   const [originalAvailability, setOriginalAvailability] = useState<string[]>([])
   const [hoursPurchased, setHoursPurchased] = useState(0)
   const [originalHoursPurchased, setOriginalHoursPurchased] = useState(0)
+  const [sessionHours, setSessionHours] = useState<number>(typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2)
   const [isSavingHours, setIsSavingHours] = useState(false)
+  const [termEnrollmentExists, setTermEnrollmentExists] = useState(false)
+  const [isRevertingHours, setIsRevertingHours] = useState(false)
   const [isEditingTerm, setIsEditingTerm] = useState(false)
   const [isSavingTerm, setIsSavingTerm] = useState(false)
   const [termDraft, setTermDraft] = useState({ id: '', name: '', start_date: '', end_date: '', status: 'upcoming' })
+  const [centerSubjects, setCenterSubjects] = useState<string[]>(DEFAULT_SUBJECTS)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/center-subjects')
+      .then(r => r.json())
+      .then(d => { if (!cancelled && Array.isArray(d?.subjects)) setCenterSubjects(d.subjects) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const AVAILABILITY_DAYS = [
     { dow: 1, label: 'Mon' },
@@ -155,7 +168,7 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
     ? editSubjects.join(', ')
     : 'Not set'
 
-  const filteredSubjects = ALL_SUBJECTS.filter(s => {
+  const filteredSubjects = centerSubjects.filter(s => {
     if (editSubjects.includes(s)) return false
     if (!subjectSearch.trim()) return true
     return s.toLowerCase().includes(subjectSearch.toLowerCase())
@@ -163,7 +176,7 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
 
   const currentAvailabilityCount = editAvailability.length
   const hasAvailabilityChanges = JSON.stringify([...editAvailability].sort()) !== JSON.stringify([...originalAvailability].sort())
-  const hasHoursChanges = Number(hoursPurchased || 0) !== Number(originalHoursPurchased || 0)
+  const hasHoursChanges = !termEnrollmentExists || Number(hoursPurchased || 0) !== Number(originalHoursPurchased || 0)
 
   useEffect(() => {
     let cancelled = false
@@ -220,15 +233,18 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
         const nextAvailability = Array.isArray(enrollment?.availability_blocks)
           ? enrollment.availability_blocks
           : fallbackAvailability
-        const nextHours = Number(enrollment?.hours_purchased ?? student.hours_left ?? 0)
+        const nextHours = enrollment
+          ? Number(enrollment.hours_purchased ?? 0)
+          : Number(student.hours_left ?? 0)
 
         if (cancelled) return
+        setTermEnrollmentExists(!!enrollment)
         setEditSubjects(nextSubjects)
         setOriginalSubjects(nextSubjects)
         setEditAvailability(nextAvailability)
         setOriginalAvailability(nextAvailability)
         setHoursPurchased(nextHours)
-        setOriginalHoursPurchased(nextHours)
+        setOriginalHoursPurchased(enrollment ? nextHours : -1)
       } catch (err) {
         console.error('Failed to load term enrollment:', err)
       }
@@ -386,9 +402,9 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
         body: JSON.stringify({
           studentId: student.id,
           termId: selectedTermId,
-          subjects: editSubjects,
-          availabilityBlocks: editAvailability,
           hoursPurchased: Number(hoursPurchased || 0),
+          sessionHours,
+          syncStudentBalance: true,
         }),
       })
 
@@ -402,6 +418,7 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
 
       setHoursPurchased(nextHours)
       setOriginalHoursPurchased(nextHours)
+      setTermEnrollmentExists(true)
       if (onSave) {
         onSave({
           ...student,
@@ -415,6 +432,44 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
       alert((err as Error).message || 'Failed to save term hours.')
     } finally {
       setIsSavingHours(false)
+    }
+  }
+
+  const handleRevertHours = async () => {
+    if (!selectedTermId || !termEnrollmentExists) return
+    setIsRevertingHours(true)
+    try {
+      // Re-fetch the enrollment to get hours_purchased, then reset the student balance
+      const res = await fetch(`/api/term-enrollment?studentId=${encodeURIComponent(student.id)}&termId=${encodeURIComponent(selectedTermId)}`)
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(payload?.error || 'Failed to load enrollment')
+      const purchased = typeof payload?.enrollment?.hours_purchased === 'number' ? payload.enrollment.hours_purchased : null
+      if (purchased === null) throw new Error('No hours_purchased found for this enrollment')
+      // Reset balance to purchased amount
+      const resetRes = await fetch('/api/term-enrollment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: student.id,
+          termId: selectedTermId,
+          hoursPurchased: purchased,
+          syncStudentBalance: true,
+        }),
+      })
+      if (!resetRes.ok) {
+        const e = await resetRes.json().catch(() => ({}))
+        throw new Error(e?.error || 'Failed to revert')
+      }
+      setHoursPurchased(purchased)
+      setOriginalHoursPurchased(purchased)
+      if (onSave) {
+        onSave({ ...student, hours_left: purchased, selected_term_id: selectedTermId, selectedTermId })
+      }
+    } catch (err) {
+      console.error('Error reverting hours:', err)
+      alert((err as Error).message || 'Failed to revert hours.')
+    } finally {
+      setIsRevertingHours(false)
     }
   }
 
@@ -741,7 +796,7 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
           <div className="pt-2 border-t border-gray-200 space-y-2">
             <div>
               <p className="text-xs font-bold text-gray-500 uppercase mb-1">Hours Purchased for Selected Term</p>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="number"
                   min={0}
@@ -752,12 +807,37 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
                 <button
                   type="button"
                   onClick={handleSaveHours}
-                  disabled={!selectedTermId || !hasHoursChanges || isSavingHours}
+                  disabled={!selectedTermId || !hasHoursChanges || isSavingHours || isRevertingHours}
                   className="rounded bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50"
                 >
-                  {isSavingHours ? 'Saving...' : 'Save Hours'}
+                  {isSavingHours ? 'Saving...' : 'Save & Set Balance'}
                 </button>
+                {termEnrollmentExists && (
+                  <button
+                    type="button"
+                    onClick={handleRevertHours}
+                    disabled={isSavingHours || isRevertingHours}
+                    title="Reset the student's current balance back to the purchased amount"
+                    className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    {isRevertingHours ? 'Reverting...' : 'Revert Balance'}
+                  </button>
+                )}
               </div>
+              <p className="mt-1 text-[10px] text-gray-400">Saving will also reset the student's running balance to this number.</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">Hours per Session</p>
+              <div className="flex gap-1 p-0.5 rounded-lg border border-gray-200 bg-gray-50 w-fit">
+                {[1, 2].map(h => (
+                  <button key={h} type="button" onClick={() => setSessionHours(h)}
+                    className="px-4 py-1.5 rounded-md text-xs font-bold transition-all"
+                    style={sessionHours === h ? { background: '#7c3aed', color: '#fff' } : { color: '#6b7280' }}>
+                    {h}h
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[10px] text-gray-400">Deducted per attended session. Save & Set Balance to apply.</p>
             </div>
             {student.tutor && <p><strong className="text-xs font-bold text-gray-500 uppercase">Tutor:</strong> <span className="text-sm text-gray-900">{student.tutor}</span></p>}
             {student.day && <p><strong className="text-xs font-bold text-gray-500 uppercase">Day:</strong> <span className="text-sm text-gray-900">{student.day}</span></p>}

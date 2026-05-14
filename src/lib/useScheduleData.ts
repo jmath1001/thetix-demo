@@ -32,6 +32,7 @@ export type Student = {
   subject?: string | null
   grade: string | null
   hoursLeft: number
+  sessionHours: number
   availabilityBlocks: string[]
   email: string | null
   phone: string | null
@@ -358,6 +359,7 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           subject:            r.subject ?? null,
           grade:              r.grade ?? null,
           hoursLeft:          r.hours_left ?? (typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : null),
+          sessionHours:       typeof r.session_hours === 'number' ? r.session_hours : 2,
           availabilityBlocks: enrollmentAvailability ?? (r.availability_blocks ?? []),
           email:              r.email ?? null,
           phone:              r.phone ?? null,
@@ -473,6 +475,7 @@ export async function createInlineStudent({
     subject: data.subject ?? subject?.trim() ?? null,
     grade: data.grade ?? null,
     hoursLeft: data.hours_left ?? 0,
+    sessionHours: 2,
     availabilityBlocks: data.availability_blocks ?? [],
     email: data.email ?? null,
     phone: data.phone ?? null,
@@ -597,10 +600,11 @@ async function _adjustHoursForAttendanceChange({
   if (wasPresent === isPresent) return
 
   const { data: student } = await withCenter(supabase
-    .from(STUDENTS).select('hours_left').eq('id', studentId)).single()
+    .from(STUDENTS).select('hours_left, session_hours').eq('id', studentId)).single()
   if (!student || typeof student.hours_left !== 'number') return
 
-  const delta    = isPresent ? -1 : 1
+  const hoursPerSession = typeof student.session_hours === 'number' && student.session_hours > 0 ? student.session_hours : 2
+  const delta    = isPresent ? -hoursPerSession : hoursPerSession
   const newHours = Math.max(0, student.hours_left + delta)
   await withCenter(supabase.from(STUDENTS).update({ hours_left: newHours }).eq('id', studentId))
   await logEvent('hours_adjusted', {

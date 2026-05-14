@@ -331,7 +331,18 @@ export function ScheduleBuilder({
   const [singleSubject, setSingleSubject] = useState('')
   const [singleSessionBlocks, setSingleSessionBlocks] = useState<string[]>([])
   const [search, setSearch] = useState('')
+  const [hideBooked, setHideBooked] = useState(false)
   const [studentAvailability, setStudentAvailability] = useState<Record<string, string[]>>({})
+  const [centerSubjects, setCenterSubjects] = useState<string[]>(ALL_SUBJECTS)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/center-subjects')
+      .then(r => r.json())
+      .then(d => { if (!cancelled && Array.isArray(d?.subjects) && d.subjects.length > 0) setCenterSubjects(d.subjects) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
   const [persistedAvailability, setPersistedAvailability] = useState<Record<string, string[]>>({})
   const [availabilityOpenFor, setAvailabilityOpenFor] = useState<string | null>(null)
   const [savingAvailability, setSavingAvailability] = useState<Set<string>>(new Set())
@@ -441,7 +452,7 @@ export function ScheduleBuilder({
   const subjectOptions = useMemo(() => {
     const dynamicSubjects = new Set<string>()
 
-    ALL_SUBJECTS.forEach(subject => {
+    centerSubjects.forEach(subject => {
       if (typeof subject === 'string' && subject.trim()) dynamicSubjects.add(subject.trim())
     })
 
@@ -779,8 +790,9 @@ export function ScheduleBuilder({
     });
     return scored
       .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
+      .filter(s => !hideBooked || !bookedStudentIds.has(s.id))
       .sort((a, b) => b._score - a._score || a.name.localeCompare(b.name));
-  }, [students, search]);
+  }, [students, search, hideBooked, bookedStudentIds]);
 
   const toggleStudent = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -1286,6 +1298,12 @@ export function ScheduleBuilder({
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search students…" style={{ ...inputStyle, flex: 1 }} />
                 <button onClick={() => { students.forEach(s => { if (!selectedIds.has(s.id)) toggleStudent(s.id) }) }} style={btnSecondary}>All</button>
                 <button onClick={() => { setSelectedIds(new Set()); setStudentNeeds({}) }} style={btnSecondary}>None</button>
+                <button
+                  onClick={() => setHideBooked(v => !v)}
+                  title={hideBooked ? 'Show already-booked students' : 'Hide already-booked students'}
+                  style={{ ...btnSecondary, background: hideBooked ? '#fef3c7' : 'white', borderColor: hideBooked ? '#fbbf24' : '#94a3b8', color: hideBooked ? '#92400e' : '#0f172a', whiteSpace: 'nowrap' }}>
+                  {hideBooked ? 'Showing new only' : 'Hide booked'}
+                </button>
               </div>
             )}
 

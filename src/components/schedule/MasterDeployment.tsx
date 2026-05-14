@@ -167,20 +167,22 @@ export default function MasterDeployment() {
   // the current weekStart — not from the nav dropdown selection or the DB-active term.
   // This way switching terms navigates to that term's dates AND shows its session times,
   // while days from a different term keep their own session times.
-  const weekDisplaySessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
+  const weekDisplayTerm = useMemo(() => {
     const weekStartIso = toISODate(weekStart);
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
     const weekEndIso = toISODate(weekEnd);
-    // Use any term that overlaps with the displayed week (covers mid-week term starts)
-    const matchingTerm = builderTerms.find(t =>
+    return builderTerms.find(t =>
       t.start_date && t.end_date &&
       t.start_date <= weekEndIso && t.end_date >= weekStartIso
-    );
-    const raw = matchingTerm?.session_times_by_day;
+    ) ?? null;
+  }, [builderTerms, weekStart]);
+
+  const weekDisplaySessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
+    const raw = weekDisplayTerm?.session_times_by_day;
     if (raw && typeof raw === 'object') return raw as SessionTimesByDay;
     return activeTermSessionTimesByDay ?? null;
-  }, [builderTerms, weekStart, activeTermSessionTimesByDay]);
+  }, [weekDisplayTerm, activeTermSessionTimesByDay]);
 
   const applyInlineBookingOptimistic = useCallback((
     current: typeof localSessions,
@@ -860,6 +862,8 @@ export default function MasterDeployment() {
           onDateChange={handleTodayDateChange}
           onInlineBook={handleInlineBook}
           sessionTimesByDay={weekDisplaySessionTimesByDay}
+          termName={weekDisplayTerm?.name ?? null}
+          dateExceptions={(weekDisplayTerm as any)?.date_exceptions ?? null}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();
@@ -884,6 +888,8 @@ export default function MasterDeployment() {
           setSelectedRemovals={setSelectedRemovals}
           onInlineBook={handleInlineBook}
           sessionTimesByDay={weekDisplaySessionTimesByDay}
+          termName={weekDisplayTerm?.name ?? null}
+          dateExceptions={(weekDisplayTerm as any)?.date_exceptions ?? null}
           onMoveStudent={async ({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime }) => {
             await moveStudentSession({ rowId, studentId, fromSessionId, toTutorId, toDate, toTime });
             refetch();

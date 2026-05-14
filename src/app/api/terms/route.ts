@@ -94,7 +94,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, startDate, endDate, status, operatingHours, sessionTimesByDay } = await req.json()
+    const { name, startDate, endDate, status, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
 
     if (!name || !startDate || !endDate) {
       return NextResponse.json({ error: 'name, startDate, and endDate are required' }, { status: 400 })
@@ -110,6 +110,9 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(typeof sessionTimesByDay === 'object' && sessionTimesByDay
         ? { session_times_by_day: sessionTimesByDay }
+        : {}),
+      ...(Array.isArray(dateExceptions)
+        ? { date_exceptions: dateExceptions }
         : {}),
     })
 
@@ -135,7 +138,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, name, startDate, endDate, status, operatingHours, sessionTimesByDay } = await req.json()
+    const { id, name, startDate, endDate, status, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 })
@@ -148,6 +151,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof status === 'string' && status.trim()) updatePayload.status = status
     if (typeof operatingHours === 'object' && operatingHours) updatePayload.operating_hours = operatingHours
     if (typeof sessionTimesByDay === 'object' && sessionTimesByDay) updatePayload.session_times_by_day = sessionTimesByDay
+    if (Array.isArray(dateExceptions)) updatePayload.date_exceptions = dateExceptions
 
     const { data, error } = await withCenter(
       supabase

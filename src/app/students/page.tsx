@@ -190,6 +190,7 @@ function StudentSlideOver({
         subjects: Array.isArray(student.subjects) ? student.subjects : (student.subject ? [student.subject] : []),
         subject: student.subject ?? null,
         grade: student.grade ?? null, hoursLeft: student.hours_left ?? 0,
+        sessionHours: student.session_hours ?? 2,
         availabilityBlocks: student.availability_blocks ?? [],
         email: student.email ?? null, phone: student.phone ?? null,
         parent_name: null, parent_email: null, parent_phone: null,
@@ -504,7 +505,7 @@ export default function StudentAdminPage() {
         ...row,
         subjects: enrollmentSubjects.length > 0 ? enrollmentSubjects : (rowSubjects.length > 0 ? rowSubjects : (row.subject ? [String(row.subject)] : [])),
         availability_blocks: enrollmentAvailability.length > 0 ? enrollmentAvailability : rowAvailability,
-        hours_left: typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : row.hours_left,
+        hours_left: typeof row.hours_left === 'number' ? row.hours_left : (typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : null),
         selected_term_id: preferredTermId || enrollment?.term_id || null,
       }
     })

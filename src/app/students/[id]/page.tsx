@@ -61,7 +61,7 @@ export default function StudentHistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [student, setStudent] = useState<any | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
-  const [timelineTab, setTimelineTab] = useState<'upcoming' | 'past'>('upcoming')
+  const [timelineTab, setTimelineTab] = useState<'all' | 'upcoming' | 'past'>('all')
   const [editingRowId, setEditingRowId]   = useState<string | null>(null)
   const [editDraft,    setEditDraft]      = useState({ status: '', topic: '', notes: '' })
   const [editSaving,   setEditSaving]     = useState(false)
@@ -136,7 +136,7 @@ export default function StudentHistoryPage() {
   const noShowRate = past.length > 0 ? noShowCount / past.length : null
 
   const groupedTimeline = useMemo(() => {
-    const source = timelineTab === 'upcoming' ? upcoming : past
+    const source = timelineTab === 'upcoming' ? upcoming : timelineTab === 'past' ? past : history
 
     const singles: TimelineItem[] = []
     const recurringBuckets = new Map<string, HistoryRow[]>()
@@ -298,6 +298,12 @@ export default function StudentHistoryPage() {
             <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: '#0f172a' }}>📅 Session Timeline</p>
             <div className="flex items-center gap-1.5 rounded-lg p-1.5" style={{ background: '#f1f5f9' }}>
               <button
+                onClick={() => setTimelineTab('all')}
+                className="px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-[0.12em] transition-all"
+                style={timelineTab === 'all' ? { background: '#0f172a', color: '#ffffff', boxShadow: '0 2px 4px rgba(15,23,42,0.25)' } : { color: '#64748b' }}>
+                All ({history.length})
+              </button>
+              <button
                 onClick={() => setTimelineTab('upcoming')}
                 className="px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-[0.12em] transition-all"
                 style={timelineTab === 'upcoming' ? { background: '#3b82f6', color: '#ffffff', boxShadow: '0 2px 4px rgba(59,130,246,0.3)' } : { color: '#64748b' }}>
@@ -313,7 +319,7 @@ export default function StudentHistoryPage() {
           </div>
           <div className="divide-y divide-[#e2e8f0] max-h-[68vh] overflow-y-auto">
             {groupedTimeline.length === 0 && (
-              <p className="px-5 py-8 text-sm text-[#64748b] text-center">No {timelineTab} sessions found.</p>
+              <p className="px-5 py-8 text-sm text-[#64748b] text-center">No {timelineTab === 'all' ? '' : timelineTab + ' '}sessions found.</p>
             )}
             {groupedTimeline.map((item) => {
               if (item.kind === 'single') {
@@ -408,10 +414,10 @@ export default function StudentHistoryPage() {
                     <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: '#f5f3ff', color: '#6d28d9', boxShadow: '0 2px 4px #7c3aed20' }}>
                       🔄 Recurring
                     </span>
-                    {timelineTab === 'past' ? (
-                      <span className="text-[9px] text-[#64748b] font-semibold">P {item.present} · NS {item.noShow}</span>
-                    ) : (
+                    {timelineTab === 'upcoming' ? (
                       <span className="text-[9px] text-[#3b82f6] font-semibold">{item.count} pending</span>
+                    ) : (
+                      <span className="text-[9px] text-[#64748b] font-semibold">P {item.present} · NS {item.noShow}{timelineTab === 'all' && item.unmarked > 0 ? ` · ${item.unmarked} upcoming` : ''}</span>
                     )}
                   </div>
                 </div>

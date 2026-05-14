@@ -15,7 +15,14 @@ type TermOption = {
 
 
 
-// ─── Subject definitions ──────────────────────────────────────────────────────
+// ─── Subject definitions (fallback defaults) ─────────────────────────────────
+
+const DEFAULT_SUBJECTS = [
+  'Algebra', 'Geometry', 'Precalculus', 'Calculus', 'Statistics', 'IB Math', 'Biology', 'Chemistry', 'Physics',
+  'English/Writing', 'Literature', 'History', 'Geography', 'Psychology',
+  'SAT Math', 'SAT R/W', 'ACT Math', 'ACT English', 'ACT Science',
+  'AP Physics C Mechanics', 'AP Physics C E&M', 'AP Environmental Science', 'AP Statistics',
+];
 
 export const SUBJECT_GROUPS = [
   {
@@ -40,7 +47,7 @@ export const ALL_SUBJECTS = SUBJECT_GROUPS.flatMap(g => g.subjects);
 
 // ─── Subject Checkboxes ───────────────────────────────────────────────────────
 
-function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
+function SubjectCheckboxes({ selected, onChange, subjects }: { selected: string[]; onChange: (s: string[]) => void; subjects: string[] }) {
   const toggle = (subject: string) => {
     onChange(selected.includes(subject)
       ? selected.filter(s => s !== subject)
@@ -49,32 +56,27 @@ function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChang
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#a8a29e' }}>Subjects</p>
-      {SUBJECT_GROUPS.map(group => (
-        <div key={group.group}>
-          <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#78716c' }}>{group.group}</p>
-          <div className="flex flex-wrap gap-2">
-            {group.subjects.map(subject => {
-              const active = selected.includes(subject);
-              return (
-                <button
-                  key={subject}
-                  type="button"
-                  onClick={() => toggle(subject)}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
-                  style={active
-                    ? { background: '#6d28d9', color: 'white', border: '1px solid #6d28d9' }
-                    : { background: 'white', color: '#78716c', border: '1px solid #e7e3dd' }
-                  }
-                >
-                  {subject}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+      <div className="flex flex-wrap gap-2">
+        {subjects.map(subject => {
+          const active = selected.includes(subject);
+          return (
+            <button
+              key={subject}
+              type="button"
+              onClick={() => toggle(subject)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
+              style={active
+                ? { background: '#6d28d9', color: 'white', border: '1px solid #6d28d9' }
+                : { background: 'white', color: '#78716c', border: '1px solid #e7e3dd' }
+              }
+            >
+              {subject}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -151,7 +153,7 @@ const EMPTY_TUTOR: Omit<Tutor, 'id'> = {
   name: '', subjects: [], cat: 'math', availability: [], availabilityBlocks: [], email: null,
 };
 
-function TutorRow({ tutor, onSave, onDelete }: { tutor: Tutor; onSave: (u: Tutor) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
+function TutorRow({ tutor, onSave, onDelete, centerSubjects }: { tutor: Tutor; onSave: (u: Tutor) => Promise<void>; onDelete: (id: string) => Promise<void>; centerSubjects: string[] }) {
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<Tutor>(tutor);
   const [saving, setSaving] = useState(false);
@@ -210,6 +212,7 @@ function TutorRow({ tutor, onSave, onDelete }: { tutor: Tutor; onSave: (u: Tutor
           <SubjectCheckboxes
             selected={draft.subjects}
             onChange={subjects => setDraft({ ...draft, subjects })}
+            subjects={centerSubjects}
           />
 
           <AvailabilityGrid blocks={draft.availabilityBlocks}
@@ -257,6 +260,16 @@ export function TutorManagementModal({
   const [error, setError] = useState<string | null>(null);
   const [loadingTermAvailability, setLoadingTermAvailability] = useState(false);
   const [termAvailabilityByTutor, setTermAvailabilityByTutor] = useState<Record<string, string[]>>({});
+  const [centerSubjects, setCenterSubjects] = useState<string[]>(DEFAULT_SUBJECTS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/center-subjects')
+      .then(r => r.json())
+      .then(d => { if (!cancelled && Array.isArray(d?.subjects)) setCenterSubjects(d.subjects); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -472,6 +485,7 @@ export function TutorManagementModal({
               <SubjectCheckboxes
                 selected={newTutor.subjects}
                 onChange={subjects => setNewTutor({ ...newTutor, subjects })}
+                subjects={centerSubjects}
               />
 
               <AvailabilityGrid blocks={newTutor.availabilityBlocks}
@@ -487,7 +501,7 @@ export function TutorManagementModal({
           )}
 
           {effectiveTutors.map(t => (
-            <TutorRow key={t.id} tutor={t} onSave={handleSave} onDelete={handleDelete} />
+            <TutorRow key={t.id} tutor={t} onSave={handleSave} onDelete={handleDelete} centerSubjects={centerSubjects} />
           ))}
 
           {tutors.length === 0 && !adding && (

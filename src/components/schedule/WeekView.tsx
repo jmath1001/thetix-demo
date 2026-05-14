@@ -69,6 +69,8 @@ interface WeekViewProps {
     toDate: string;
     toTime: string;
   }) => Promise<void>;
+  termName?: string | null;
+  dateExceptions?: Array<{ date: string; closed: boolean; label?: string }> | null;
 }
 
 export function WeekView({
@@ -88,6 +90,8 @@ export function WeekView({
   refetch,
   onMoveStudent,
   sessionTimesByDay,
+  termName,
+  dateExceptions,
 }: WeekViewProps) {
   const [forms, setForms]               = useState<Record<string, InlineForm>>({});
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -510,6 +514,7 @@ export function WeekView({
         const dayLabel  = DAY_NAMES[dayIdx];
         const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const isToday   = isoDate === toISODate(getCentralTimeNow());
+        const dateException = dateExceptions?.find(e => e.date === isoDate) ?? null;
         const activeTutors = tutors.filter(t =>
           t.availability.includes(dow) &&
           (selectedTutorFilter === null || t.id === selectedTutorFilter)
@@ -591,6 +596,19 @@ export function WeekView({
                 style={{ background: 'linear-gradient(90deg, #cbd5e1, transparent)' }} />
             </div>
 
+            {dateException && (
+              <div className="rounded-xl border px-4 py-3 flex items-center gap-3"
+                style={{ background: dateException.closed ? '#fef2f2' : '#fffbeb', borderColor: dateException.closed ? '#fca5a5' : '#fcd34d' }}>
+                <span className="text-lg">{dateException.closed ? '🚫' : '⚠️'}</span>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: dateException.closed ? '#991b1b' : '#92400e' }}>
+                    {dateException.closed ? 'Closed' : 'Special Day'}{dateException.label ? ` — ${dateException.label}` : ''}
+                  </p>
+                  {dateException.closed && <p className="text-xs mt-0.5" style={{ color: '#b91c1c' }}>No sessions scheduled for this date.</p>}
+                </div>
+              </div>
+            )}
+
             {filteredActiveTutors.length === 0 ? (
               <div className="rounded-xl p-6 text-center border border-dashed" style={{ borderColor: '#e5e7eb' }}>
                 <p className="text-xs font-medium italic" style={{ color: '#9ca3af' }}>
@@ -609,6 +627,7 @@ export function WeekView({
                           <th className="px-2 py-1.5 text-left text-[11px] font-bold uppercase tracking-wider"
                             style={{ color: 'rgba(255,255,255,0.5)', borderRight: '1px solid rgba(255,255,255,0.08)', width: 1, whiteSpace: 'nowrap', position: 'sticky', left: 0, top: 0, zIndex: 4, background: '#1f2937' }}>
                             Instructor
+                            {termName && <div style={{ color: '#fbbf24', fontSize: 9, fontWeight: 700, marginTop: 2, textTransform: 'none', letterSpacing: 0 }}>{termName}</div>}
                           </th>
                           {filteredDaySessions.map(block => (
                             <th key={block.id} className="px-3 py-1.5 text-center"

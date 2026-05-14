@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
       subjects,
       availabilityBlocks,
       hoursPurchased,
+      syncStudentBalance,   // when true, also write students.hours_left = hoursPurchased
+      sessionHours,         // if provided, update students.session_hours
       formToken,
       formSubmittedAt,
     } = await req.json()
@@ -101,6 +103,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
 
+      if (syncStudentBalance && typeof hoursPurchased === 'number') {
+        await withCenter(supabase.from(DB.students).update({ hours_left: hoursPurchased }).eq('id', studentId))
+      }
+      if (typeof sessionHours === 'number') {
+        await withCenter(supabase.from(DB.students).update({ session_hours: Math.max(1, sessionHours) }).eq('id', studentId))
+      }
+
       return NextResponse.json({ enrollment: data })
     }
 
@@ -122,6 +131,13 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (syncStudentBalance && typeof hoursPurchased === 'number') {
+      await withCenter(supabase.from(DB.students).update({ hours_left: hoursPurchased }).eq('id', studentId))
+    }
+    if (typeof sessionHours === 'number') {
+      await withCenter(supabase.from(DB.students).update({ session_hours: Math.max(1, sessionHours) }).eq('id', studentId))
     }
 
     return NextResponse.json({ enrollment: data })
