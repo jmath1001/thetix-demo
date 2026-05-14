@@ -413,10 +413,26 @@ console.log('[debug] students[0]:', students[0])
           setStudents(students)
           setSessions(sessions)
           setTimeOff(timeOffMapped)
+
+          // Load center-level session times (global, not per-term).
+          // Fall back to active term's times for backward compat.
+          let centerSessionTimes: SessionTimesByDay | null = null
+          try {
+            const csRes = await withCenter(
+              supabase.from(DB.centerSettings).select('session_times_by_day').limit(1)
+            ).maybeSingle()
+            if (csRes.data && typeof csRes.data.session_times_by_day === 'object' && csRes.data.session_times_by_day) {
+              centerSessionTimes = csRes.data.session_times_by_day as SessionTimesByDay
+            }
+          } catch {
+            // ignore — fall through to term fallback
+          }
+
           setActiveTermSessionTimesByDay(
-            activeTerm && typeof activeTerm.session_times_by_day === 'object' && activeTerm.session_times_by_day
+            centerSessionTimes
+            ?? (activeTerm && typeof activeTerm.session_times_by_day === 'object' && activeTerm.session_times_by_day
               ? (activeTerm.session_times_by_day as SessionTimesByDay)
-              : null
+              : null)
           )
           const ids = new Set<string>(
             (activeRes.data ?? []).flatMap((r: any) => (r[SS] ?? []).map((ss: any) => ss.student_id as string))

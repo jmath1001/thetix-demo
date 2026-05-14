@@ -153,6 +153,10 @@ export default function CenterSettingsPage() {
   const [newExceptionClosed, setNewExceptionClosed] = useState(true)
 
   const [tab, setTab] = useState<'general' | 'terms' | 'notifications' | 'portals' | 'subjects'>('general')
+  // Global session times — apply to all terms
+  const [globalSessionTimesByDay, setGlobalSessionTimesByDay] = useState<Record<string, string[]>>(DEFAULT_SESSION_TIMES_BY_DAY)
+  const [globalSessionTimesSaving, setGlobalSessionTimesSaving] = useState(false)
+  const [globalNewTimeByDay, setGlobalNewTimeByDay] = useState<Record<string, { start: string; end: string }>>({})
   const [centerSubjects, setCenterSubjects] = useState<string[]>([])
   const [subjectsLoading, setSubjectsLoading] = useState(true)
   const [subjectsSaving, setSubjectsSaving] = useState(false)
@@ -177,6 +181,12 @@ export default function CenterSettingsPage() {
         ).maybeSingle()
 
         if (readErr) throw readErr
+
+        // Load global session times
+        const stbd = (data as any)?.session_times_by_day
+        if (stbd && typeof stbd === 'object' && !Array.isArray(stbd)) {
+          if (!cancelled) setGlobalSessionTimesByDay(stbd as Record<string, string[]>)
+        }
 
         if (!data) {
           const { data: inserted, error: insertErr } = await supabase
@@ -334,6 +344,7 @@ export default function CenterSettingsPage() {
     // still works before the migration is run in Supabase.
     const extendedPayload = {
       center_name: centerName.trim() || DEFAULTS.center_name,
+      session_times_by_day: globalSessionTimesByDay,
       center_short_name: centerShortName.trim() || null,
       center_email: centerEmail.trim() || null,
       center_phone: centerPhone.trim() || null,
@@ -556,7 +567,7 @@ export default function CenterSettingsPage() {
 
           {/* ── General ── */}
           {tab === 'general' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
                 <p className="mb-4 text-xs font-black uppercase tracking-widest text-slate-800">Center Info</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -592,16 +603,79 @@ export default function CenterSettingsPage() {
                   </div>
                 </div>
               </div>
+
+              {/* ── Global Session Times ── */}
+              <div className="border-t border-slate-100 pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-800">Session Times</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">These session slots apply globally across all terms.</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!rowId) return
+                      setGlobalSessionTimesSaving(true)
+                      setError(null)
+                      try {
+                        const { error: upErr } = await withCenter(
+                          supabase.from(DB.centerSettings).update({ session_times_by_day: globalSessionTimesByDay })
+                        ).eq('id', rowId)
+                        if (upErr) throw upErr
+                        setSuccess('Session times saved.')
+                      } catch (err: any) {
+                        setError(err?.message ?? 'Failed to save session times')
+                      } finally {
+                        setGlobalSessionTimesSaving(false)
+                      }
+                    }}
+                    disabled={globalSessionTimesSaving}
+                    className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+                  >
+                    {globalSessionTimesSaving ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : <><Save size={11} /> Save Times</>}
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {ALL_DAYS.map(({ dow, label }) => {
+                    const slots = globalSessionTimesByDay[dow] ?? []
+                    const pending = globalNewTimeByDay[dow] ?? { start: '', end: '' }
+                    return (
+                      <div key={dow} className="rounded border border-slate-200 bg-slate-50 p-3">
+                        <p className="mb-2 text-xs font-bold text-slate-700">{label}</p>
+                        {slots.length === 0 && <p className="text-[11px] italic text-slate-400">No sessions — day is closed.</p>}
+                        {slots.map((slot, slotIdx) => {
+                          const { start, end } = parseSlot(slot)
+                          return (
+                            <div key={slot} className="mb-1 flex items-center gap-2">
+                              <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-500">Session {slotIdx + 1}</span>
+                              <input type="time" value={start} onChange={e => { const newSlot = end ? `${e.target.value}-${end}` : e.target.value; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).map(s => s === slot ? newSlot : s) })) }} className="rounded border border-slate-200 px-2 py-1 text-xs" />
+                              <span className="text-xs text-slate-400">→</span>
+                              <input type="time" value={end} onChange={e => { const newSlot = `${start}-${e.target.value}`; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).map(s => s === slot ? newSlot : s) })) }} className="rounded border border-slate-200 px-2 py-1 text-xs" />
+                              <span className="w-32 shrink-0 text-[11px] text-slate-400">{start && end ? `${fmt12(start)} – ${fmt12(end)}` : ''}</span>
+                              <button type="button" onClick={() => setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: (prev[dow] ?? []).filter(s => s !== slot) }))} className="text-slate-300 hover:text-red-500 text-sm leading-none">&times;</button>
+                            </div>
+                          )
+                        })}
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-400">New</span>
+                          <input type="time" value={pending.start} onChange={e => setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: e.target.value, end: prev[dow]?.end ?? '' } }))} className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs" />
+                          <span className="text-xs text-slate-400">→</span>
+                          <input type="time" value={pending.end} onChange={e => setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: prev[dow]?.start ?? '', end: e.target.value } }))} className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs" />
+                          <button type="button" disabled={!pending.start || !pending.end} onClick={() => { if (!pending.start || !pending.end) return; const newSlot = `${pending.start}-${pending.end}`; if (slots.includes(newSlot)) return; setGlobalSessionTimesByDay(prev => ({ ...prev, [dow]: [...(prev[dow] ?? []), newSlot].sort() })); setGlobalNewTimeByDay(prev => ({ ...prev, [dow]: { start: '', end: '' } })) }} className="rounded bg-slate-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-40">+ Add</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ── Terms ── */}
           {tab === 'terms' && (
             <div>
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest text-slate-800">Academic Terms</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Each term has its own operating hours and session time slots.</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Each term has its own operating hours and date exceptions. Session times are configured globally in <button type="button" onClick={() => setTab('general')} className="underline text-blue-600 hover:text-blue-800">General settings</button>.</p>
                 </div>
                 {!termFormOpen && (
                   <div className="flex items-center gap-2">
@@ -717,186 +791,74 @@ export default function CenterSettingsPage() {
                   </div>
 
                   <div className="mt-4">
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <p className="text-xs font-semibold text-slate-600">Hours &amp; Session Times by Day</p>
-                      {terms.length > 0 && (
-                        <select
-                          className="ml-auto rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                          defaultValue=""
-                          onChange={e => {
-                            const src = terms.find(t => t.id === e.target.value)
-                            if (!src) return
-                            setTermDraft(prev => ({
-                              ...prev,
-                              operating_hours: (src.operating_hours ?? DEFAULT_OPERATING_HOURS) as Record<string, { open: string; close: string; closed: boolean }>,
-                              session_times_by_day: src.session_times_by_day ?? DEFAULT_SESSION_TIMES_BY_DAY,
-                            }))
-                            e.target.value = ''
-                          }}
-                        >
-                          <option value="" disabled>Copy times from term…</option>
-                          {terms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      {ALL_DAYS.map(({ dow, label }) => {
-                        const oh = termDraft.operating_hours[dow] ?? { open: '09:00', close: '21:00', closed: true }
-                        const openVal = oh.open ?? '09:00'
-                        const closeVal = oh.close ?? '21:00'
-                        const slots = termDraft.session_times_by_day[dow] ?? []
-                        const isClosed = oh.closed ?? true
-                        const pending = newTimeByDay[dow] ?? { start: '', end: '' }
-                        const pendingStart = pending.start ?? ''
-                        const pendingEnd = pending.end ?? ''
-                        return (
-                          <div key={dow} className="rounded border border-slate-200 bg-slate-50 p-3">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <label className="flex w-24 cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-700">
+                    <p className="mb-2 text-xs font-semibold text-slate-600">Operating Hours by Day</p>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          <th className="pb-1.5 text-left w-28">Day</th>
+                          <th className="pb-1.5 text-left">Open</th>
+                          <th className="pb-1.5 px-2 text-slate-300">–</th>
+                          <th className="pb-1.5 text-left">Close</th>
+                          <th className="pb-1.5 text-left pl-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ALL_DAYS.map(({ dow, label }) => {
+                          const oh = termDraft.operating_hours[dow] ?? { open: '09:00', close: '21:00', closed: true }
+                          const isClosed = oh.closed ?? true
+                          return (
+                            <tr key={dow} className="border-t border-slate-100">
+                              <td className="py-1.5 pr-3">
+                                <label className="flex cursor-pointer items-center gap-1.5 font-semibold text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={!isClosed}
+                                    onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, closed: !e.target.checked } } }))}
+                                  />
+                                  {label}
+                                </label>
+                              </td>
+                              <td className="py-1.5">
                                 <input
-                                  type="checkbox"
-                                  checked={!isClosed}
-                                  onChange={e => {
-                                    const isOpen = e.target.checked
-                                    setTermDraft(prev => ({
-                                      ...prev,
-                                      operating_hours: { ...prev.operating_hours, [dow]: { ...oh, closed: !isOpen } },
-                                      session_times_by_day: isOpen ? prev.session_times_by_day : { ...prev.session_times_by_day, [dow]: [] },
-                                    }))
-                                  }}
+                                  type="time"
+                                  value={oh.open ?? '09:00'}
+                                  disabled={isClosed}
+                                  onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, open: e.target.value } } }))}
+                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs disabled:opacity-30"
                                 />
-                                {label}
-                              </label>
-                              {!isClosed && (
-                                <div className="flex items-center gap-2 text-xs text-slate-500">
-                                  <span>Open:</span>
-                                  <select
-                                    value={openVal}
-                                    onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, open: e.target.value } } }))}
-                                    className="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
-                                  >
-                                    {TIME_OPTIONS.map(t => <option key={t} value={t}>{fmt12(t)}</option>)}
-                                  </select>
-                                  <span className="text-slate-400">–</span>
-                                  <select
-                                    value={closeVal}
-                                    onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, close: e.target.value } } }))}
-                                    className="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
-                                  >
-                                    {TIME_OPTIONS.map(t => <option key={t} value={t}>{fmt12(t)}</option>)}
-                                  </select>
-                                </div>
-                              )}
-                              {!isClosed && slots.length > 0 && (
-                                <div className="relative ml-auto">
+                              </td>
+                              <td className="px-2 text-center text-slate-300">–</td>
+                              <td className="py-1.5">
+                                <input
+                                  type="time"
+                                  value={oh.close ?? '21:00'}
+                                  disabled={isClosed}
+                                  onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, close: e.target.value } } }))}
+                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs disabled:opacity-30"
+                                />
+                              </td>
+                              <td className="py-1.5 pl-2">
+                                {!isClosed && (
                                   <button
                                     type="button"
-                                    onClick={() => setApplyPopover(applyPopover === dow ? null : dow)}
-                                    className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-                                  >
-                                    Apply to days…
-                                  </button>
-                                  {applyPopover === dow && (
-                                    <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded border border-slate-200 bg-white p-3 shadow-lg">
-                                      <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Copy slots to</p>
-                                      {ALL_DAYS.filter(d => d.dow !== dow).map(d => (
-                                        <label key={d.dow} className="flex cursor-pointer items-center gap-2 py-0.5 text-xs text-slate-700">
-                                          <input
-                                            type="checkbox"
-                                            onChange={e => {
-                                              if (!e.target.checked) return
-                                              setTermDraft(prev => ({
-                                                ...prev,
-                                                session_times_by_day: { ...prev.session_times_by_day, [d.dow]: [...slots] },
-                                                operating_hours: { ...prev.operating_hours, [d.dow]: { ...oh } },
-                                              }))
-                                              e.target.checked = false
-                                            }}
-                                          />
-                                          {d.label}
-                                        </label>
-                                      ))}
-                                      <button type="button" onClick={() => setApplyPopover(null)} className="mt-2 w-full rounded bg-slate-900 px-2 py-1 text-[11px] font-semibold text-white">Done</button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-
-                            {!isClosed && (
-                              <div className="mt-3 space-y-1 pl-1">
-                                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">Session Slots</p>
-                                {slots.length === 0 && <p className="text-[11px] italic text-slate-400">No sessions yet.</p>}
-                                {slots.map((slot, slotIdx) => {
-                                  const { start, end } = parseSlot(slot)
-                                  return (
-                                    <div key={slot} className="flex items-center gap-2">
-                                      <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-500">Session {slotIdx + 1}</span>
-                                      <input
-                                        type="time"
-                                        value={start}
-                                        onChange={e => {
-                                          const newSlot = end ? `${e.target.value}-${end}` : e.target.value
-                                          setTermDraft(prev => ({ ...prev, session_times_by_day: { ...prev.session_times_by_day, [dow]: (prev.session_times_by_day[dow] ?? []).map(s => s === slot ? newSlot : s) } }))
-                                        }}
-                                        className="rounded border border-slate-200 px-2 py-1 text-xs"
-                                      />
-                                      <span className="text-xs text-slate-400">→</span>
-                                      <input
-                                        type="time"
-                                        value={end}
-                                        onChange={e => {
-                                          const newSlot = `${start}-${e.target.value}`
-                                          setTermDraft(prev => ({ ...prev, session_times_by_day: { ...prev.session_times_by_day, [dow]: (prev.session_times_by_day[dow] ?? []).map(s => s === slot ? newSlot : s) } }))
-                                        }}
-                                        className="rounded border border-slate-200 px-2 py-1 text-xs"
-                                      />
-                                      <span className="w-36 shrink-0 text-[11px] text-slate-400">
-                                        {start && end ? `${fmt12(start)} – ${fmt12(end)}` : start ? fmt12(start) : ''}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setTermDraft(prev => ({ ...prev, session_times_by_day: { ...prev.session_times_by_day, [dow]: (prev.session_times_by_day[dow] ?? []).filter(s => s !== slot) } }))}
-                                        className="text-slate-300 hover:text-red-500 text-sm leading-none"
-                                      >&times;</button>
-                                    </div>
-                                  )
-                                })}
-                                <div className="flex items-center gap-2 pt-1">
-                                  <span className="w-20 shrink-0 text-[11px] font-semibold text-slate-400">Session {slots.length + 1}</span>
-                                  <input
-                                    type="time"
-                                    value={pendingStart}
-                                    onChange={e => { const v = e.target.value; setNewTimeByDay(prev => ({ ...prev, [dow]: { start: v, end: prev[dow]?.end ?? '' } })) }}
-                                    className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs"
-                                  />
-                                  <span className="text-xs text-slate-400">→</span>
-                                  <input
-                                    type="time"
-                                    value={pendingEnd}
-                                    onChange={e => { const v = e.target.value; setNewTimeByDay(prev => ({ ...prev, [dow]: { start: prev[dow]?.start ?? '', end: v } })) }}
-                                    className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs"
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={!pendingStart || !pendingEnd}
-                                    onClick={() => {
-                                      if (!pendingStart || !pendingEnd) return
-                                      const newSlot = `${pendingStart}-${pendingEnd}`
-                                      if (slots.includes(newSlot)) return
-                                      setTermDraft(prev => ({ ...prev, session_times_by_day: { ...prev.session_times_by_day, [dow]: [...(prev.session_times_by_day[dow] ?? []), newSlot].sort() } }))
-                                      setNewTimeByDay(prev => ({ ...prev, [dow]: { start: '', end: '' } }))
-                                    }}
-                                    className="rounded bg-slate-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
-                                  >+ Add</button>
-                                </div>
-                              </div>
-                            )}
-                            {isClosed && <p className="mt-2 text-[11px] italic text-slate-400">Closed — no sessions</p>}
-                          </div>
-                        )
-                      })}
-                    </div>
+                                    title="Copy to all open days"
+                                    onClick={() => setTermDraft(prev => {
+                                      const updated = { ...prev.operating_hours }
+                                      ALL_DAYS.forEach(({ dow: d }) => {
+                                        const ex = updated[d] ?? { open: '09:00', close: '21:00', closed: true }
+                                        if (!ex.closed) updated[d] = { ...ex, open: oh.open ?? '09:00', close: oh.close ?? '21:00' }
+                                      })
+                                      return { ...prev, operating_hours: updated }
+                                    })}
+                                    className="rounded border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-400 hover:bg-slate-100 whitespace-nowrap"
+                                  >Copy to all</button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
 
                   {/* ── Special Days / Holidays ── */}

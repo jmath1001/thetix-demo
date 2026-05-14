@@ -125,7 +125,15 @@ export default function MasterDeployment() {
         setSelectedBuilderTermId(prev => {
           if (prev && rows.some(t => t.id === prev)) return prev;
           const active = rows.find(t => (t.status ?? '').trim().toLowerCase() === 'active');
-          return active?.id ?? rows[0]?.id ?? '';
+          const chosen = active ?? rows[0];
+          // Jump weekStart into the chosen term so the builder opens on the right week
+          if (chosen?.start_date && /^\d{4}-\d{2}-\d{2}$/.test(chosen.start_date)) {
+            const parsed = new Date(chosen.start_date + 'T00:00:00');
+            if (!Number.isNaN(parsed.getTime())) {
+              setWeekStart(getWeekStart(parsed));
+            }
+          }
+          return chosen?.id ?? '';
         });
       } catch {
         if (!cancelled) {
@@ -321,12 +329,33 @@ export default function MasterDeployment() {
   }, [weekStart]);
 
   const handleScheduleBuilderConfirm = useCallback(async (
-    bookings: { student: Student; slot: any; topic: string }[]
+    bookings: { student: Student; slot: any; topic: string }[],
+    options: { recurring: boolean; scheduleMode: 'add' | 'redo' }
   ) => {
+    // In redo mode: cancel existing bookings for the affected students during this week
+    if (options.scheduleMode === 'redo' && bookings.length > 0) {
+      const studentIds = new Set(bookings.map(b => b.student.id))
+      const weekIsos = weekDates.map(d => toISODate(d))
+      const sessionsThisWeek = localSessions.filter(s => weekIsos.includes(s.date))
+      for (const session of sessionsThisWeek) {
+        for (const ss of (session.students ?? []) as any[]) {
+          if (ss.status !== 'cancelled' && studentIds.has(ss.student_id ?? ss.student?.id)) {
+            try {
+              await fetch('/api/confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionStudentId: ss.id, status: 'cancelled' }),
+              })
+            } catch { /* continue */ }
+          }
+        }
+      }
+    }
+
     for (const booking of bookings) {
       let recurring = false;
       let recurringWeeks = 1;
-      if (selectedBuilderTerm?.end_date) {
+      if (options.recurring && selectedBuilderTerm?.end_date) {
         const slotDate = new Date(booking.slot.date + 'T00:00:00');
         const termEnd = new Date(selectedBuilderTerm.end_date + 'T00:00:00');
         const diffDays = Math.round((termEnd.getTime() - slotDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -349,8 +378,8 @@ export default function MasterDeployment() {
     }
     refetch();
     setIsScheduleBuilderOpen(false);
-    logEvent('schedule_builder_confirmed', { count: bookings.length });
-  }, [refetch, selectedBuilderTerm]);
+    logEvent('schedule_builder_confirmed', { count: bookings.length, scheduleMode: options.scheduleMode });
+  }, [refetch, selectedBuilderTerm, weekDates, localSessions]);
 
   useEffect(() => {
     if (todayView) {
@@ -529,6 +558,23 @@ export default function MasterDeployment() {
     d.setDate(d.getDate() + 6);
     return toISODate(d);
   }, [weekStart]);
+
+  // Builder week: clamp to the selected term so we never book on the wrong term's dates.
+  // Use the term's start week if the current view week is before the term starts,
+  // or the term's end week if the current view week is after the term ends.
+  const builderWeekStartIso = useMemo(() => {
+    const term = selectedBuilderTerm;
+    if (!term?.start_date || !term?.end_date) return weekStartIso;
+    if (weekStartIso < term.start_date) return toISODate(getWeekStart(new Date(term.start_date + 'T00:00:00')));
+    if (weekStartIso > term.end_date) return toISODate(getWeekStart(new Date(term.end_date + 'T00:00:00')));
+    return weekStartIso;
+  }, [weekStartIso, selectedBuilderTerm]);
+
+  const builderWeekEndIso = useMemo(() => {
+    const d = new Date(builderWeekStartIso + 'T00:00:00');
+    d.setDate(d.getDate() + 6);
+    return toISODate(d);
+  }, [builderWeekStartIso]);
 
   const handleGridSlotClick = (tutor: Tutor, date: string, dayName: string, block: SessionBlock) => {
     setGridSlotToBook({ tutor, dayNum: dayOfWeek(date), dayName, time: block.time, date, block } as any);
@@ -1026,9 +1072,8 @@ export default function MasterDeployment() {
           terms={builderTerms.map(t => ({ id: t.id, name: t.name, status: t.status }))}
           selectedTermId={selectedBuilderTermId}
           onChangeTerm={handleBuilderTermChange}
-          weekStart={weekStartIso}
-          weekEnd={weekEndIso}
-          initialMode={scheduleBuilderMode}
+          weekStart={builderWeekStartIso}
+          weekEnd={builderWeekEndIso}
           onConfirm={handleScheduleBuilderConfirm}
           onClose={() => setIsScheduleBuilderOpen(false)}
         />

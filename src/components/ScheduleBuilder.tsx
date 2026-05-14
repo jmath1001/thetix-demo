@@ -69,7 +69,7 @@ interface ScheduleBuilderProps {
   weekStart: string
   weekEnd: string
   initialMode?: 'batch' | 'single'
-  onConfirm: (bookings: { student: Student; slot: AvailableSeat; topic: string }[]) => Promise<void>
+  onConfirm: (bookings: { student: Student; slot: AvailableSeat; topic: string }[], options: { recurring: boolean; scheduleMode: 'add' | 'redo' }) => Promise<void>
   onClose: () => void
 }
 
@@ -327,6 +327,8 @@ export function ScheduleBuilder({
   const [suggestionsByNeed, setSuggestionsByNeed] = useState<Record<string, SuggestionOption[]>>({})
   const [previewSeatPool, setPreviewSeatPool] = useState<AvailableSeat[]>(allAvailableSeats)
 
+  const [makeRecurring, setMakeRecurring] = useState(true)
+  const [scheduleMode, setScheduleMode] = useState<'add' | 'redo'>('add')
   const [singleStudentId, setSingleStudentId] = useState('')
   const [singleSubject, setSingleSubject] = useState('')
   const [singleSessionBlocks, setSingleSessionBlocks] = useState<string[]>([])
@@ -419,6 +421,21 @@ export function ScheduleBuilder({
       })
     )
     return ids
+  }, [sessions])
+
+  // Map of studentId → Set of normalized subject names already booked this week
+  const bookedSubjectsByStudent = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    sessions.forEach(s =>
+      s.students?.forEach((st: any) => {
+        if (st.status === 'cancelled' || !st.id) return
+        const topic = typeof st.topic === 'string' ? st.topic.trim().toLowerCase() : ''
+        if (!topic) return
+        map[st.id] = map[st.id] ?? new Set()
+        map[st.id].add(topic)
+      })
+    )
+    return map
   }, [sessions])
 
   const recurringTopicsByStudent = useMemo(() => {
@@ -998,19 +1015,36 @@ export function ScheduleBuilder({
         })()
       : allNeeds
 
-    if (!needsToRun.length) return
+    // In 'add' mode: filter out needs where the student is already booked for that subject this week.
+    // In 'redo' mode: include all needs so the scheduler can find new optimal placements.
+    const alreadyBookedNeeds = scheduleMode === 'add' ? needsToRun.filter(n => {
+      const booked = bookedSubjectsByStudent[n.student.id]
+      return booked?.has(n.subject.trim().toLowerCase())
+    }) : []
+    const filteredNeeds = scheduleMode === 'add' ? needsToRun.filter(n => {
+      const booked = bookedSubjectsByStudent[n.student.id]
+      return !booked?.has(n.subject.trim().toLowerCase())
+    }) : needsToRun
+    if (scheduleMode === 'add' && alreadyBookedNeeds.length > 0 && filteredNeeds.length === 0) {
+      // All needs are already booked — nothing to do
+      setProposals([])
+      setStep('preview')
+      return
+    }
+    const activeNeeds = filteredNeeds.length > 0 ? filteredNeeds : needsToRun
+    if (!activeNeeds.length) return
 
     const hasSingleBlocks = builderMode === 'single' && singleSessionBlocks.length > 0
     const seatsForRun = hasSingleBlocks
       ? allAvailableSeats.filter(seat => singleSessionBlocks.includes(`${seat.dayNum}-${seat.time}`))
       : allAvailableSeats
 
-    const prioritizedNeeds = prioritizeNeeds(needsToRun, seatsForRun, bookedSlotsByStudent)
+    const prioritizedNeeds = prioritizeNeeds(activeNeeds, seatsForRun, bookedSlotsByStudent)
     setPreviewSeatPool(seatsForRun)
 
     setGenerating(true)
     try {
-      const needStudentIds = Array.from(new Set(needsToRun.map(n => n.student.id)))
+      const needStudentIds = Array.from(new Set(activeNeeds.map(n => n.student.id)))
       const res = await fetch('/api/schedule-builder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1038,10 +1072,12 @@ export function ScheduleBuilder({
             maxCapacity: 3,
             label: s.block?.label,
           })),
-          existingBookings: needStudentIds.map(id => ({
-            studentId: id,
-            existingSlots: Array.from(bookedSlotsByStudent[id] ?? []),
-          })),
+          existingBookings: scheduleMode === 'redo'
+            ? [] // In redo mode, ignore existing bookings so engine can freely reassign slots
+            : Array.from(new Set(activeNeeds.map(n => n.student.id))).map(id => ({
+                studentId: id,
+                existingSlots: Array.from(bookedSlotsByStudent[id] ?? []),
+              })),
           weekStart,
           weekEnd,
           sessionTimesByDay,
@@ -1147,7 +1183,7 @@ export function ScheduleBuilder({
     const bookings = proposals.filter(p => p.slot).map(p => ({ student: p.student, slot: p.slot!, topic: p.subject }))
     if (!bookings.length) return
     setConfirming(true)
-    try { await onConfirm(bookings) } finally { setConfirming(false) }
+    try { await onConfirm(bookings, { recurring: makeRecurring, scheduleMode }) } finally { setConfirming(false) }
   }
 
   const placedCount    = proposals.filter(p => p.slot).length
@@ -1579,7 +1615,9 @@ export function ScheduleBuilder({
                           </div>
                         )}
 
-                        {needs.map((need, idx) => (
+                        {needs.map((need, idx) => {
+                          const isAlreadyBooked = scheduleMode === 'add' && !!need.subject && (bookedSubjectsByStudent[student.id]?.has(need.subject.trim().toLowerCase()) ?? false)
+                          return (
                           <div key={need.needId} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <div style={{ width: 20, height: 20, borderRadius: 6, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#64748b', flexShrink: 0 }}>
                               {idx + 1}
@@ -1589,13 +1627,18 @@ export function ScheduleBuilder({
                                 value={need.subject}
                                 onChange={e => setSubject(student.id, need.needId, e.target.value)}
                                 onClick={e => e.stopPropagation()}
-                                style={{ width: '100%', padding: '7px 28px 7px 12px', borderRadius: 10, border: `1.5px solid ${!need.subject ? '#ef4444' : '#7c3aed'}`, fontSize: 13, fontWeight: 600, color: need.subject ? '#0f172a' : '#334155', background: 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}
+                                style={{ width: '100%', padding: '7px 28px 7px 12px', borderRadius: 10, border: `1.5px solid ${!need.subject ? '#ef4444' : isAlreadyBooked ? '#94a3b8' : '#7c3aed'}`, fontSize: 13, fontWeight: 600, color: need.subject ? (isAlreadyBooked ? '#64748b' : '#0f172a') : '#334155', background: isAlreadyBooked ? '#f8fafc' : 'white', outline: 'none', cursor: 'pointer', appearance: 'none' }}
                               >
                                 <option value="">Pick subject…</option>
                                 {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
                             </div>
+                            {isAlreadyBooked && (
+                              <span title="This student is already booked for this subject this week and will be skipped. Switch to Redo mode to reassign." style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                Already booked · skipped
+                              </span>
+                            )}
                             {needs.length > 1 && (
                               <button
                                 onClick={e => { e.stopPropagation(); removeSubjectRow(student.id, need.needId) }}
@@ -1605,7 +1648,8 @@ export function ScheduleBuilder({
                               </button>
                             )}
                           </div>
-                        ))}
+                          )
+                        })}
                         {needs.length < 3 && (
                           <button
                             onClick={e => { e.stopPropagation(); addSubjectRow(student.id) }}
@@ -1622,7 +1666,7 @@ export function ScheduleBuilder({
             </div>
 
             <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={{ fontSize: 12, color: missingSubject ? '#e11d48' : '#64748b', margin: 0 }}>
+              <div style={{ fontSize: 12, color: missingSubject ? '#e11d48' : '#64748b', margin: 0 }}>
                 {builderMode === 'single'
                   ? (!singleSelectedStudent || !singleSubject
                       ? 'Pick a student and subject to generate single-session suggestions'
@@ -1631,15 +1675,61 @@ export function ScheduleBuilder({
                   ? 'Select students to schedule'
                   : missingSubject
                   ? 'Some students are missing a subject'
-                  : `${allNeeds.length} session${allNeeds.length !== 1 ? 's' : ''} to book across ${selectedCount} student${selectedCount !== 1 ? 's' : ''}`}
-              </p>
-              <button
-                onClick={generate}
-                disabled={!canGenerate}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderRadius: 12, border: 'none', cursor: canGenerate ? 'pointer' : 'not-allowed', background: canGenerate ? '#7c3aed' : '#e2e8f0', color: canGenerate ? 'white' : '#94a3b8', fontSize: 13, fontWeight: 700, boxShadow: canGenerate ? '0 4px 16px rgba(124,58,237,0.3)' : 'none', transition: 'all 0.2s' }}
-              >
-                {generating ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <>Generate <ArrowRight size={13} /></>}
-              </button>
+                  : (() => {
+                      const skippedCount = scheduleMode === 'add' ? allNeeds.filter(n => bookedSubjectsByStudent[n.student.id]?.has(n.subject.trim().toLowerCase())).length : 0
+                      const activeCount = allNeeds.length - skippedCount
+                      return (
+                        <span>
+                          {activeCount} session{activeCount !== 1 ? 's' : ''} to book across {selectedCount} student{selectedCount !== 1 ? 's' : ''}
+                          {skippedCount > 0 && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8' }}>
+                              · {skippedCount} already booked (skipped)
+                            </span>
+                          )}
+                        </span>
+                      )
+                    })()
+                }
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {/* Mode toggle: Add to schedule vs Redo */}
+                <div style={{ display: 'flex', alignItems: 'center', borderRadius: 10, border: '1.5px solid #e2e8f0', overflow: 'hidden', background: 'white', fontSize: 11, fontWeight: 700 }}>
+                  <button
+                    type="button"
+                    onClick={() => setScheduleMode('add')}
+                    title="Add to existing schedule — already-booked students are skipped"
+                    style={{ padding: '6px 11px', border: 'none', cursor: 'pointer', background: scheduleMode === 'add' ? '#0f172a' : 'white', color: scheduleMode === 'add' ? 'white' : '#64748b', transition: 'all 0.15s' }}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScheduleMode('redo')}
+                    title="Redo the whole schedule — ignores existing bookings and reschedules everyone"
+                    style={{ padding: '6px 11px', border: 'none', borderLeft: '1.5px solid #e2e8f0', cursor: 'pointer', background: scheduleMode === 'redo' ? '#dc2626' : 'white', color: scheduleMode === 'redo' ? 'white' : '#64748b', transition: 'all 0.15s' }}
+                  >
+                    Redo
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMakeRecurring(r => !r)}
+                  title={makeRecurring ? 'Bookings will recur weekly through term end. Click to make one-time only.' : 'Bookings will be one-time only. Click to make recurring.'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 10, border: `1.5px solid ${makeRecurring ? '#7c3aed' : '#94a3b8'}`, background: makeRecurring ? '#ede9fe' : 'white', color: makeRecurring ? '#6d28d9' : '#64748b', fontSize: 11, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                >
+                  <div style={{ width: 14, height: 14, borderRadius: 4, border: `1.5px solid ${makeRecurring ? '#7c3aed' : '#94a3b8'}`, background: makeRecurring ? '#7c3aed' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {makeRecurring && <Check size={9} color="white" strokeWidth={3} />}
+                  </div>
+                  Recurring
+                </button>
+                <button
+                  onClick={generate}
+                  disabled={!canGenerate}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderRadius: 12, border: 'none', cursor: canGenerate ? 'pointer' : 'not-allowed', background: canGenerate ? '#7c3aed' : '#e2e8f0', color: canGenerate ? 'white' : '#94a3b8', fontSize: 13, fontWeight: 700, boxShadow: canGenerate ? '0 4px 16px rgba(124,58,237,0.3)' : 'none', transition: 'all 0.2s' }}
+                >
+                  {generating ? <><Loader2 size={14} className="animate-spin" /> Generating…</> : <>Generate <ArrowRight size={13} /></>}
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -1689,10 +1779,19 @@ export function ScheduleBuilder({
             </div>
 
             <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={{ fontSize: 11, color: unmatchedCount > 0 ? '#e11d48' : '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
-                {unmatchedCount > 0 && <AlertTriangle size={11} />}
-                {unmatchedCount > 0 ? `${unmatchedCount} couldn't be placed — book manually` : 'All sessions placed successfully'}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <p style={{ fontSize: 11, color: unmatchedCount > 0 ? '#e11d48' : '#64748b', margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {unmatchedCount > 0 && <AlertTriangle size={11} />}
+                  {unmatchedCount > 0 ? `${unmatchedCount} couldn't be placed — book manually` : 'All sessions placed successfully'}
+                </p>
+                <span
+                  style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: makeRecurring ? '#ede9fe' : '#f1f5f9', color: makeRecurring ? '#6d28d9' : '#64748b', border: `1px solid ${makeRecurring ? '#c4b5fd' : '#cbd5e1'}`, cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => setMakeRecurring(r => !r)}
+                  title="Toggle recurring"
+                >
+                  {makeRecurring ? 'Recurring' : 'One-time'}
+                </span>
+              </div>
               <button
                 onClick={handleConfirm}
                 disabled={placedCount === 0 || confirming}
