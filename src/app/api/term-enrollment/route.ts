@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
       sessionHours,               // if provided, update students.session_hours
       subjectSessionsPerWeek,     // Record<subject, number> — desired sessions/week per subject
       allowSameDayDouble,         // boolean — may schedule 2 sessions on the same day
+      subjectTutorPreference,     // Record<subject, tutorId> — preferred tutor per subject
       formToken,
       formSubmittedAt,
     } = await req.json()
