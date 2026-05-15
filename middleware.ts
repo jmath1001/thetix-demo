@@ -15,7 +15,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/api/confirm') ||
     pathname.startsWith('/api/enrollment-form') ||
     pathname.startsWith('/api/student-availability') ||
-    pathname.startsWith('/api/term-enrollment')
+    pathname.startsWith('/api/term-enrollment') ||
+    pathname.startsWith('/api/cron')
 
 
   ) {
