@@ -34,6 +34,12 @@ export type Student = {
   hoursLeft: number
   sessionHours: number
   availabilityBlocks: string[]
+  /** Map of subject → desired sessions per week (default 1 when absent). */
+  subjectSessionsPerWeek: Record<string, number>
+  /** When true the scheduler may place two sessions on the same day. */
+  allowSameDayDouble: boolean
+  /** Map of subject → preferred tutor UUID. Scheduler boosts matching seats but falls back freely. */
+  subjectTutorPreference: Record<string, string>
   email: string | null
   phone: string | null
   parent_name: string | null
@@ -255,20 +261,22 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           terms = termRes.data ?? []
         }
 
-        const todayForTermSelection = toISODate(getCentralTimeNow())
-        const requestedTermId = typeof selectedTermId === 'string' ? selectedTermId.trim() : ''
         const normalizedStatus = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
-        // Prefer an explicitly active term (case-insensitive), then a term covering today, then newest term.
+        // Resolve the term by the week being loaded — just like operating hours use the date period.
+        // The week's date range takes priority; only fall back to status/order if no term covers it.
+        const weekStartIso = toISODate(weekStart)
+        const weekEndLocal = new Date(weekStart)
+        weekEndLocal.setDate(weekEndLocal.getDate() + 6)
+        const weekEndIso = toISODate(weekEndLocal)
+
         const activeTerm =
-          (requestedTermId ? terms.find((term: any) => term.id === requestedTermId) : null)
-          ??
-          terms.find((term: any) => normalizedStatus(term.status) === 'active')
-          ?? terms.find((term: any) => {
+          terms.find((term: any) => {
             const start = typeof term.start_date === 'string' ? term.start_date : ''
             const end = typeof term.end_date === 'string' ? term.end_date : ''
-            return !!start && !!end && start <= todayForTermSelection && todayForTermSelection <= end
+            return !!start && !!end && start <= weekEndIso && end >= weekStartIso
           })
+          ?? terms.find((term: any) => normalizedStatus(term.status) === 'active')
           ?? terms[0]
           ?? null
         const activeTermId = activeTerm?.id ?? null
@@ -361,6 +369,13 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           hoursLeft:          r.hours_left ?? (typeof enrollment?.hours_purchased === 'number' ? enrollment.hours_purchased : null),
           sessionHours:       typeof r.session_hours === 'number' ? r.session_hours : 2,
           availabilityBlocks: enrollmentAvailability ?? (r.availability_blocks ?? []),
+          subjectSessionsPerWeek: (enrollment?.subject_sessions_per_week && typeof enrollment.subject_sessions_per_week === 'object' && !Array.isArray(enrollment.subject_sessions_per_week))
+            ? enrollment.subject_sessions_per_week as Record<string, number>
+            : {},
+          allowSameDayDouble: enrollment?.allow_same_day_double === true,
+          subjectTutorPreference: (enrollment?.subject_tutor_preference && typeof enrollment.subject_tutor_preference === 'object' && !Array.isArray(enrollment.subject_tutor_preference))
+            ? enrollment.subject_tutor_preference as Record<string, string>
+            : {},
           email:              r.email ?? null,
           phone:              r.phone ?? null,
           parent_name:        r.parent_name ?? null,
@@ -493,6 +508,9 @@ export async function createInlineStudent({
     hoursLeft: data.hours_left ?? 0,
     sessionHours: 2,
     availabilityBlocks: data.availability_blocks ?? [],
+    subjectSessionsPerWeek: {},
+    allowSameDayDouble: false,
+    subjectTutorPreference: {},
     email: data.email ?? null,
     phone: data.phone ?? null,
     parent_name: data.parent_name ?? null,

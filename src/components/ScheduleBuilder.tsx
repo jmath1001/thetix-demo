@@ -17,12 +17,14 @@ interface AvailableSeat {
   dayNum: number
 }
 
-// One subject need per student — a student with 2 subjects = 2 needs
+// One subject need per student — a student with 2 subjects = 2 needs.
+// A subject with sessionsPerWeek > 1 generates multiple needs with distinct needIds.
 interface StudentNeed {
   student: Student
   subject: string
-  needId: string  // local unique key: studentId + index
+  needId: string  // local unique key: studentId + subjectIdx + repeat
   allowSameDayDouble: boolean
+  preferredTutorId?: string
 }
 
 type ProposalStatus = 'matched' | 'fallback' | 'unmatched'
@@ -304,15 +306,26 @@ export function ScheduleBuilder({
   const [builderMode, setBuilderMode] = useState<'batch' | 'single'>(initialMode)
   const [step, setStep] = useState<'select' | 'preview'>('select')
   // Map of studentId → list of subjects needed (with local needId)
-  const [studentNeeds, setStudentNeeds] = useState<Record<string, { subject: string; needId: string; allowSameDayDouble: boolean }[]>>({})
+  const [studentNeeds, setStudentNeeds] = useState<Record<string, { subject: string; needId: string; allowSameDayDouble: boolean; preferredTutorId?: string }[]>>({})
   useEffect(() => {
   if (builderMode !== 'batch') return
-  const needs: Record<string, { subject: string; needId: string; allowSameDayDouble: boolean }[]> = {}
+  const needs: Record<string, { subject: string; needId: string; allowSameDayDouble: boolean; preferredTutorId?: string }[]> = {}
   students.forEach(s => {
     const subjects = getStudentSubjects(s)
+    const spw = s.subjectSessionsPerWeek ?? {}
+    const sdd = s.allowSameDayDouble ?? false
+    const stp = s.subjectTutorPreference ?? {}
     needs[s.id] = subjects.length > 0
-      ? subjects.map((subject, idx) => ({ subject, needId: `${s.id}-${idx}`, allowSameDayDouble: false }))
-      : [{ subject: '', needId: `${s.id}-0`, allowSameDayDouble: false }]
+      ? subjects.flatMap((subject, idx) => {
+          const repeat = Math.min(Math.max(1, spw[subject] ?? 1), 5)
+          return Array.from({ length: repeat }, (_, r) => ({
+            subject,
+            needId: `${s.id}-${idx}-${r}`,
+            allowSameDayDouble: sdd,
+            preferredTutorId: stp[subject] || undefined,
+          }))
+        })
+      : [{ subject: '', needId: `${s.id}-0-0`, allowSameDayDouble: false }]
   })
   setStudentNeeds(needs)
 }, [students, builderMode])
@@ -822,11 +835,22 @@ export function ScheduleBuilder({
         next.add(id)
         const selectedStudent = students.find(s => s.id === id)
         const savedSubjects = getStudentSubjects(selectedStudent)
+        const spw = selectedStudent?.subjectSessionsPerWeek ?? {}
+        const sdd = selectedStudent?.allowSameDayDouble ?? false
+        const stp = selectedStudent?.subjectTutorPreference ?? {}
         setStudentNeeds(sn => ({
           ...sn,
           [id]: savedSubjects.length > 0
-            ? savedSubjects.map((subject, idx) => ({ subject, needId: `${id}-${idx}`, allowSameDayDouble: false }))
-            : [{ subject: '', needId: `${id}-0`, allowSameDayDouble: false }]
+            ? savedSubjects.flatMap((subject, idx) => {
+                const repeat = Math.min(Math.max(1, spw[subject] ?? 1), 5)
+                return Array.from({ length: repeat }, (_, r) => ({
+                  subject,
+                  needId: `${id}-${idx}-${r}`,
+                  allowSameDayDouble: sdd,
+                  preferredTutorId: stp[subject] || undefined,
+                }))
+              })
+            : [{ subject: '', needId: `${id}-0-0`, allowSameDayDouble: false }]
         }))
         setStudentAvailability(sa => ({
           ...sa,
@@ -945,7 +969,7 @@ export function ScheduleBuilder({
         ...prev,
         [studentId]: [...existing, {
           subject: '',
-          needId: `${studentId}-${existing.length}`,
+          needId: `${studentId}-${existing.length}-0`,
           allowSameDayDouble: false,
         }]
       }
@@ -980,6 +1004,7 @@ export function ScheduleBuilder({
             subject: n.subject,
             needId: n.needId,
             allowSameDayDouble: n.allowSameDayDouble,
+            preferredTutorId: (n as any).preferredTutorId,
           })
         }
       }
@@ -1056,6 +1081,7 @@ export function ScheduleBuilder({
             needId: n.needId,
             availabilityBlocks: n.student.availabilityBlocks ?? [],
             allowSameDayDouble: n.allowSameDayDouble,
+            preferredTutorId: n.preferredTutorId ?? null,
           })),
           availableSeats: seatsForRun.map((s, i) => ({
             index: i,

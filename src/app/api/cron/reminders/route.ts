@@ -29,6 +29,9 @@ type ReminderStudent = {
   mom_email?: string;
   dad_name?: string;
   dad_email?: string;
+  notify_student?: boolean | null;
+  notify_mom?: boolean | null;
+  notify_dad?: boolean | null;
 };
 
 type ReminderEntry = {
@@ -206,7 +209,11 @@ async function sendReminderForEntry({
   appBaseUrl: string;
 }) {
   const student = pickRelation(entry, STUDENTS);
-  if (!student || (!student.email && !student.mom_email && !student.dad_email)) return { sent: 0, skipped: true };
+  const hasReachableRecipient =
+    (student?.email     && student.notify_student !== false) ||
+    (student?.mom_email && student.notify_mom     !== false) ||
+    (student?.dad_email && student.notify_dad     !== false);
+  if (!student || !hasReachableRecipient) return { sent: 0, skipped: true };
 
   let token = entry.confirmation_token;
   if (!token) {
@@ -220,7 +227,7 @@ async function sendReminderForEntry({
   const confirmLink = `${normalizedBaseUrl}/confirm?token=${token}`;
   let sent = 0;
 
-  if (student.email) {
+  if (student.email && student.notify_student !== false) {
     const tokens: TemplateTokens = {
       name: student.name ?? "",
       date: session.session_date ?? "",
@@ -239,7 +246,7 @@ async function sendReminderForEntry({
     if (result.delivered) sent++;
   }
 
-  if (student.mom_email) {
+  if (student.mom_email && student.notify_mom !== false) {
     const momName = student.mom_name || "Mom";
     const result = await sendProtectedMail({
       transporter,
@@ -252,7 +259,7 @@ async function sendReminderForEntry({
     if (result.delivered) sent++;
   }
 
-  if (student.dad_email) {
+  if (student.dad_email && student.notify_dad !== false) {
     const dadName = student.dad_name || "Dad";
     const result = await sendProtectedMail({
       transporter,
@@ -313,7 +320,7 @@ export async function GET() {
         .from(SESSIONS)
         .select(`id, session_date, time,
           ${SS} ( id, student_id, status, reminder_sent, confirmation_token, topic,
-            ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ) )`)
+            ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email, notify_student, notify_mom, notify_dad ) )`)
         .in("session_date", [todayStr, tomorrowStr])
     ) as any);
     if (error) throw error;
@@ -425,7 +432,7 @@ export async function POST(req: NextRequest) {
       supabase
         .from(SS)
         .select(`id, student_id, status, reminder_sent, confirmation_token, topic,
-          ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email ),
+          ${STUDENTS} ( name, email, mom_name, mom_email, dad_name, dad_email, notify_student, notify_mom, notify_dad ),
           ${SESSIONS} ( session_date, time )`)
         .in("id", body.sessionStudentIds)
     ) as any);

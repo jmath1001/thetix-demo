@@ -50,6 +50,7 @@ function EnrollForm() {
   const [termName, setTermName] = useState('')
   const [sessionTimesByDay, setSessionTimesByDay] = useState<Record<string, string[]> | null>(null)
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
+  const [subjectSessionsPerWeek, setSubjectSessionsPerWeek] = useState<Record<string, number>>({})
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([])
   const [recurring, setRecurring] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -75,6 +76,7 @@ function EnrollForm() {
         setTermName(enroll?.slake_terms?.name ?? 'Upcoming term')
         setSessionTimesByDay(enroll?.slake_terms?.session_times_by_day ?? null)
         setSelectedSubjects(Array.isArray(enroll?.subjects) ? enroll.subjects : [])
+        setSubjectSessionsPerWeek((enroll?.subject_sessions_per_week && typeof enroll.subject_sessions_per_week === 'object' && !Array.isArray(enroll.subject_sessions_per_week)) ? enroll.subject_sessions_per_week : {})
         setSelectedBlocks(Array.isArray(enroll?.availability_blocks) ? enroll.availability_blocks : [])
         if (enroll?.form_submitted_at) setStatus('submitted')
         else setStatus('ready')
@@ -83,7 +85,14 @@ function EnrollForm() {
   }, [token])
 
   const toggleSubject = (s: string) =>
-    setSelectedSubjects(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
+    setSelectedSubjects(prev => {
+      if (prev.includes(s)) {
+        const next = prev.filter(x => x !== s)
+        setSubjectSessionsPerWeek(spw => { const n = { ...spw }; delete n[s]; return n })
+        return next
+      }
+      return [...prev, s]
+    })
 
   const toggleBlock = (dow: number, time: string) => {
     const key = `${dow}-${time}`
@@ -96,7 +105,7 @@ function EnrollForm() {
     const res = await fetch('/api/enrollment-form', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, subjects: selectedSubjects, availabilityBlocks: selectedBlocks }),
+      body: JSON.stringify({ token, subjects: selectedSubjects, subjectSessionsPerWeek, availabilityBlocks: selectedBlocks }),
     })
     const data = await res.json()
     setSubmitting(false)
@@ -191,6 +200,31 @@ function EnrollForm() {
               </div>
             ))}
           </div>
+          {selectedSubjects.length > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', margin: 0 }}>How many sessions per week?</p>
+              {selectedSubjects.map(s => {
+                const val = subjectSessionsPerWeek[s] ?? 1
+                return (
+                  <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', minWidth: 110 }}>{s}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [s]: Math.max(1, (prev[s] ?? 1) - 1) }))}
+                      style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: '#475569' }}
+                    >−</button>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', minWidth: 24, textAlign: 'center' }}>{val}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [s]: Math.min(5, (prev[s] ?? 1) + 1) }))}
+                      style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', color: '#475569' }}
+                    >+</button>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>per week</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* Availability grid */}

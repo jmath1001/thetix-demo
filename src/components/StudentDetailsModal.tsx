@@ -13,6 +13,7 @@ const DEFAULT_SUBJECTS = [
 
 interface StudentDetailsModalProps {
   student: any;
+  tutors?: Array<{ id: string; name: string; subjects: string[] }>;
   onClose: () => void;
   onSave?: (updatedStudent: any) => void;
 }
@@ -57,7 +58,7 @@ const normalizeStringArray = (value: unknown): string[] => {
   return []
 }
 
-export default function StudentDetailsModal({ student, onClose, onSave }: StudentDetailsModalProps) {
+export default function StudentDetailsModal({ student, tutors: tutorsProp = [], onClose, onSave }: StudentDetailsModalProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editSubjects, setEditSubjects] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
@@ -80,6 +81,11 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
   const [isSavingTerm, setIsSavingTerm] = useState(false)
   const [termDraft, setTermDraft] = useState({ id: '', name: '', start_date: '', end_date: '', status: 'upcoming' })
   const [centerSubjects, setCenterSubjects] = useState<string[]>(DEFAULT_SUBJECTS)
+  // Per-subject scheduling preferences (stored in term enrollment)
+  const [subjectSessionsPerWeek, setSubjectSessionsPerWeek] = useState<Record<string, number>>({})
+  const [allowSameDayDouble, setAllowSameDayDouble] = useState(false)
+  const [subjectTutorPreference, setSubjectTutorPreference] = useState<Record<string, string>>({})
+  const tutors = tutorsProp
 
   useEffect(() => {
     let cancelled = false
@@ -245,6 +251,9 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
         setOriginalAvailability(nextAvailability)
         setHoursPurchased(nextHours)
         setOriginalHoursPurchased(enrollment ? nextHours : -1)
+        setSubjectSessionsPerWeek((enrollment?.subject_sessions_per_week && typeof enrollment.subject_sessions_per_week === 'object' && !Array.isArray(enrollment.subject_sessions_per_week)) ? enrollment.subject_sessions_per_week : {})
+        setAllowSameDayDouble(enrollment?.allow_same_day_double === true)
+        setSubjectTutorPreference((enrollment?.subject_tutor_preference && typeof enrollment.subject_tutor_preference === 'object' && !Array.isArray(enrollment.subject_tutor_preference)) ? enrollment.subject_tutor_preference : {})
       } catch (err) {
         console.error('Failed to load term enrollment:', err)
       }
@@ -278,6 +287,9 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
             subjects: editSubjects,
             availabilityBlocks: editAvailability,
             hoursPurchased,
+            subjectSessionsPerWeek,
+            allowSameDayDouble,
+            subjectTutorPreference,
           }
           : { studentId: student.id, subjects: editSubjects }
         )
@@ -658,6 +670,60 @@ export default function StudentDetailsModal({ student, onClose, onSave }: Studen
                     </div>
                   ))}
                 </div>
+                {editSubjects.length > 0 && selectedTermId && (
+                  <div className="space-y-2 mt-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Sessions per week &amp; tutor preference</p>
+                    {editSubjects.map(subject => {
+                      const sessionsVal = subjectSessionsPerWeek[subject] ?? 1
+                      const tutorId = subjectTutorPreference[subject] ?? ''
+                      const eligibleTutors = tutors.filter(t =>
+                        !t.subjects?.length || t.subjects.some(ts => ts.toLowerCase().includes(subject.toLowerCase()) || subject.toLowerCase().includes(ts.toLowerCase()))
+                      )
+                      return (
+                        <div key={subject} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                          <span className="w-28 shrink-0 text-xs font-semibold text-gray-800 truncate">{subject}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.max(1, (prev[subject] ?? 1) - 1) }))}
+                              className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+                            >−</button>
+                            <span className="w-6 text-center text-xs font-bold text-gray-900">{sessionsVal}×</span>
+                            <button
+                              type="button"
+                              onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.min(5, (prev[subject] ?? 1) + 1) }))}
+                              className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+                            >+</button>
+                          </div>
+                          <select
+                            value={tutorId}
+                            onChange={e => setSubjectTutorPreference(prev => {
+                              const next = { ...prev }
+                              if (e.target.value) next[subject] = e.target.value
+                              else delete next[subject]
+                              return next
+                            })}
+                            className="flex-1 text-xs border border-gray-300 rounded bg-white px-2 py-1 text-gray-800 min-w-0"
+                          >
+                            <option value="">Any tutor</option>
+                            {(eligibleTutors.length > 0 ? eligibleTutors : tutors).map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    })}
+                    <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
+                      <input
+                        type="checkbox"
+                        checked={allowSameDayDouble}
+                        onChange={e => setAllowSameDayDouble(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600"
+                      />
+                      <span className="text-[11px] text-gray-700">Allow two sessions on the same day</span>
+                    </label>
+                  </div>
+                )}
                 {editSubjects.length < 3 && (
                   <div className="space-y-2">
                     <input

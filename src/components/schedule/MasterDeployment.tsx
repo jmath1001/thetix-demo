@@ -165,6 +165,23 @@ export default function MasterDeployment() {
     setWeekStart(getWeekStart(parsed));
   }, [builderTerms]);
 
+  // Keep the term dropdown in sync with the week being viewed.
+  // When the user navigates to a different week, auto-select the term that covers it.
+  useEffect(() => {
+    if (builderTerms.length === 0) return;
+    const weekStartIso = toISODate(weekStart);
+    const weekEndLocal = new Date(weekStart);
+    weekEndLocal.setDate(weekEndLocal.getDate() + 6);
+    const weekEndIso = toISODate(weekEndLocal);
+    const covering = builderTerms.find(t =>
+      t.start_date && t.end_date &&
+      t.start_date <= weekEndIso && t.end_date >= weekStartIso
+    );
+    if (covering && covering.id !== selectedBuilderTermId) {
+      setSelectedBuilderTermId(covering.id);
+    }
+  }, [weekStart, builderTerms]);
+
   const builderSessionTimesByDay = useMemo<SessionTimesByDay | null>(() => {
     const raw = selectedBuilderTerm?.session_times_by_day;
     if (raw && typeof raw === 'object') return raw as SessionTimesByDay;

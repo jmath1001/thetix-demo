@@ -58,8 +58,10 @@ export async function POST(req: NextRequest) {
       subjects,
       availabilityBlocks,
       hoursPurchased,
-      syncStudentBalance,   // when true, also write students.hours_left = hoursPurchased
-      sessionHours,         // if provided, update students.session_hours
+      syncStudentBalance,         // when true, also write students.hours_left = hoursPurchased
+      sessionHours,               // if provided, update students.session_hours
+      subjectSessionsPerWeek,     // Record<subject, number> — desired sessions/week per subject
+      allowSameDayDouble,         // boolean — may schedule 2 sessions on the same day
       formToken,
       formSubmittedAt,
     } = await req.json()
@@ -86,6 +88,9 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(subjects)) updatePayload.subjects = subjects
     if (Array.isArray(availabilityBlocks)) updatePayload.availability_blocks = availabilityBlocks
     if (typeof hoursPurchased === 'number') updatePayload.hours_purchased = hoursPurchased
+    if (subjectSessionsPerWeek && typeof subjectSessionsPerWeek === 'object' && !Array.isArray(subjectSessionsPerWeek)) updatePayload.subject_sessions_per_week = subjectSessionsPerWeek
+    if (typeof allowSameDayDouble === 'boolean') updatePayload.allow_same_day_double = allowSameDayDouble
+    if (subjectTutorPreference && typeof subjectTutorPreference === 'object' && !Array.isArray(subjectTutorPreference)) updatePayload.subject_tutor_preference = subjectTutorPreference
     if (typeof formToken === 'string') updatePayload.form_token = formToken || null
     if (typeof formSubmittedAt === 'string') updatePayload.form_submitted_at = formSubmittedAt || null
 
@@ -119,6 +124,9 @@ export async function POST(req: NextRequest) {
       subjects: Array.isArray(subjects) ? subjects : [],
       availability_blocks: Array.isArray(availabilityBlocks) ? availabilityBlocks : [],
       hours_purchased: typeof hoursPurchased === 'number' ? hoursPurchased : 0,
+      subject_sessions_per_week: (subjectSessionsPerWeek && typeof subjectSessionsPerWeek === 'object' && !Array.isArray(subjectSessionsPerWeek)) ? subjectSessionsPerWeek : {},
+      allow_same_day_double: typeof allowSameDayDouble === 'boolean' ? allowSameDayDouble : false,
+      subject_tutor_preference: (subjectTutorPreference && typeof subjectTutorPreference === 'object' && !Array.isArray(subjectTutorPreference)) ? subjectTutorPreference : {},
       form_token: typeof formToken === 'string' ? formToken || null : null,
       form_submitted_at: typeof formSubmittedAt === 'string' ? formSubmittedAt || null : null,
     })

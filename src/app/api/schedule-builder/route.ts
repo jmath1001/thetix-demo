@@ -24,6 +24,7 @@ interface StudentNeed {
   subject: string
   availabilityBlocks: string[]   // "dayNum-HH:MM" format
   allowSameDayDouble?: boolean   // default false
+  preferredTutorId?: string | null  // boost score for this tutor, still fall back to others
 }
 
 interface ExistingBooking {
@@ -128,6 +129,9 @@ function scoreSlot(
   // Prefer different days from already-assigned sessions this run
   if (!daysAlreadyBookedThisRun.has(seat.dayNum)) score += 8
   else score -= 15  // strong penalty for same day (still allowed as fallback)
+
+  // Boost preferred tutor — still allows fallback to any qualified tutor.
+  if (need.preferredTutorId && seat.tutorId === need.preferredTutorId) score += 20
 
   // Prefer mid-week (Tue/Wed/Thu) over Mon/Sat for balance
   const dayBalance: Record<number, number> = { 1: 0, 2: 3, 3: 4, 4: 3, 6: 1 }

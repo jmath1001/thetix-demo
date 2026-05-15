@@ -209,26 +209,39 @@ function AvailabilityGrid({
   blocks,
   onChange,
   sessionTimesByDay,
+  readOnly,
 }: {
   blocks: string[];
   onChange: (b: string[]) => void;
   sessionTimesByDay?: SessionTimesByDay | null;
+  readOnly?: boolean;
 }) {
   const toggle = (d: number, t: string) => {
+    if (readOnly) return;
     const key = `${d}-${t}`;
     onChange(blocks.includes(key) ? blocks.filter(b => b !== key) : [...blocks, key]);
   };
 
+  const DOW_LABELS: Record<number, string> = { 0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat' };
+
+  // Derive active days from sessionTimesByDay keys when provided; else fall back to hardcoded defaults
+  const activeDaysInfo: { dow: number; label: string }[] = sessionTimesByDay
+    ? Object.keys(sessionTimesByDay)
+        .map(k => ({ dow: Number(k), label: DOW_LABELS[Number(k)] ?? `Day ${k}` }))
+        .filter(d => Array.isArray(sessionTimesByDay[String(d.dow)]) && (sessionTimesByDay[String(d.dow)] as string[]).length > 0)
+        .sort((a, b) => a.dow - b.dow)
+    : ACTIVE_DAYS_INFO;
+
   // Build per-day session blocks using the term's session times (falls back to default if null)
   const dayBlocksMap: Record<number, SessionBlock[]> = {};
-  for (const d of ACTIVE_DAYS_INFO) {
+  for (const d of activeDaysInfo) {
     dayBlocksMap[d.dow] = getSessionsForDay(d.dow, sessionTimesByDay);
   }
 
   // Union of all times across all days, sorted chronologically
   const seenTimes = new Set<string>();
   const rowDescriptors: { time: string; label: string; display: string }[] = [];
-  for (const d of ACTIVE_DAYS_INFO) {
+  for (const d of activeDaysInfo) {
     for (const b of dayBlocksMap[d.dow]) {
       if (!seenTimes.has(b.time)) {
         seenTimes.add(b.time);
@@ -246,7 +259,7 @@ function AvailabilityGrid({
           <thead>
             <tr style={{ background: '#1e293b' }}>
               <th className="border-r border-[#334155] px-2 py-2 text-left text-[9px] font-black uppercase tracking-[0.16em] text-[#cbd5e1]">Session</th>
-              {ACTIVE_DAYS_INFO.map(d => (
+              {activeDaysInfo.map(d => (
                 <th key={d.dow} className="px-1.5 py-2 text-center text-[9px] font-black uppercase tracking-[0.16em] text-[#cbd5e1]">{d.label}</th>
               ))}
             </tr>
@@ -258,21 +271,28 @@ function AvailabilityGrid({
                   <p className="text-[10px] font-black text-[#0f172a] leading-none">{row.label}</p>
                   <p className="text-[9px] text-[#94a3b8] mt-0.5">{row.display}</p>
                 </td>
-                {ACTIVE_DAYS_INFO.map(d => {
+                {activeDaysInfo.map(d => {
                   const applicable = dayBlocksMap[d.dow].some(b => b.time === row.time);
                   const active = applicable && blocks.includes(`${d.dow}-${row.time}`);
                   return (
                     <td key={d.dow} className="p-1 text-center">
                       {applicable ? (
-                        <button type="button" onClick={() => toggle(d.dow, row.time)}
-                          className="mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-all"
-                          style={{
-                            background: active ? '#4f46e5' : 'white',
-                            border: `1px solid ${active ? '#4f46e5' : '#cbd5e1'}`,
-                            boxShadow: active ? '0 4px 10px rgba(79,70,229,0.14)' : 'none',
-                          }}>
-                          {active && <span className="text-white text-[10px] font-black">✓</span>}
-                        </button>
+                        readOnly ? (
+                          <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-md"
+                            style={{ background: active ? '#4f46e5' : '#f1f5f9', border: `1px solid ${active ? '#4f46e5' : '#e2e8f0'}` }}>
+                            {active && <span className="text-white text-[10px] font-black">✓</span>}
+                          </div>
+                        ) : (
+                          <button type="button" onClick={() => toggle(d.dow, row.time)}
+                            className="mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-all"
+                            style={{
+                              background: active ? '#4f46e5' : 'white',
+                              border: `1px solid ${active ? '#4f46e5' : '#cbd5e1'}`,
+                              boxShadow: active ? '0 4px 10px rgba(79,70,229,0.14)' : 'none',
+                            }}>
+                            {active && <span className="text-white text-[10px] font-black">✓</span>}
+                          </button>
+                        )
                       ) : (
                         <div className="mx-auto h-7 w-7 rounded-md" style={{ background: '#e2e8f0' }} />
                       )}
@@ -528,6 +548,7 @@ function TutorDetailPanel({
   selectedTermId,
   termAvailabilityBlocks,
   sessionTimesByDay,
+  termLabel,
 }: {
   tutor: TutorWithContact;
   timeOffList: TimeOff[];
@@ -538,6 +559,7 @@ function TutorDetailPanel({
   selectedTermId: string;
   termAvailabilityBlocks: string[] | undefined;
   sessionTimesByDay: SessionTimesByDay | null;
+  termLabel?: string;
 }) {
   const [tab, setTab] = useState<'details' | 'timeoff'>('details');
   const [isEditing, setIsEditing] = useState(false);
@@ -734,58 +756,51 @@ function TutorDetailPanel({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                {selectedTermId && (
-                  <div className={`mb-3 rounded border px-3 py-2 text-[11px] font-medium ${hasTermOverride ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-                    {hasTermOverride ? '✓ Showing term-specific availability' : 'No term override yet — saving will create one for this term'}
-                  </div>
-                )}
-                {isEditing ? (
-                  <AvailabilityGrid
-                    blocks={draft.availabilityBlocks}
-                    sessionTimesByDay={sessionTimesByDay}
-                    onChange={blocks => setDraft({
-                      ...draft,
-                      availabilityBlocks: blocks,
-                      availability: Array.from(new Set(blocks.map(value => parseInt(value.split('-')[0])))).sort((left, right) => left - right),
-                    })}
-                  />
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Schedule conflicts</p>
-                        <p className="mt-1 text-[12px] text-slate-500">Booked sessions currently overlapping blocked dates.</p>
-                      </div>
-                      {conflictCount > 0 ? (
-                        <span className="flex items-center gap-1.5 rounded-full bg-[#fee2e2] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#b91c1c]">
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#dc2626] text-[10px] text-white">!</span>
-                          Needs attention
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-[#dcfce7] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#166534]">Ready</span>
-                      )}
-                    </div>
-                    {conflictSessions.length > 0 ? (
-                      <div className="mt-3 space-y-2">
-                        {conflictSessions.map(session => (
-                          <div key={session.id} className="rounded-xl border border-[#fecaca] bg-[#fff7f7] px-3 py-2.5">
-                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-[12px] font-black text-slate-900">{formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}</p>
-                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#b91c1c]">!
-                                {' '}Move {session.students.length}
-                              </p>
-                            </div>
-                            <p className="mt-1 text-[11px] text-slate-500">{summarizeStudentNames(session.students)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="mt-3 rounded-xl border border-[#d1fae5] bg-[#f0fdf4] px-3 py-2.5 text-[12px] font-medium text-[#166534]">
-                        No conflict sessions right now.
-                      </div>
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5">
+                {/* Override status banner */}
+                {selectedTermId ? (
+                  <div className={`rounded border px-3 py-2 text-[11px] font-semibold flex items-center justify-between gap-2 ${hasTermOverride ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                    <span>{hasTermOverride
+                      ? `✓ Term override · ${termLabel ?? selectedTermId}`
+                      : `Default · no override for ${termLabel ?? 'this term'}`}
+                    </span>
+                    {!hasTermOverride && !isEditing && (
+                      <button onClick={() => setIsEditing(true)} className="shrink-0 text-[10px] font-bold underline underline-offset-2">
+                        Create override
+                      </button>
                     )}
-                  </>
+                  </div>
+                ) : !isEditing && (
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Default Availability</p>
+                )}
+
+                {/* Availability grid — always visible, interactive only when editing */}
+                <AvailabilityGrid
+                  blocks={draft.availabilityBlocks}
+                  sessionTimesByDay={sessionTimesByDay}
+                  readOnly={!isEditing}
+                  onChange={blocks => setDraft({
+                    ...draft,
+                    availabilityBlocks: blocks,
+                    availability: Array.from(new Set(blocks.map(value => parseInt(value.split('-')[0])))).sort((left, right) => left - right),
+                  })}
+                />
+
+                {/* Conflicts — compact, view-mode only */}
+                {!isEditing && conflictSessions.length > 0 && (
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-700 mb-1.5">
+                      {conflictCount} conflict{conflictCount !== 1 ? 's' : ''} · time-off overlaps booked sessions
+                    </p>
+                    <div className="space-y-1">
+                      {conflictSessions.slice(0, 3).map(session => (
+                        <p key={session.id} className="text-[11px] text-red-700">
+                          {formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}
+                        </p>
+                      ))}
+                      {conflictSessions.length > 3 && <p className="text-[11px] text-red-600">+{conflictSessions.length - 3} more</p>}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -1145,6 +1160,7 @@ export default function TutorManagementPage() {
   const [sendWeekDate, setSendWeekDate] = useState(() => getMondayOfCurrentWeek());
   const [sendingSched, setSendingSched] = useState(false);
   const [sendResult, setSendResult] = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
+  const [centerSessionTimes, setCenterSessionTimes] = useState<SessionTimesByDay | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -1201,6 +1217,19 @@ export default function TutorManagementPage() {
         if (active) setSelectedTermId(active.id);
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await withCenter(supabase.from(DB.centerSettings).select('session_times_by_day').limit(1));
+      if (cancelled) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row?.session_times_by_day && typeof row.session_times_by_day === 'object') {
+        setCenterSessionTimes(row.session_times_by_day as SessionTimesByDay);
+      }
+    })().catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -1310,7 +1339,7 @@ export default function TutorManagementPage() {
   };
 
   const allSelected = tutors.length > 0 && tutors.every(t => selected.has(t.id));
-  const selectedTermSessionTimes = terms.find(t => t.id === selectedTermId)?.session_times_by_day ?? null;
+  const selectedTermSessionTimes = terms.find(t => t.id === selectedTermId)?.session_times_by_day ?? centerSessionTimes;
   const tutorsWithEmail = tutors.filter(t => !!t.email);
   const tutorsWithContact = tutors.filter(t => t.email || t.phone).length;
   const tutorsWithTimeOff = new Set(timeOffList.map(entry => entry.tutor_id)).size;
@@ -1451,6 +1480,7 @@ export default function TutorManagementPage() {
               <SubjectCheckboxes selected={newTutor.subjects} onChange={subjects => setNewTutor({ ...newTutor, subjects })} />
               <AvailabilityGrid
                 blocks={newTutor.availabilityBlocks}
+                sessionTimesByDay={selectedTermSessionTimes}
                 onChange={b => setNewTutor({
                   ...newTutor,
                   availabilityBlocks: b,
@@ -1635,6 +1665,7 @@ export default function TutorManagementPage() {
                   selectedTermId={selectedTermId}
                   termAvailabilityBlocks={termAvailabilityByTutor[activeTutor.id]}
                   sessionTimesByDay={selectedTermSessionTimes}
+                  termLabel={terms.find(t => t.id === selectedTermId)?.name}
                 />
               ) : (
                 <div className="rounded-[28px] border border-[#cbd5e1] bg-white px-6 py-16 text-center shadow-[0_24px_60px_rgba(15,23,42,0.12)]">

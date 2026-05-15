@@ -27,6 +27,7 @@ const EMPTY_FORM = {
   name: '', grade: '', email: '', phone: '',
   mom_name: '', mom_email: '', mom_phone: '',
   dad_name: '', dad_email: '', dad_phone: '',
+  notify_student: true, notify_mom: true, notify_dad: true,
 }
 const ACTIVE_DAYS = [1, 2, 3, 4, 6]
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday']
@@ -149,6 +150,9 @@ function StudentSlideOver({
       mom_phone: draft.mom_phone || null,
       dad_name: draft.dad_name || null, dad_email: draft.dad_email || null,
       dad_phone: draft.dad_phone || null,
+      notify_student: draft.notify_student ?? true,
+      notify_mom:     draft.notify_mom     ?? true,
+      notify_dad:     draft.notify_dad     ?? true,
     })).eq('id', student.id)
     setSaving(false)
     setEditing(false)
@@ -192,6 +196,9 @@ function StudentSlideOver({
         grade: student.grade ?? null, hoursLeft: student.hours_left ?? 0,
         sessionHours: student.session_hours ?? 2,
         availabilityBlocks: student.availability_blocks ?? [],
+        subjectSessionsPerWeek: student.subjectSessionsPerWeek ?? {},
+        allowSameDayDouble: student.allowSameDayDouble ?? false,
+        subjectTutorPreference: student.subjectTutorPreference ?? {},
         email: student.email ?? null, phone: student.phone ?? null,
         parent_name: null, parent_email: null, parent_phone: null,
         mom_name: student.mom_name ?? null, mom_email: student.mom_email ?? null,
@@ -323,6 +330,12 @@ function StudentSlideOver({
                         <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={inputCls} />
                       </div>
                     ))}
+                    <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+                      <input type="checkbox" checked={draft.notify_student ?? true}
+                        onChange={e => setDraft((p: any) => ({ ...p, notify_student: e.target.checked }))}
+                        className="h-3.5 w-3.5 rounded border-slate-300 accent-slate-800" />
+                      <span className="text-[10px] font-semibold text-slate-500">Send reminders to student email</span>
+                    </label>
                     <div className="pt-1">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Mother</p>
                       {[['Name', 'mom_name', 'text'], ['Email', 'mom_email', 'email'], ['Phone', 'mom_phone', 'tel']].map(([label, field, type]) => (
@@ -331,6 +344,12 @@ function StudentSlideOver({
                           <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={inputCls} />
                         </div>
                       ))}
+                      <label className="flex items-center gap-2 mt-1 mb-3 cursor-pointer select-none">
+                        <input type="checkbox" checked={draft.notify_mom ?? true}
+                          onChange={e => setDraft((p: any) => ({ ...p, notify_mom: e.target.checked }))}
+                          className="h-3.5 w-3.5 rounded border-slate-300 accent-slate-800" />
+                        <span className="text-[10px] font-semibold text-slate-500">Send reminders to mom&apos;s email</span>
+                      </label>
                       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2 mt-3">Father</p>
                       {[['Name', 'dad_name', 'text'], ['Email', 'dad_email', 'email'], ['Phone', 'dad_phone', 'tel']].map(([label, field, type]) => (
                         <div key={field} className="mb-2">
@@ -338,6 +357,12 @@ function StudentSlideOver({
                           <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={inputCls} />
                         </div>
                       ))}
+                      <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+                        <input type="checkbox" checked={draft.notify_dad ?? true}
+                          onChange={e => setDraft((p: any) => ({ ...p, notify_dad: e.target.checked }))}
+                          className="h-3.5 w-3.5 rounded border-slate-300 accent-slate-800" />
+                        <span className="text-[10px] font-semibold text-slate-500">Send reminders to dad&apos;s email</span>
+                      </label>
                     </div>
                     <button onClick={handleSave} disabled={saving}
                       className="w-full rounded bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 mt-1">
@@ -347,15 +372,18 @@ function StudentSlideOver({
                 ) : (
                   <div className="space-y-1.5 text-xs">
                     {[
-                      { label: 'Student', icon: Mail, value: student.email },
-                      { label: 'Phone', icon: Phone, value: student.phone },
-                      { label: 'Mom', icon: Mail, value: student.mom_email },
-                      { label: 'Dad', icon: Mail, value: student.dad_email },
-                    ].map(({ label, icon: Icon, value }) => (
+                      { label: 'Student', icon: Mail, value: student.email, notifyKey: 'notify_student' },
+                      { label: 'Phone', icon: Phone, value: student.phone, notifyKey: null },
+                      { label: 'Mom', icon: Mail, value: student.mom_email, notifyKey: 'notify_mom' },
+                      { label: 'Dad', icon: Mail, value: student.dad_email, notifyKey: 'notify_dad' },
+                    ].map(({ label, icon: Icon, value, notifyKey }) => (
                       <div key={label} className="flex items-center gap-2.5 rounded border border-slate-100 px-3 py-2">
                         <Icon size={11} className="text-slate-300 shrink-0" />
                         <span className="text-slate-400 w-10 shrink-0">{label}</span>
-                        <span className="font-medium text-slate-700 truncate">{value ?? 'Not on file'}</span>
+                        <span className="font-medium text-slate-700 truncate flex-1">{value ?? 'Not on file'}</span>
+                        {notifyKey && value && student[notifyKey] === false && (
+                          <span className="text-[9px] font-bold uppercase text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">No emails</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -405,6 +433,7 @@ function StudentSlideOver({
       {showDetailsModal && (
         <StudentDetailsModal
           student={student}
+          tutors={tutors.map(t => ({ id: t.id, name: t.name, subjects: Array.isArray(t.subjects) ? t.subjects : [] }))}
           onClose={() => setShowDetailsModal(false)}
           onSave={(updatedStudent) => {
             onUpdateStudent(updatedStudent)
