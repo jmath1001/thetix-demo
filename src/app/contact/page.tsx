@@ -42,6 +42,9 @@ type Candidate = {
   studentEmail: string | null;
   momEmail: string | null;
   dadEmail: string | null;
+  notifyStudent: boolean;
+  notifyMom: boolean;
+  notifyDad: boolean;
   reminderSent: boolean;
 };
 
@@ -59,6 +62,9 @@ type BlastRecipient = {
   studentEmail: string | null;
   momEmail: string | null;
   dadEmail: string | null;
+  notifyStudent: boolean;
+  notifyMom: boolean;
+  notifyDad: boolean;
 };
 
 const baseInputCls = 'w-full rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100';
@@ -216,7 +222,7 @@ export default function ContactCenter() {
     setLoadingBlastRecipients(true);
     try {
       const { data, error } = await withCenter(
-        supabase.from(DB.students).select('id, name, email, mom_email, dad_email')
+        supabase.from(DB.students).select('id, name, email, mom_email, dad_email, notify_student, notify_mom, notify_dad')
       ).order('name', { ascending: true });
       if (error) throw error;
       const recipients: BlastRecipient[] = (data ?? [])
@@ -226,11 +232,21 @@ export default function ContactCenter() {
           studentEmail: s.email ?? null,
           momEmail: s.mom_email ?? null,
           dadEmail: s.dad_email ?? null,
+          notifyStudent: s.notify_student ?? true,
+          notifyMom: s.notify_mom ?? true,
+          notifyDad: s.notify_dad ?? true,
         }))
         .filter((r: BlastRecipient) => r.studentEmail || r.momEmail || r.dadEmail);
       setBlastRecipients(recipients);
-      setBlastSelected(new Set(recipients.map((r: BlastRecipient) => r.studentId)));
-      setGeneralSelected(new Set(recipients.map((r: BlastRecipient) => r.studentId)));
+      const activeIds = recipients
+        .filter((r: BlastRecipient) =>
+          (r.studentEmail && r.notifyStudent) ||
+          (r.momEmail && r.notifyMom) ||
+          (r.dadEmail && r.notifyDad)
+        )
+        .map((r: BlastRecipient) => r.studentId);
+      setBlastSelected(new Set(activeIds));
+      setGeneralSelected(new Set(activeIds));
     } catch (e: any) {
       console.error('Failed to load blast recipients:', e);
     }
@@ -260,7 +276,10 @@ export default function ContactCenter() {
             name,
             email,
             mom_email,
-            dad_email
+            dad_email,
+            notify_student,
+            notify_mom,
+            notify_dad
           )
         `)
         .eq(`${DB.sessions}.session_date`, date)
@@ -279,10 +298,13 @@ export default function ContactCenter() {
           sessionDate:  sess?.session_date ?? date,
           sessionTime:  sess?.time ?? '',
           tutorName:    tutor?.name ?? '—',
-          studentEmail: student?.email ?? null,
-          momEmail:     student?.mom_email ?? null,
-          dadEmail:     student?.dad_email ?? null,
-          reminderSent: !!r.reminder_sent,
+          studentEmail:  student?.email ?? null,
+          momEmail:      student?.mom_email ?? null,
+          dadEmail:      student?.dad_email ?? null,
+          notifyStudent: student?.notify_student ?? true,
+          notifyMom:     student?.notify_mom ?? true,
+          notifyDad:     student?.notify_dad ?? true,
+          reminderSent:  !!r.reminder_sent,
         };
       }).sort((a: Candidate, b: Candidate) => a.sessionTime.localeCompare(b.sessionTime) || a.studentName.localeCompare(b.studentName));
 
@@ -301,7 +323,10 @@ export default function ContactCenter() {
       }
 
       setCandidates(filteredRows);
-      setSelected(new Set(filteredRows.filter((r: Candidate) => !r.reminderSent && (r.studentEmail || r.momEmail || r.dadEmail)).map((r: Candidate) => r.rowId)));
+      setSelected(new Set(filteredRows.filter((r: Candidate) =>
+        !r.reminderSent &&
+        ((r.studentEmail && r.notifyStudent) || (r.momEmail && r.notifyMom) || (r.dadEmail && r.notifyDad))
+      ).map((r: Candidate) => r.rowId)));
     } catch (e: any) {
       console.error('Failed to load candidates:', e);
       setCandidates([]);
@@ -648,14 +673,18 @@ export default function ContactCenter() {
             ) : (
               <div className="overflow-hidden rounded border border-slate-200 bg-white">
                 {candidates.map((c, i) => {
-                  const noEmail    = !c.studentEmail && !c.momEmail && !c.dadEmail;
-                  const isDisabled = noEmail || c.reminderSent;
-                  const isChecked  = selected.has(c.rowId);
+                  const noEmail     = !c.studentEmail && !c.momEmail && !c.dadEmail;
+                  const allOptedOut = !noEmail &&
+                    (!c.studentEmail || !c.notifyStudent) &&
+                    (!c.momEmail     || !c.notifyMom) &&
+                    (!c.dadEmail     || !c.notifyDad);
+                  const isDisabled  = noEmail || allOptedOut || c.reminderSent;
+                  const isChecked   = selected.has(c.rowId);
                   return (
                     <div
                       key={c.rowId}
                       className="flex items-center gap-3 px-3 py-3 transition-colors"
-                      style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none', background: c.reminderSent ? '#f8fafc' : 'white', opacity: noEmail ? 0.45 : 1, cursor: isDisabled ? 'default' : 'pointer' }}
+                      style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none', background: c.reminderSent ? '#f8fafc' : 'white', opacity: noEmail || allOptedOut ? 0.45 : 1, cursor: isDisabled ? 'default' : 'pointer' }}
                       onClick={() => !isDisabled && toggleWithConfirmReset(c.rowId)}
                     >
                       <div
@@ -673,11 +702,22 @@ export default function ContactCenter() {
                             </span>
                           )}
                           {noEmail && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">No email</span>}
+                          {allOptedOut && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-600">Opted out</span>}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2">
                           <span className="text-[11px] text-slate-500">{c.sessionTime} · {c.tutorName}</span>
                           {(c.studentEmail || c.momEmail || c.dadEmail) && !c.reminderSent && (
-                            <span className="text-[10px] text-slate-400">→ {[c.studentEmail, c.momEmail, c.dadEmail].filter(Boolean).join(', ')}</span>
+                            <span className="text-[10px] text-slate-400">
+                              → {[
+                                c.studentEmail ? { addr: c.studentEmail, notify: c.notifyStudent } : null,
+                                c.momEmail     ? { addr: c.momEmail,     notify: c.notifyMom }     : null,
+                                c.dadEmail     ? { addr: c.dadEmail,     notify: c.notifyDad }     : null,
+                              ].filter(Boolean).map((x, xi) => (
+                                <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
+                                  {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
+                                </span>
+                              ))}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -827,7 +867,6 @@ export default function ContactCenter() {
                     <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white">
                       {blastRecipients.map((r, i) => {
                         const isChecked = blastSelected.has(r.studentId);
-                        const emails = [r.studentEmail, r.momEmail, r.dadEmail].filter(Boolean);
                         return (
                           <div
                             key={r.studentId}
@@ -843,7 +882,17 @@ export default function ContactCenter() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
-                              <p className="truncate text-[10px] text-slate-400">{emails.join(', ')}</p>
+                              <p className="truncate text-[10px] text-slate-400">
+                                {[
+                                  r.studentEmail ? { addr: r.studentEmail, notify: r.notifyStudent } : null,
+                                  r.momEmail     ? { addr: r.momEmail,     notify: r.notifyMom }     : null,
+                                  r.dadEmail     ? { addr: r.dadEmail,     notify: r.notifyDad }     : null,
+                                ].filter(Boolean).map((x, xi) => (
+                                  <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
+                                    {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
+                                  </span>
+                                ))}
+                              </p>
                             </div>
                           </div>
                         );
@@ -978,7 +1027,6 @@ export default function ContactCenter() {
                     <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white">
                       {blastRecipients.map((r, i) => {
                         const isChecked = generalSelected.has(r.studentId);
-                        const emails = [r.studentEmail, r.momEmail, r.dadEmail].filter(Boolean);
                         return (
                           <div
                             key={r.studentId}
@@ -1001,7 +1049,17 @@ export default function ContactCenter() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
-                              <p className="truncate text-[10px] text-slate-400">{emails.join(', ')}</p>
+                              <p className="truncate text-[10px] text-slate-400">
+                                {[
+                                  r.studentEmail ? { addr: r.studentEmail, notify: r.notifyStudent } : null,
+                                  r.momEmail     ? { addr: r.momEmail,     notify: r.notifyMom }     : null,
+                                  r.dadEmail     ? { addr: r.dadEmail,     notify: r.notifyDad }     : null,
+                                ].filter(Boolean).map((x, xi) => (
+                                  <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
+                                    {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
+                                  </span>
+                                ))}
+                              </p>
                             </div>
                           </div>
                         );
