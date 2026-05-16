@@ -26,6 +26,7 @@ type TermRow = {
   start_date: string
   end_date: string
   status: string
+  session_hours: number | null
   operating_hours: Record<string, { open: string; close: string; closed?: boolean }> | null
   session_times_by_day: Record<string, string[]> | null
   date_exceptions: Array<{ date: string; closed: boolean; label?: string }> | null
@@ -43,6 +44,7 @@ type TermDraft = {
   start_date: string
   end_date: string
   status: string
+  session_hours: number
   operating_hours: Record<string, { open: string; close: string; closed: boolean }>
   session_times_by_day: Record<string, string[]>
   date_exceptions: DateException[]
@@ -138,6 +140,7 @@ export default function CenterSettingsPage() {
     start_date: '',
     end_date: '',
     status: 'upcoming',
+    session_hours: 2,
     operating_hours: DEFAULT_OPERATING_HOURS as Record<string, { open: string; close: string; closed: boolean }>,
     session_times_by_day: DEFAULT_SESSION_TIMES_BY_DAY,
     date_exceptions: [],
@@ -162,9 +165,9 @@ export default function CenterSettingsPage() {
   const [cronHistory, setCronHistory] = useState<CronHistoryItem[]>([])
   const [cronLoading, setCronLoading] = useState(false)
   const [cronSaving, setCronSaving] = useState(false)
-  const [cronConfigured, setCronConfigured] = useState<boolean | null>(null) // null = not checked yet
-  const [cronHour, setCronHour] = useState<number>(7)    // draft hour
-  const [cronMinute, setCronMinute] = useState<number>(0) // draft minute
+  const [cronConfigured, setCronConfigured] = useState<boolean | null>(null)
+  const [cronHour, setCronHour] = useState<number>(7)
+  const [cronMinute, setCronMinute] = useState<number>(0)
 
   useEffect(() => {
     if (tab !== 'notifications') return
@@ -202,7 +205,6 @@ export default function CenterSettingsPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error ?? 'Failed')
-      // re-fetch to reflect server state
       const updated = await fetch('/api/cron-config').then(r => r.json())
       if (updated?.jobDetails) setCronJob(updated.jobDetails)
     } catch (err) {
@@ -211,6 +213,7 @@ export default function CenterSettingsPage() {
       setCronSaving(false)
     }
   }
+
   const [centerSubjects, setCenterSubjects] = useState<string[]>([])
   const [subjectsLoading, setSubjectsLoading] = useState(true)
   const [subjectsSaving, setSubjectsSaving] = useState(false)
@@ -244,7 +247,6 @@ export default function CenterSettingsPage() {
             .single()
 
           if (insertErr) throw insertErr
-
           if (cancelled) return
 
           setRowId(inserted.id)
@@ -388,8 +390,6 @@ export default function CenterSettingsPage() {
     setError(null)
     setSuccess(null)
 
-    // Columns added by 20260512_extend_center_settings.sql — guarded so save
-    // still works before the migration is run in Supabase.
     const extendedPayload = {
       center_name: centerName.trim() || DEFAULTS.center_name,
       center_short_name: centerShortName.trim() || null,
@@ -417,7 +417,6 @@ export default function CenterSettingsPage() {
         supabase.from(DB.centerSettings).update(extendedPayload)
       ).eq('id', rowId)
 
-      // If migration hasn't been run yet, fall back to base columns only
       if (updateErr?.message?.includes('schema cache')) {
         const fallback = await withCenter(
           supabase.from(DB.centerSettings).update(basePayload)
@@ -443,10 +442,12 @@ export default function CenterSettingsPage() {
       start_date: '',
       end_date: '',
       status: 'upcoming',
+      session_hours: 2,
       operating_hours: DEFAULT_OPERATING_HOURS as Record<string, { open: string; close: string; closed: boolean }>,
       session_times_by_day: DEFAULT_SESSION_TIMES_BY_DAY,
       date_exceptions: [],
     })
+    setNewTimeByDay({})
     setTermFormOpen(false)
   }
 
@@ -462,7 +463,7 @@ export default function CenterSettingsPage() {
     }
 
     const overlap = terms.find(t => {
-      if (t.id === termDraft.id) return false // allow editing own dates
+      if (t.id === termDraft.id) return false
       return termDraft.start_date <= t.end_date && termDraft.end_date >= t.start_date
     })
     if (overlap) {
@@ -483,6 +484,7 @@ export default function CenterSettingsPage() {
           startDate: termDraft.start_date,
           endDate: termDraft.end_date,
           status: termDraft.status,
+          sessionHours: Math.max(1, Number(termDraft.session_hours || 2)),
           operatingHours: termDraft.operating_hours,
           sessionTimesByDay: termDraft.session_times_by_day,
           dateExceptions: termDraft.date_exceptions,
@@ -515,10 +517,12 @@ export default function CenterSettingsPage() {
       start_date: term.start_date,
       end_date: term.end_date,
       status: term.status,
+      session_hours: typeof term.session_hours === 'number' ? term.session_hours : 2,
       operating_hours: (term.operating_hours ?? DEFAULT_OPERATING_HOURS) as Record<string, { open: string; close: string; closed: boolean }>,
       session_times_by_day: term.session_times_by_day ?? DEFAULT_SESSION_TIMES_BY_DAY,
       date_exceptions: Array.isArray(term.date_exceptions) ? term.date_exceptions : [],
     })
+    setNewTimeByDay({})
     setTermFormOpen(true)
   }
 
@@ -650,16 +654,16 @@ export default function CenterSettingsPage() {
                   </div>
                 </div>
               </div>
-
             </div>
           )}
 
+          {/* ── Terms ── */}
           {tab === 'terms' && (
             <div>
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest text-slate-800">Academic Terms</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Each term has its own operating hours and date exceptions. Session times are configured globally in <button type="button" onClick={() => setTab('general')} className="underline text-blue-600 hover:text-blue-800">General settings</button>.</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Each term has its own operating hours, session times, and date exceptions.</p>
                 </div>
                 {!termFormOpen && (
                   <div className="flex items-center gap-2">
@@ -700,7 +704,7 @@ export default function CenterSettingsPage() {
                           </div>
                           <p className="text-slate-500">{term.start_date} to {term.end_date} · {term.status}</p>
                           <p className="text-[11px] text-slate-400">
-                            Hours: {term.operating_hours ? 'configured' : 'default'} · Times: {term.session_times_by_day ? 'configured' : 'default'}
+                            Session Hours: {typeof term.session_hours === 'number' ? term.session_hours : 2}h · Hours: {term.operating_hours ? 'configured' : 'default'} · Times: {term.session_times_by_day ? 'configured' : 'default'}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -751,6 +755,18 @@ export default function CenterSettingsPage() {
                         <option value="completed">Completed</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-500">Session Hours</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={6}
+                        step={1}
+                        value={termDraft.session_hours}
+                        onChange={e => setTermDraft(prev => ({ ...prev, session_hours: Math.max(1, Number(e.target.value || 1)) }))}
+                        className={baseInputCls}
+                      />
+                    </div>
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -774,6 +790,7 @@ export default function CenterSettingsPage() {
                     </div>
                   </div>
 
+                  {/* ── Operating Hours ── */}
                   <div className="mt-4">
                     <p className="mb-2 text-xs font-semibold text-slate-600">Operating Hours by Day</p>
                     <table className="w-full text-xs border-collapse">
@@ -845,12 +862,87 @@ export default function CenterSettingsPage() {
                     </table>
                   </div>
 
+                  {/* ── Session Times by Day ── */}
+                  <div className="mt-5 border-t border-slate-100 pt-4">
+                    <p className="mb-1 text-xs font-black uppercase tracking-widest text-slate-800">Session Times by Day</p>
+                    <p className="mb-3 text-[11px] text-slate-400">Set the specific time slots available each day. Only open days are shown.</p>
+                    {ALL_DAYS.map(({ dow, label }) => {
+                      const oh = termDraft.operating_hours[dow]
+                      if (oh?.closed) return null
+                      const slots = termDraft.session_times_by_day[dow] ?? []
+                      const pending = newTimeByDay[dow] ?? { start: oh?.open ?? '13:30', end: '' }
+                      return (
+                        <div key={dow} className="mb-4">
+                          <p className="mb-1.5 text-[11px] font-bold text-slate-600">{label}</p>
+                          {/* Existing slots */}
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {slots.length === 0 && (
+                              <span className="text-[11px] text-slate-400">No slots — add one below</span>
+                            )}
+                            {slots.map(slot => {
+                              const { start, end } = parseSlot(slot)
+                              return (
+                                <span key={slot} className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                                  {fmt12(start)}{end ? `–${fmt12(end)}` : ''}
+                                  <button
+                                    type="button"
+                                    onClick={() => setTermDraft(prev => ({
+                                      ...prev,
+                                      session_times_by_day: {
+                                        ...prev.session_times_by_day,
+                                        [dow]: (prev.session_times_by_day[dow] ?? []).filter(s => s !== slot),
+                                      },
+                                    }))}
+                                    className="ml-0.5 text-slate-300 hover:text-red-500 leading-none"
+                                  >&times;</button>
+                                </span>
+                              )
+                            })}
+                          </div>
+                          {/* Add new slot */}
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={pending.start}
+                              onChange={e => setNewTimeByDay(prev => ({ ...prev, [dow]: { ...pending, start: e.target.value } }))}
+                              className="rounded border border-slate-200 px-2 py-1 text-xs"
+                            />
+                            <span className="text-slate-400 text-xs">–</span>
+                            <input
+                              type="time"
+                              value={pending.end}
+                              onChange={e => setNewTimeByDay(prev => ({ ...prev, [dow]: { ...pending, end: e.target.value } }))}
+                              className="rounded border border-slate-200 px-2 py-1 text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={!pending.start || !pending.end}
+                              onClick={() => {
+                                if (!pending.start || !pending.end) return
+                                const slot = `${pending.start}-${pending.end}`
+                                if (slots.includes(slot)) return
+                                setTermDraft(prev => ({
+                                  ...prev,
+                                  session_times_by_day: {
+                                    ...prev.session_times_by_day,
+                                    [dow]: [...(prev.session_times_by_day[dow] ?? []), slot],
+                                  },
+                                }))
+                                setNewTimeByDay(prev => ({ ...prev, [dow]: { start: pending.start, end: '' } }))
+                              }}
+                              className="rounded bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
+                            >+ Add</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
                   {/* ── Special Days / Holidays ── */}
                   <div className="mt-5 border-t border-slate-100 pt-4">
                     <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-800">Special Days / Holidays</p>
                     <p className="mb-3 text-[11px] text-slate-400">Mark individual dates as closed or with a custom note.</p>
 
-                    {/* Existing exceptions */}
                     {termDraft.date_exceptions.length > 0 && (
                       <div className="mb-3 space-y-1.5">
                         {termDraft.date_exceptions
@@ -875,7 +967,6 @@ export default function CenterSettingsPage() {
                       </div>
                     )}
 
-                    {/* Add new exception */}
                     <div className="flex flex-wrap items-end gap-2">
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-500">Date</label>
@@ -1007,7 +1098,6 @@ export default function CenterSettingsPage() {
 
                 {cronConfigured && cronJob && (
                   <div className="space-y-4">
-                    {/* Status row */}
                     <div className="flex items-center gap-3">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                         cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
@@ -1031,7 +1121,6 @@ export default function CenterSettingsPage() {
                       )}
                     </div>
 
-                    {/* Schedule editor */}
                     <div className="flex items-end gap-3">
                       <div>
                         <label className="mb-1 block text-[11px] font-semibold text-slate-500">Hour (0–23)</label>
@@ -1061,7 +1150,6 @@ export default function CenterSettingsPage() {
                       <span className="text-[11px] text-slate-400">Timezone: {cronJob.schedule?.timezone ?? 'UTC'}</span>
                     </div>
 
-                    {/* Execution history */}
                     {cronHistory.length > 0 && (
                       <div>
                         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Recent Runs</p>

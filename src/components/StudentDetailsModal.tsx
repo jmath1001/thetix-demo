@@ -74,6 +74,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
   const [hoursPurchased, setHoursPurchased] = useState(0)
   const [originalHoursPurchased, setOriginalHoursPurchased] = useState(0)
   const [sessionHours, setSessionHours] = useState<number>(typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2)
+  const [originalSessionHours, setOriginalSessionHours] = useState<number>(typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2)
   const [isSavingHours, setIsSavingHours] = useState(false)
   const [termEnrollmentExists, setTermEnrollmentExists] = useState(false)
   const [isRevertingHours, setIsRevertingHours] = useState(false)
@@ -182,7 +183,15 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
 
   const currentAvailabilityCount = editAvailability.length
   const hasAvailabilityChanges = JSON.stringify([...editAvailability].sort()) !== JSON.stringify([...originalAvailability].sort())
-  const hasHoursChanges = !termEnrollmentExists || Number(hoursPurchased || 0) !== Number(originalHoursPurchased || 0)
+  const hasHoursChanges = !termEnrollmentExists
+    || Number(hoursPurchased || 0) !== Number(originalHoursPurchased || 0)
+    || Number(sessionHours || 0) !== Number(originalSessionHours || 0)
+
+  useEffect(() => {
+    const next = typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2
+    setSessionHours(next)
+    setOriginalSessionHours(next)
+  }, [student?.id, student?.session_hours])
 
   useEffect(() => {
     let cancelled = false
@@ -431,10 +440,12 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
       setHoursPurchased(nextHours)
       setOriginalHoursPurchased(nextHours)
       setTermEnrollmentExists(true)
+      setOriginalSessionHours(sessionHours)
       if (onSave) {
         onSave({
           ...student,
           hours_left: Number(nextHours || 0),
+          session_hours: sessionHours,
           selected_term_id: selectedTermId,
           selectedTermId,
         })

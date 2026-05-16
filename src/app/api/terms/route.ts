@@ -94,7 +94,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, startDate, endDate, status, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
+    const { name, startDate, endDate, status, sessionHours, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
 
     if (!name || !startDate || !endDate) {
       return NextResponse.json({ error: 'name, startDate, and endDate are required' }, { status: 400 })
@@ -105,6 +105,9 @@ export async function POST(req: NextRequest) {
       start_date: String(startDate),
       end_date: String(endDate),
       status: typeof status === 'string' && status.trim() ? status : 'upcoming',
+      ...(typeof sessionHours === 'number' && Number.isFinite(sessionHours)
+        ? { session_hours: Math.max(1, Math.round(sessionHours)) }
+        : {}),
       ...(typeof operatingHours === 'object' && operatingHours
         ? { operating_hours: operatingHours }
         : {}),
@@ -138,7 +141,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, name, startDate, endDate, status, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
+    const { id, name, startDate, endDate, status, sessionHours, operatingHours, sessionTimesByDay, dateExceptions } = await req.json()
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 })
@@ -149,6 +152,7 @@ export async function PATCH(req: NextRequest) {
     if (typeof startDate === 'string' && startDate.trim()) updatePayload.start_date = startDate
     if (typeof endDate === 'string' && endDate.trim()) updatePayload.end_date = endDate
     if (typeof status === 'string' && status.trim()) updatePayload.status = status
+    if (typeof sessionHours === 'number' && Number.isFinite(sessionHours)) updatePayload.session_hours = Math.max(1, Math.round(sessionHours))
     if (typeof operatingHours === 'object' && operatingHours) updatePayload.operating_hours = operatingHours
     if (typeof sessionTimesByDay === 'object' && sessionTimesByDay) updatePayload.session_times_by_day = sessionTimesByDay
     if (Array.isArray(dateExceptions)) updatePayload.date_exceptions = dateExceptions
