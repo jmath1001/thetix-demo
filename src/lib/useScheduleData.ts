@@ -277,7 +277,6 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
             return !!start && !!end && start <= weekEndIso && end >= weekStartIso
           })
           ?? terms.find((term: any) => normalizedStatus(term.status) === 'active')
-          ?? terms[0]
           ?? null
         const activeTermId = activeTerm?.id ?? null
 
