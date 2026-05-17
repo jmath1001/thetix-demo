@@ -1561,26 +1561,39 @@ export default function TutorManagementPage() {
         )}
 
         {/* Term availability scope selector */}
-        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-          <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Term</span>
-          <select
-            value={selectedTermId}
-            onChange={e => setSelectedTermId(e.target.value)}
-            className="rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mr-1">Editing for</span>
+          <button
+            onClick={() => setSelectedTermId('')}
+            className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
+            style={selectedTermId === ''
+              ? { background: '#1e293b', color: 'white' }
+              : { background: '#f1f5f9', color: '#64748b' }}
           >
-            <option value="">Default (no term override)</option>
-            {terms.map(t => (
-              <option key={t.id} value={t.id}>
-                {t.name}{(t.status ?? '').trim().toLowerCase() === 'active' ? ' · Active' : (t.status ?? '').trim().toLowerCase() === 'upcoming' ? ' · Upcoming' : ''}
-              </option>
-            ))}
-          </select>
-          {loadingTermAvailability && <Loader2 size={12} className="animate-spin text-slate-400" />}
+            Default
+          </button>
+          {terms.map(t => {
+            const isActive = (t.status ?? '').trim().toLowerCase() === 'active';
+            const isSelected = selectedTermId === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setSelectedTermId(t.id)}
+                className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
+                style={isSelected
+                  ? { background: '#4f46e5', color: 'white' }
+                  : { background: '#f1f5f9', color: '#64748b' }}
+              >
+                {t.name}{isActive ? ' ·\u00a0Active' : ''}
+              </button>
+            );
+          })}
+          {loadingTermAvailability && <Loader2 size={12} className="animate-spin text-slate-400 ml-1" />}
           {selectedTermId && !loadingTermAvailability && (
-            <span className="text-[11px] text-slate-500">
+            <span className="ml-1 text-[11px] text-slate-400">
               {Object.keys(termAvailabilityByTutor).length > 0
-                ? `${Object.keys(termAvailabilityByTutor).length} tutor${Object.keys(termAvailabilityByTutor).length === 1 ? '' : 's'} with term overrides`
-                : 'No term overrides saved yet'}
+                ? `${Object.keys(termAvailabilityByTutor).length} tutor${Object.keys(termAvailabilityByTutor).length === 1 ? '' : 's'} with overrides`
+                : 'No overrides yet'}
             </span>
           )}
         </div>
