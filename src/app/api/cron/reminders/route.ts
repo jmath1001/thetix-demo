@@ -17,6 +17,7 @@ const REMINDER_LOGS = DB.reminderLogs;
 const TERM_ENROLLMENTS = DB.termEnrollments;
 const EMAIL_SEND_MODE = (process.env.EMAIL_SEND_MODE ?? "redirect").toLowerCase();
 const REMINDER_CRON_ENABLED = process.env.REMINDER_CRON_ENABLED === "true";
+const REMINDER_TIMEZONE = (process.env.REMINDER_TIMEZONE ?? process.env.NEXT_PUBLIC_REMINDER_TIMEZONE ?? "America/Chicago").trim() || "America/Chicago";
 const TEST_RECIPIENT = process.env.EMAIL_TEST_RECIPIENT?.trim() || process.env.GOOGLE_EMAIL?.trim() || null;
 const BRAND_RED = "#991b1b";
 
@@ -311,9 +312,9 @@ export async function GET() {
     }
 
     const now = new Date();
-    const todayStr    = now.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    const todayStr    = now.toLocaleDateString("en-CA", { timeZone: REMINDER_TIMEZONE });
     const tomorrow    = new Date(); tomorrow.setDate(now.getDate() + 1);
-    const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    const tomorrowStr = tomorrow.toLocaleDateString("en-CA", { timeZone: REMINDER_TIMEZONE });
 
     const { data: sessions, error } = await (withCenter(
       supabase

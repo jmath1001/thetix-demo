@@ -166,6 +166,7 @@ export default function CenterSettingsPage() {
   type CronSchedule = { hours: number[]; minutes: number[]; timezone: string }
   type CronJob = { enabled: boolean; nextExecution: number; lastExecution: number; lastStatus: number; schedule: CronSchedule }
   type CronHistoryItem = { date: number; status: number; statusText: string; httpStatus: number; duration: number }
+  const DEFAULT_REMINDER_TIMEZONE = 'America/Chicago'
   const [cronJob, setCronJob] = useState<CronJob | null>(null)
   const [cronHistory, setCronHistory] = useState<CronHistoryItem[]>([])
   const [cronLoading, setCronLoading] = useState(false)
@@ -204,6 +205,7 @@ export default function CenterSettingsPage() {
     const [hStr, mStr] = reminderTime.split(':')
     const h = parseInt(hStr, 10)
     const m = parseInt(mStr, 10)
+    const timezone = cronJob?.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE
     setCronSaving(true)
     setError(null)
     try {
@@ -211,7 +213,7 @@ export default function CenterSettingsPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          schedule: { hours: [h], minutes: [m], wdays: [-1], timezone: cronJob?.schedule?.timezone ?? 'UTC' },
+          schedule: { hours: [h], minutes: [m], wdays: [-1], timezone },
         }),
       })
       const data = await res.json()
@@ -1260,7 +1262,7 @@ export default function CenterSettingsPage() {
                           onChange={e => setReminderTime(e.target.value)}
                           className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 outline-none"
                         />
-                        <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob.schedule?.timezone ?? 'UTC'}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE}</p>
                       </div>
                       <button
                         onClick={saveReminderTime}
@@ -1274,7 +1276,7 @@ export default function CenterSettingsPage() {
 
                     {cronJob.nextExecution > 0 && (
                       <p className="text-[11px] text-slate-400">
-                        Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString()}
+                        Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE })}
                       </p>
                     )}
 
