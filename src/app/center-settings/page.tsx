@@ -796,9 +796,7 @@ export default function CenterSettingsPage() {
                       <thead>
                         <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                           <th className="pb-1.5 text-left w-28">Day</th>
-                          <th className="pb-1.5 text-left">Open</th>
-                          <th className="pb-1.5 px-2 text-slate-300">–</th>
-                          <th className="pb-1.5 text-left">Close</th>
+                          <th className="pb-1.5 text-left" colSpan={3}>Hours</th>
                           <th className="pb-1.5 text-left pl-2"></th>
                         </tr>
                       </thead>
@@ -818,25 +816,31 @@ export default function CenterSettingsPage() {
                                   {label}
                                 </label>
                               </td>
-                              <td className="py-1.5">
-                                <input
-                                  type="time"
-                                  value={oh.open ?? '09:00'}
-                                  disabled={isClosed}
-                                  onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, open: e.target.value } } }))}
-                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs disabled:opacity-30"
-                                />
-                              </td>
-                              <td className="px-2 text-center text-slate-300">–</td>
-                              <td className="py-1.5">
-                                <input
-                                  type="time"
-                                  value={oh.close ?? '21:00'}
-                                  disabled={isClosed}
-                                  onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, close: e.target.value } } }))}
-                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs disabled:opacity-30"
-                                />
-                              </td>
+                              {isClosed ? (
+                                <td colSpan={3} className="py-1.5">
+                                  <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-400">Closed</span>
+                                </td>
+                              ) : (
+                                <>
+                                  <td className="py-1.5">
+                                    <input
+                                      type="time"
+                                      value={oh.open ?? '09:00'}
+                                      onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, open: e.target.value } } }))}
+                                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                                    />
+                                  </td>
+                                  <td className="px-2 text-center text-slate-300">–</td>
+                                  <td className="py-1.5">
+                                    <input
+                                      type="time"
+                                      value={oh.close ?? '21:00'}
+                                      onChange={e => setTermDraft(prev => ({ ...prev, operating_hours: { ...prev.operating_hours, [dow]: { ...oh, close: e.target.value } } }))}
+                                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                                    />
+                                  </td>
+                                </>
+                              )}
                               <td className="py-1.5 pl-2">
                                 {!isClosed && (
                                   <button

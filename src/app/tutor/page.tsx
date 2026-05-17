@@ -294,7 +294,7 @@ function AvailabilityGrid({
                           </button>
                         )
                       ) : (
-                        <div className="mx-auto h-7 w-7 rounded-md" style={{ background: '#e2e8f0' }} />
+                        <span className="text-[#cbd5e1] text-xs select-none">–</span>
                       )}
                     </td>
                   );
