@@ -76,19 +76,19 @@ const DEFAULTS = {
 }
 
 const DEFAULT_OPERATING_HOURS = {
-  '1': { open: '13:30', close: '21:30', closed: false },
-  '2': { open: '13:30', close: '21:30', closed: false },
-  '3': { open: '13:30', close: '21:30', closed: false },
-  '4': { open: '13:30', close: '21:30', closed: false },
-  '6': { open: '09:30', close: '17:30', closed: false },
+  '1': { open: '09:00', close: '21:30', closed: false },
+  '2': { open: '09:00', close: '21:30', closed: false },
+  '3': { open: '09:00', close: '21:30', closed: false },
+  '4': { open: '09:00', close: '21:30', closed: false },
+  '6': { open: '09:00', close: '17:30', closed: false },
 }
 
 const DEFAULT_SESSION_TIMES_BY_DAY = {
-  '1': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '2': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '3': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '4': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '6': ['09:30-11:20', '11:30-13:20', '13:30-15:20', '15:30-17:20'],
+  '1': [],
+  '2': [],
+  '3': [],
+  '4': [],
+  '6': [],
 }
 
 function parseSlot(slot: string): { start: string; end: string } {
@@ -750,7 +750,7 @@ export default function CenterSettingsPage() {
                       <p className="mb-3 text-[11px] text-slate-400">Add session rows for each day. Days with no rows are treated as off.</p>
                       {ALL_DAYS.map(({ dow, label }) => {
                         const slots = globalSessionTimes[dow] ?? []
-                        const pending = globalNewTimeByDay[dow] ?? { start: '13:30', end: '' }
+                        const pending = globalNewTimeByDay[dow] ?? { start: '09:00', end: '' }
                         return (
                           <div key={dow} className="mb-4">
                             <p className="mb-1.5 text-[11px] font-bold text-slate-600">{label}</p>
@@ -1037,7 +1037,7 @@ export default function CenterSettingsPage() {
                         const oh = termDraft.operating_hours[dow]
                         if (oh?.closed) return null
                         const slots = termDraft.session_times_by_day[dow] ?? []
-                        const pending = newTimeByDay[dow] ?? { start: oh?.open ?? '13:30', end: '' }
+                        const pending = newTimeByDay[dow] ?? { start: oh?.open ?? '09:00', end: '' }
                         return (
                           <div key={dow} className="mb-4">
                             <p className="mb-1.5 text-[11px] font-bold text-slate-600">{label}</p>

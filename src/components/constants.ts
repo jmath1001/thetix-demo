@@ -11,23 +11,14 @@ export type SessionBlock = {
 export type SessionTimesByDay = Record<string, string[]>
 
 export const DEFAULT_SESSION_TIMES_BY_DAY: SessionTimesByDay = {
-  '1': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '2': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '3': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '4': ['13:30-15:20', '15:30-17:20', '17:30-19:20', '19:30-21:20'],
-  '6': ['09:30-11:20', '11:30-13:20', '13:30-15:20', '15:30-17:20'],
+  '1': [],
+  '2': [],
+  '3': [],
+  '4': [],
+  '6': [],
 }
 
-export const SESSION_BLOCKS: SessionBlock[] = [
-  { id: 'S1', label: 'Session 1', time: '13:30', display: '1:30 – 3:20 PM', days: [1, 2, 3, 4] },
-  { id: 'S2', label: 'Session 2', time: '15:30', display: '3:30 – 5:20 PM', days: [1, 2, 3, 4] },
-  { id: 'S3', label: 'Session 3', time: '17:30', display: '5:30 – 7:20 PM', days: [1, 2, 3, 4] },
-  { id: 'S4', label: 'Session 4', time: '19:30', display: '7:30 – 9:20 PM', days: [1, 2, 3, 4] },
-  { id: 'S5', label: 'Session 1', time: '09:30', display: '9:30 – 11:20 AM', days: [6] },
-  { id: 'S6', label: 'Session 2', time: '11:30', display: '11:30 AM – 1:20 PM', days: [6] },
-  { id: 'S7', label: 'Session 3', time: '13:30', display: '1:30 – 3:20 PM', days: [6] },
-  { id: 'S8', label: 'Session 4', time: '15:30', display: '3:30 – 5:20 PM', days: [6] },
-]
+export const SESSION_BLOCKS: SessionBlock[] = []
 
 function buildBlocksFromTimes(dow: number, slots: string[]): SessionBlock[] {
   return [...new Set(slots)]

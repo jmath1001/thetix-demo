@@ -429,8 +429,7 @@ console.log('[debug] students[0]:', students[0])
           setSessions(sessions)
           setTimeOff(timeOffMapped)
 
-          // Load center-level session times (global, not per-term).
-          // Fall back to active term's times for backward compat.
+          // Prefer active term session times; only fall back to center defaults.
           let centerSessionTimes: SessionTimesByDay | null = null
           try {
             const csRes = await withCenter(
@@ -440,14 +439,14 @@ console.log('[debug] students[0]:', students[0])
               centerSessionTimes = csRes.data.session_times_by_day as SessionTimesByDay
             }
           } catch {
-            // ignore — fall through to term fallback
+            // ignore — fall through to center default fallback
           }
 
           setActiveTermSessionTimesByDay(
-            centerSessionTimes
-            ?? (activeTerm && typeof activeTerm.session_times_by_day === 'object' && activeTerm.session_times_by_day
+            (activeTerm && typeof activeTerm.session_times_by_day === 'object' && activeTerm.session_times_by_day
               ? (activeTerm.session_times_by_day as SessionTimesByDay)
               : null)
+            ?? centerSessionTimes
           )
           const ids = new Set<string>(
             (activeRes.data ?? []).flatMap((r: any) => (r[SS] ?? []).map((ss: any) => ss.student_id as string))
