@@ -53,6 +53,7 @@ export type EventName =
   | 'enrollment_form_sent'
   | 'blast_sent'
   | 'tutor_schedules_sent'
+  | 'student_schedules_sent'
   | 'auto_reminder_toggled'
   | 'auto_reminder_time_saved';
 

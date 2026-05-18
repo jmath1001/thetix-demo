@@ -362,6 +362,13 @@ export default function ContactCenter() {
   const [generalResult, setGeneralResult]     = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null } | null>(null);
   const [generalExpanded, setGeneralExpanded] = useState(false);
 
+  // Student schedule email state
+  const [studentSchedTermId, setStudentSchedTermId]   = useState('');
+  const [studentSchedSelected, setStudentSchedSelected] = useState<Set<string>>(new Set());
+  const [studentSchedSending, setStudentSchedSending]   = useState(false);
+  const [studentSchedConfirm, setStudentSchedConfirm]   = useState(false);
+  const [studentSchedResult, setStudentSchedResult]     = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null; skipped?: boolean; reason?: string } | null>(null);
+
   // Tutor schedule email state
   const [tutorSchedExpanded, setTutorSchedExpanded]   = useState(false);
   const [tutorSchedWeek, setTutorSchedWeek]           = useState(() => {
@@ -695,6 +702,25 @@ export default function ContactCenter() {
     }
   }
 
+  const handleSendStudentSchedules = async () => {
+    setStudentSchedSending(true);
+    setStudentSchedResult(null);
+    try {
+      const res = await fetch('/api/send-student-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentIds: [...studentSchedSelected], termId: studentSchedTermId }),
+      });
+      const data = await res.json();
+      if (!res.ok) setStudentSchedResult({ sent: 0, failed: studentSchedSelected.size, errors: [data.error ?? 'Request failed'] });
+      else { setStudentSchedResult(data); setStudentSchedConfirm(false); logEvent('student_schedules_sent', { sent: data.sent ?? 0 }); }
+    } catch (e: any) {
+      setStudentSchedResult({ sent: 0, failed: 0, errors: [e?.message ?? 'Unknown error'] });
+    } finally {
+      setStudentSchedSending(false);
+    }
+  };
+
   const handleSendTutorSchedules = async () => {
     setTutorSchedSending(true);
     setTutorSchedResult(null);
@@ -985,24 +1011,38 @@ export default function ContactCenter() {
 
   const openTutorSchedulePreview = async () => {
     const previewTutor = tutorsWithEmail[0];
+    const fromDate = tutorSchedWeek;
+    const toDate = addDaysIso(fromDate, 6);
+    const startFmt = new Date(`${fromDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endFmt = new Date(`${toDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const periodLabel = `Week of ${startFmt}–${endFmt}`;
+    const centerName = settings?.center_name ?? DEFAULT_SETTINGS.center_name;
+
+    // Dummy schedule used when real data is unavailable or empty
+    const buildDummySchedule = (): ScheduleEntry[] => [
+      { date: addDaysIso(fromDate, 1), time: '15:00', students: [{ name: 'Alex Johnson', topic: 'Algebra II' }, { name: 'Maya Patel', topic: 'Pre-Calc' }] },
+      { date: addDaysIso(fromDate, 1), time: '16:30', students: [{ name: 'Ethan Williams', topic: 'SAT Math' }] },
+      { date: addDaysIso(fromDate, 3), time: '14:00', students: [{ name: 'Sofia Chen', topic: 'Geometry' }, { name: 'Liam Brown', topic: 'Statistics' }] },
+      { date: addDaysIso(fromDate, 3), time: '17:00', students: [{ name: 'Noah Davis', topic: 'Calculus' }] },
+      { date: addDaysIso(fromDate, 5), time: '15:30', students: [{ name: 'Emma Wilson', topic: 'Pre-Calc' }, { name: 'Oliver Moore', topic: 'Algebra II' }] },
+    ];
+
     if (!previewTutor) {
-      setPreviewLoading(false);
+      const dummySchedule = buildDummySchedule();
+      const subject = `Your weekly schedule — ${periodLabel}`;
+      // Use a generic placeholder name for the tutor
+      const html = buildScheduleHtml(centerName, 'Sample Tutor', dummySchedule, periodLabel);
       setPreviewModal({
         title: 'Tutor Weekly Schedule Preview',
-        subject: 'No tutor available',
-        html: buildPreviewFrameHtml('No tutor available', '<!DOCTYPE html><html><body style="margin:0;padding:32px;font-family:ui-sans-serif,system-ui,sans-serif;background:#f8fafc;color:#0f172a;"><p style="font-size:14px;font-weight:700;">No tutors with email addresses are available to preview.</p></body></html>'),
-        note: 'Add a tutor email to preview a weekly schedule.',
+        subject,
+        html: buildPreviewFrameHtml(subject, html),
+        note: 'Sample preview — add a tutor email to preview a real schedule.',
       });
       return;
     }
 
     setPreviewLoading(true);
     try {
-      const fromDate = tutorSchedWeek;
-      const toDate = addDaysIso(fromDate, 6);
-      const startFmt = new Date(`${fromDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const endFmt = new Date(`${toDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      const periodLabel = `Week of ${startFmt}–${endFmt}`;
       const { data, error } = await (withCenter(
         supabase
           .from(DB.sessions)
@@ -1028,14 +1068,19 @@ export default function ContactCenter() {
         };
       });
 
-      const centerName = settings?.center_name ?? DEFAULT_SETTINGS.center_name;
+      // Fall back to dummy data if the tutor has no sessions this week
+      const displaySchedule = schedule.length > 0 ? schedule : buildDummySchedule();
+      const isDummy = schedule.length === 0;
+
       const subject = `Your weekly schedule — ${periodLabel}`;
-      const html = buildScheduleHtml(centerName, previewTutor.name ?? 'Tutor', schedule, periodLabel);
+      const html = buildScheduleHtml(centerName, previewTutor.name ?? 'Tutor', displaySchedule, periodLabel);
       setPreviewModal({
         title: 'Tutor Weekly Schedule Preview',
         subject,
         html: buildPreviewFrameHtml(subject, html),
-        note: `Previewing ${previewTutor.name ?? 'Tutor'} for ${periodLabel}.`,
+        note: isDummy
+          ? `Sample preview for ${previewTutor.name ?? 'Tutor'} — no real sessions found for ${periodLabel}.`
+          : `Previewing ${previewTutor.name ?? 'Tutor'} for ${periodLabel}.`,
       });
     } catch (error: any) {
       setPreviewModal({
@@ -1086,7 +1131,7 @@ export default function ContactCenter() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'history'>('reminders');
+  const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'student' | 'history'>('reminders');
 
   const openReminderPreview = () => {
     setPreviewLoading(false);
@@ -1141,6 +1186,7 @@ export default function ContactCenter() {
               { id: 'availability', label: 'Availability',      icon: <Link2 size={13} /> },
               { id: 'general',      label: 'General Blast',     icon: <Mail size={13} /> },
               { id: 'tutor',        label: 'Tutor Schedules',   icon: <Calendar size={13} /> },
+              { id: 'student',      label: 'Student Schedules',  icon: <Users size={13} /> },
               { id: 'history',      label: 'Send History',      icon: <Clock size={13} />, badge: logs.length || null },
             ] as const).map(tab => (
               <button
@@ -1880,6 +1926,111 @@ export default function ContactCenter() {
                 >
                   {tutorSchedSending ? <><Loader2 size={13} className="animate-spin" /> Sending…</> : <><Send size={13} /> Send to {tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</>}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── STUDENT SCHEDULES ──────────────────────────────────────────── */}
+        {activeTab === 'student' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Users size={15} className="text-indigo-600" />}
+              title="Student Recurring Schedules"
+              description="Send each student a summary of their recurring sessions for the selected term."
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Left: term + send */}
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Term</p>
+                  <select
+                    value={studentSchedTermId}
+                    onChange={e => { setStudentSchedTermId(e.target.value); setStudentSchedResult(null); setStudentSchedConfirm(false); }}
+                    className={baseInputCls}
+                  >
+                    <option value="">— Select a term —</option>
+                    {terms.map(t => <option key={t.id} value={t.id}>{t.name} ({t.status})</option>)}
+                  </select>
+                </div>
+
+                {studentSchedResult && (
+                  <ResultBanner
+                    sent={studentSchedResult.sent}
+                    failed={studentSchedResult.failed}
+                    errors={studentSchedResult.errors}
+                    mode={studentSchedResult.mode}
+                    redirectedTo={studentSchedResult.redirectedTo}
+                    skipped={studentSchedResult.skipped}
+                    reason={studentSchedResult.reason}
+                  />
+                )}
+
+                <div className="flex justify-end">
+                  <SendButton
+                    onClick={handleSendStudentSchedules}
+                    loading={studentSchedSending}
+                    confirm={studentSchedConfirm}
+                    count={studentSchedSelected.size}
+                    disabled={studentSchedSelected.size === 0 || studentSchedSending || !studentSchedTermId}
+                    label="Send schedules"
+                  />
+                </div>
+                {!studentSchedTermId && (
+                  <p className="text-[11px] text-amber-600 font-medium">⚠ Select a term first.</p>
+                )}
+              </div>
+
+              {/* Right: recipient list */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between border-b border-blue-100 bg-linear-to-r from-blue-50 to-white px-4 py-3">
+                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+                    Recipients <span className="text-blue-400 font-normal normal-case">({blastRecipients.length})</span>
+                  </p>
+                  <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
+                    <Checkbox
+                      checked={blastRecipients.length > 0 && blastRecipients.every(r => studentSchedSelected.has(r.studentId))}
+                      indeterminate={blastRecipients.some(r => studentSchedSelected.has(r.studentId)) && !blastRecipients.every(r => studentSchedSelected.has(r.studentId))}
+                      onChange={() => {
+                        setStudentSchedConfirm(false);
+                        const allSel = blastRecipients.every(r => studentSchedSelected.has(r.studentId));
+                        setStudentSchedSelected(allSel ? new Set() : new Set(blastRecipients.map(r => r.studentId)));
+                      }}
+                    />
+                    {blastRecipients.every(r => studentSchedSelected.has(r.studentId)) ? 'Deselect all' : 'Select all'}
+                  </label>
+                </div>
+                {loadingBlastRecipients ? (
+                  <LoadingRow label="Loading recipients…" />
+                ) : blastRecipients.length === 0 ? (
+                  <EmptyState icon={<Users size={22} />} label="No students with email addresses" />
+                ) : (
+                  <ul className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-72">
+                    {blastRecipients.map(r => (
+                      <li
+                        key={r.studentId}
+                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        onClick={() => {
+                          setStudentSchedConfirm(false);
+                          setStudentSchedSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; });
+                        }}
+                      >
+                        <Checkbox
+                          checked={studentSchedSelected.has(r.studentId)}
+                          onChange={() => {
+                            setStudentSchedConfirm(false);
+                            setStudentSchedSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; });
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
+                          <p className="truncate text-[10px] text-slate-400"><EmailList student={{ studentEmail: r.studentEmail, momEmail: r.momEmail, dadEmail: r.dadEmail, notifyStudent: r.notifyStudent, notifyMom: r.notifyMom, notifyDad: r.notifyDad } as any} /></p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </div>
