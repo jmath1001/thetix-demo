@@ -242,12 +242,14 @@ export default function AnalyticsPage() {
   const [clearResult, setClearResult] = useState<string | null>(null);
   const [insightRange, setInsightRange] = useState<InsightRange>('30d');
 
+  const [firstVisits, setFirstVisits] = useState<Event[]>([]);
   const fetchData = async () => {
     setLoading(true);
     const centerId = getCenterId();
-    const [evRes, sesRes] = await Promise.all([
+    const [evRes, sesRes, fvRes] = await Promise.all([
       supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }).limit(1000),
       supabase.from(DB.sessions).select(`id, session_date, ${DB.sessionStudents}(id, status)`).eq('center_id', centerId).order('session_date'),
+      supabase.from(DB.events).select('*').eq('center_id', centerId).eq('event_name', 'first_visit').order('created_at', { ascending: false }).limit(1000),
     ]);
     setEvents(evRes.data ?? []);
     setSessionStudents(
@@ -255,9 +257,55 @@ export default function AnalyticsPage() {
         (s[DB.sessionStudents] ?? []).map((ss: any) => ({ status: ss.status, date: s.session_date }))
       )
     );
+    setFirstVisits(fvRes.data ?? []);
     setLastRefresh(new Date());
     setLoading(false);
   };
+  // Unique first visits by device/browser (id)
+  const uniqueFirstVisits = useMemo(() => {
+    const seen = new Set();
+    const visits: Event[] = [];
+    for (const v of firstVisits) {
+      const id = v.properties?.id;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        visits.push(v);
+      }
+    }
+    return visits;
+  }, [firstVisits]);
+        {/* ── First Visits ── */}
+        <Section title="First Visits" sub="Unique devices/browsers that accessed this center">
+          {uniqueFirstVisits.length === 0 ? (
+            <p className="text-xs text-[#94a3b8] italic">No first visits yet</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">When</th>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Device ID</th>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">User Agent</th>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Platform</th>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Screen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uniqueFirstVisits.map(v => (
+                    <tr key={v.properties?.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                      <td className="px-3 py-2">{timeAgo(v.created_at)}</td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-[#64748b]">{v.properties?.id}</td>
+                      <td className="px-3 py-2 truncate max-w-[200px]" title={v.properties?.userAgent}>{v.properties?.userAgent}</td>
+                      <td className="px-3 py-2">{v.properties?.platform}</td>
+                      <td className="px-3 py-2">{v.properties?.screen}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-[10px] text-[#cbd5e1] mt-2">Total unique devices: {uniqueFirstVisits.length}</p>
+            </div>
+          )}
+        </Section>
 
   useEffect(() => { fetchData(); }, []);
 
