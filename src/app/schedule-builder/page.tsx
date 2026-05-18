@@ -475,13 +475,13 @@ export default function ScheduleBuilderPage() {
     Promise.all([
       withCenter(
         supabase.from(DB.students).select('id, name').order('name', { ascending: true })
-      ).then(({ data }) => data ?? []),
+      ).then(({ data }: { data: SpStudentRow[] | null }) => data ?? []),
       withCenter(
         supabase
           .from(DB.termEnrollments)
           .select('student_id, slot_preferences, subjects')
           .eq('term_id', termId)
-      ).then(({ data }) => data ?? []),
+      ).then(({ data }: { data: SpEnrollmentRow[] | null }) => data ?? []),
     ])
       .then(([students, enrollments]) => {
         setSpStudents(students as SpStudentRow[])
