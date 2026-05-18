@@ -179,7 +179,7 @@ function TutorRow({ tutor, onSave, onDelete, centerSubjects, termLabel, hasTermO
             <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded" style={{ background: draft.cat === 'math' ? '#dbeafe' : '#fce7f3', color: draft.cat === 'math' ? '#1d4ed8' : '#be185d' }}>
               {draft.cat === 'math' ? 'Math/Sci' : 'Eng/Hist'}
             </span>
-            <span className="text-[10px] truncate max-w-[200px]" style={{ color: '#a8a29e' }}>{draft.subjects.join(', ') || 'No subjects'}</span>
+            <span className="text-[10px] truncate max-w-50" style={{ color: '#a8a29e' }}>{draft.subjects.join(', ') || 'No subjects'}</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -513,7 +513,7 @@ export function TutorManagementModal({
               />
               <div className="flex gap-2">
                 <button onClick={() => setAdding(false)} className="flex-1 py-2.5 rounded-xl text-xs font-medium" style={{ background: '#f9f7f4', color: '#78716c', border: '1px solid #e7e3dd' }}>Cancel</button>
-                <button onClick={handleAdd} disabled={saving || !newTutor.name} className="flex-[2] py-2.5 rounded-xl text-xs font-semibold text-white" style={{ background: '#6d28d9', opacity: !newTutor.name ? 0.5 : 1 }}>
+                <button onClick={handleAdd} disabled={saving || !newTutor.name} className="flex-2 py-2.5 rounded-xl text-xs font-semibold text-white" style={{ background: '#6d28d9', opacity: !newTutor.name ? 0.5 : 1 }}>
                   {saving ? 'Adding…' : 'Add to Database'}
                 </button>
               </div>

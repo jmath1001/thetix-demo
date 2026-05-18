@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { Check, ChevronDown, Loader2, Save, X } from 'lucide-react'
+import { Check, Loader2, Save, X } from 'lucide-react'
 import { formatTime } from '@/components/constants'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -21,20 +21,36 @@ interface Props {
 }
 
 const DOW_LABELS: Record<string, string> = {
-  '1': 'Monday',
-  '2': 'Tuesday',
-  '3': 'Wednesday',
-  '4': 'Thursday',
-  '5': 'Friday',
-  '6': 'Saturday',
-  '7': 'Sunday',
+  '1': 'Mon',
+  '2': 'Tue',
+  '3': 'Wed',
+  '4': 'Thu',
+  '5': 'Fri',
+  '6': 'Sat',
+  '7': 'Sun',
 }
 
-const CHOICE_LABELS = ['1st Choice', '2nd Choice', '3rd Choice']
-const CHOICE_COLORS = [
-  { border: 'border-indigo-300', badge: 'bg-indigo-600 text-white', ring: 'ring-indigo-400', header: 'bg-indigo-50 border-indigo-200' },
-  { border: 'border-violet-300', badge: 'bg-violet-600 text-white', ring: 'ring-violet-400', header: 'bg-violet-50 border-violet-200' },
-  { border: 'border-slate-300',  badge: 'bg-slate-500 text-white',  ring: 'ring-slate-400',  header: 'bg-slate-50 border-slate-200'  },
+const CHOICE_LABELS = ['Choice 1', 'Choice 2', 'Choice 3']
+
+const CHOICE_STYLES = [
+  {
+    tab: 'border-indigo-500 text-indigo-700',
+    dot: 'bg-indigo-500',
+    selected: 'bg-indigo-600 text-white border-indigo-600',
+    header: 'bg-indigo-50',
+  },
+  {
+    tab: 'border-violet-500 text-violet-700',
+    dot: 'bg-violet-500',
+    selected: 'bg-violet-600 text-white border-violet-600',
+    header: 'bg-violet-50',
+  },
+  {
+    tab: 'border-slate-500 text-slate-700',
+    dot: 'bg-slate-400',
+    selected: 'bg-slate-600 text-white border-slate-600',
+    header: 'bg-slate-50',
+  },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,26 +61,9 @@ function parseBlock(block: string): { dow: string; time: string } | null {
   return { dow: m[1], time: m[2] }
 }
 
-function addOneHour(time: string): string {
-  const [h, m] = time.split(':').map(Number)
-  const next = h + 1
-  return `${String(next).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
+// ── Grid for a single choice ──────────────────────────────────────────────────
 
-/** Given a dow + time, return the next consecutive time if it exists in sessionTimesByDay */
-function consecutiveBlock(
-  dow: string,
-  time: string,
-  sessionTimesByDay: Record<string, string[]>,
-): string | null {
-  const nextTime = addOneHour(time)
-  const slots = sessionTimesByDay[dow] ?? []
-  return slots.includes(nextTime) ? `${dow}-${nextTime}` : null
-}
-
-// ── Single choice editor ──────────────────────────────────────────────────────
-
-function ChoiceEditor({
+function ChoiceGrid({
   index,
   choice,
   sessionTimesByDay,
@@ -75,174 +74,153 @@ function ChoiceEditor({
   sessionTimesByDay: Record<string, string[]>
   onChange: (newChoice: string[]) => void
 }) {
-  const colors = CHOICE_COLORS[index] ?? CHOICE_COLORS[2]
+  const styles = CHOICE_STYLES[index] ?? CHOICE_STYLES[2]
+  const cleanChoice = choice.filter(b => !b.endsWith('-PENDING') && b !== '')
+  const selected = new Set(cleanChoice)
 
-  // Available days = days with at least 1 slot
-  const availableDays = Object.entries(sessionTimesByDay)
+  const days = Object.entries(sessionTimesByDay)
     .filter(([, times]) => times.length > 0)
     .map(([dow]) => dow)
     .sort((a, b) => Number(a) - Number(b))
 
-  const selectedDow = choice.length > 0 ? parseBlock(choice[0])?.dow ?? null : null
-  const selectedTimes = choice.map(b => parseBlock(b)?.time ?? '')
+  const allTimes = Array.from(
+    new Set(days.flatMap(d => sessionTimesByDay[d] ?? []))
+  ).sort()
 
-  function handleDayChange(dow: string) {
-    // Reset time selection when day changes
-    onChange([])
-    // Pre-select nothing — user picks time next
-    void dow // suppress unused warning; selection triggers time re-render
-    onChange([]) // clear; actual selection happens in time toggle
-    // We update via a separate effect — just clear and let user pick time
-    onChange([`${dow}-PENDING`])
-  }
-
-  function handleTimeToggle(dow: string, time: string) {
+  function handleCellClick(dow: string, time: string) {
     const block = `${dow}-${time}`
 
-    // If clicking an already-selected block, deselect it
-    if (choice.includes(block)) {
-      const next = choice.filter(b => b !== block)
-      onChange(next)
+    if (selected.has(block)) {
+      onChange(cleanChoice.filter(b => b !== block))
       return
     }
 
-    // If nothing selected yet, select this block
-    if (choice.length === 0 || (choice.length === 1 && choice[0].endsWith('-PENDING'))) {
+    if (cleanChoice.length === 0) {
       onChange([block])
       return
     }
 
-    // If one block selected and we click a second, allow only if consecutive
-    if (choice.length === 1) {
-      const existing = choice[0]
-      const existingParsed = parseBlock(existing)
-      if (!existingParsed || existingParsed.dow !== dow) {
-        // Different day — replace selection
-        onChange([block])
-        return
+    if (cleanChoice.length === 1) {
+      const existing = parseBlock(cleanChoice[0])
+      if (existing && existing.dow === dow) {
+        const eh = Number(existing.time.split(':')[0])
+        const nh = Number(time.split(':')[0])
+        if (Math.abs(nh - eh) === 1) {
+          const pair = nh < eh ? [block, cleanChoice[0]] : [cleanChoice[0], block]
+          onChange(pair)
+          return
+        }
       }
-      // Same day — check if consecutive
-      const [eh, em] = existingParsed.time.split(':').map(Number)
-      const [nh, nm] = time.split(':').map(Number)
-      const diffMin = Math.abs(nh * 60 + nm - (eh * 60 + em))
-      if (diffMin === 60) {
-        // Sort so earlier comes first
-        const pair = nh * 60 + nm < eh * 60 + em
-          ? [block, existing]
-          : [existing, block]
-        onChange(pair)
-        return
-      }
-      // Not consecutive — replace
       onChange([block])
       return
     }
 
-    // Already have 2 selected — replace entirely
     onChange([block])
   }
 
-  const pendingDow = choice.length === 1 && choice[0].endsWith('-PENDING')
-    ? choice[0].split('-PENDING')[0]
-    : null
-  const activeDow = selectedDow ?? pendingDow
-
-  const slotsForDay = activeDow ? (sessionTimesByDay[activeDow] ?? []) : []
-
-  function isSelected(time: string): boolean {
-    if (!activeDow) return false
-    return choice.includes(`${activeDow}-${time}`)
+  function getSummary(): string {
+    if (cleanChoice.length === 0) return ''
+    const first = parseBlock(cleanChoice[0])
+    if (!first) return ''
+    const dayLabel = DOW_LABELS[first.dow] ?? `Day ${first.dow}`
+    if (cleanChoice.length === 2) {
+      const second = parseBlock(cleanChoice[1])
+      const endHour = second ? Number(second.time.split(':')[0]) + 1 : null
+      const endMin = second ? second.time.split(':')[1] : '00'
+      const endStr = endHour !== null ? `${String(endHour).padStart(2, '0')}:${endMin}` : ''
+      return `${dayLabel} · ${formatTime(first.time)} – ${formatTime(endStr)} (2h)`
+    }
+    return `${dayLabel} · ${formatTime(first.time)} (1h)`
   }
 
-  function isTwoHour(): boolean {
-    return choice.length === 2
+  const summary = getSummary()
+
+  if (days.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-24 text-sm text-slate-400">
+        No available slots configured for this term.
+      </div>
+    )
   }
 
   return (
-    <div className={`rounded-xl border ${colors.border} overflow-hidden`}>
-      {/* Header */}
-      <div className={`flex items-center gap-2 px-4 py-2.5 ${colors.header} border-b ${colors.border}`}>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${colors.badge}`}>
-          {CHOICE_LABELS[index]}
-        </span>
-        {choice.length > 0 && !pendingDow && (
-          <span className="ml-auto text-xs text-slate-500 font-medium">
-            {activeDow ? DOW_LABELS[activeDow] : ''}{' '}
-            {choice.map(b => formatTime(parseBlock(b)?.time ?? '')).join(' – ')}
-            {isTwoHour() && <span className="ml-1 text-indigo-600 font-semibold">(2h)</span>}
+    <div className="space-y-3">
+      <div className="flex items-center justify-between min-h-5">
+        {summary ? (
+          <span className="text-sm font-semibold text-slate-700">{summary}</span>
+        ) : (
+          <span className="text-xs text-slate-400 italic">
+            Click one slot (1h) or two consecutive slots in the same column (2h)
           </span>
         )}
-        {choice.length > 0 && (
+        {cleanChoice.length > 0 && (
           <button
             onClick={() => onChange([])}
-            className="ml-auto p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-            title="Clear this choice"
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors ml-3 shrink-0"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-3 h-3" />
+            Clear
           </button>
         )}
       </div>
 
-      <div className="p-3 space-y-3">
-        {/* Day picker */}
-        <div>
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Day</p>
-          <div className="flex flex-wrap gap-1.5">
-            {availableDays.map(dow => (
-              <button
-                key={dow}
-                onClick={() => {
-                  if (activeDow === dow) return
-                  // Change day: clear times
-                  onChange([`${dow}-PENDING`])
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                  activeDow === dow
-                    ? `${colors.badge} border-transparent ${colors.ring} ring-1`
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
-                }`}
+      <div className="overflow-x-auto rounded-xl border border-slate-200">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className={`${styles.header} border-b border-slate-200`}>
+              <th className="w-14 py-2.5 px-3 text-left font-semibold text-slate-500 border-r border-slate-200">
+                Time
+              </th>
+              {days.map(dow => (
+                <th
+                  key={dow}
+                  className="py-2.5 px-2 text-center font-bold text-slate-700 min-w-14"
+                >
+                  {DOW_LABELS[dow] ?? `Day ${dow}`}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allTimes.map((time, rowIdx) => (
+              <tr
+                key={time}
+                className={`border-b border-slate-100 last:border-0 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}
               >
-                {DOW_LABELS[dow] ?? `Day ${dow}`}
-              </button>
+                <td className="py-2 px-3 font-medium text-slate-500 whitespace-nowrap border-r border-slate-200">
+                  {formatTime(time)}
+                </td>
+                {days.map(dow => {
+                  const hasSlot = sessionTimesByDay[dow]?.includes(time)
+                  if (!hasSlot) {
+                    return (
+                      <td key={dow} className="py-2 px-2 text-center">
+                        <span className="inline-block w-8 h-7 rounded-md bg-slate-100/50" />
+                      </td>
+                    )
+                  }
+                  const block = `${dow}-${time}`
+                  const isSel = selected.has(block)
+                  return (
+                    <td key={dow} className="py-2 px-2 text-center">
+                      <button
+                        onClick={() => handleCellClick(dow, time)}
+                        className={`inline-flex items-center justify-center w-8 h-7 rounded-md border font-semibold transition-all ${
+                          isSel
+                            ? `${styles.selected} shadow-sm`
+                            : 'bg-white border-slate-200 text-slate-400 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                        }`}
+                        title={`${DOW_LABELS[dow]} ${formatTime(time)}`}
+                      >
+                        {isSel ? <Check className="w-3 h-3" /> : <span className="text-[10px]">○</span>}
+                      </button>
+                    </td>
+                  )
+                })}
+              </tr>
             ))}
-          </div>
-        </div>
-
-        {/* Time picker — only shown after a day is selected */}
-        {activeDow && (
-          <div>
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-              Time {slotsForDay.length > 1 && <span className="normal-case font-normal text-slate-400">(select 1 or 2 consecutive for 2h)</span>}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {slotsForDay.map(time => {
-                const selected = isSelected(time)
-                const hasCons = consecutiveBlock(activeDow, time, sessionTimesByDay) !== null
-                return (
-                  <button
-                    key={time}
-                    onClick={() => handleTimeToggle(activeDow, time)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      selected
-                        ? `${colors.badge} border-transparent ring-1 ${colors.ring}`
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    {formatTime(time)}
-                    {selected && hasCons && !isTwoHour() && (
-                      <span className="ml-1 text-[10px] opacity-70">+1h?</span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-            {isTwoHour() && (
-              <p className="mt-1.5 text-[11px] text-indigo-600 font-medium">
-                2-hour session selected
-              </p>
-            )}
-          </div>
-        )}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -259,7 +237,6 @@ export function SlotPreferenceSurvey({
   onSave,
   onClose,
 }: Props) {
-  // Normalise: ensure exactly 3 entries (fill with [] for empty choices)
   const normalise = (p: SlotPreferences | null): [string[], string[], string[]] => {
     const base = Array.isArray(p) ? [...p] : []
     while (base.length < 3) base.push([])
@@ -269,6 +246,7 @@ export function SlotPreferenceSurvey({
   const [choices, setChoices] = useState<[string[], string[], string[]]>(
     normalise(initialPreferences)
   )
+  const [activeTab, setActiveTab] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -282,7 +260,6 @@ export function SlotPreferenceSurvey({
     setSaved(false)
   }, [])
 
-  // Filter out pending/empty choices before saving
   function toCleanPrefs(): SlotPreferences {
     return choices
       .map(c => c.filter(b => !b.endsWith('-PENDING') && b !== ''))
@@ -305,8 +282,8 @@ export function SlotPreferenceSurvey({
       }
       setSaved(true)
       onSave?.(prefs)
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to save')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save')
     } finally {
       setSaving(false)
     }
@@ -314,13 +291,18 @@ export function SlotPreferenceSurvey({
 
   const hasAnyChoice = toCleanPrefs().length > 0
 
+  function hasSelection(i: number): boolean {
+    return choices[i].filter(b => !b.endsWith('-PENDING') && b !== '').length > 0
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Student header */}
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-semibold text-slate-800">{studentName}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Enter up to 3 slot preferences from the paper survey</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Enter up to 3 slot preferences. Two consecutive slots in the same day = 2-hour session.
+          </p>
         </div>
         {onClose && (
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
@@ -329,25 +311,43 @@ export function SlotPreferenceSurvey({
         )}
       </div>
 
-      {/* Choice editors */}
-      <div className="space-y-3">
-        {choices.map((choice, i) => (
-          <ChoiceEditor
-            key={i}
-            index={i}
-            choice={choice}
-            sessionTimesByDay={sessionTimesByDay}
-            onChange={val => updateChoice(i, val)}
-          />
-        ))}
+      {/* Tab bar */}
+      <div className="flex border-b border-slate-200">
+        {CHOICE_LABELS.map((label, i) => {
+          const isActive = activeTab === i
+          const tabStyles = CHOICE_STYLES[i]
+          return (
+            <button
+              key={i}
+              onClick={() => setActiveTab(i)}
+              className={`relative flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+                isActive
+                  ? `${tabStyles.tab} bg-white`
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {label}
+              {hasSelection(i) && (
+                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? tabStyles.dot : 'bg-slate-400'}`} />
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Footer */}
+      {/* Active choice grid */}
+      <ChoiceGrid
+        index={activeTab}
+        choice={choices[activeTab]}
+        sessionTimesByDay={sessionTimesByDay}
+        onChange={val => updateChoice(activeTab, val)}
+      />
+
       {error && (
         <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       )}
 
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex items-center gap-3 pt-1">
         <button
           onClick={handleSave}
           disabled={saving || !hasAnyChoice}
@@ -360,17 +360,13 @@ export function SlotPreferenceSurvey({
           ) : (
             <Save className="w-3.5 h-3.5" />
           )}
-          {saved ? 'Saved' : 'Save Preferences'}
+          {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Preferences'}
         </button>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            Cancel
-          </button>
+        {saved && (
+          <span className="text-xs text-emerald-600 font-medium">Preferences saved</span>
         )}
       </div>
     </div>
   )
 }
+

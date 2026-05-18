@@ -204,7 +204,7 @@ export default function SlotPreferencesPage() {
             <Clipboard className="w-5 h-5 text-indigo-600" />
             <div>
               <h1 className="text-lg font-bold text-slate-900 leading-tight">Slot Preferences</h1>
-              <p className="text-xs text-slate-500">Enter paper survey choices for each enrolled student</p>
+              <p className="text-xs text-slate-500">Enter paper form choices for each enrolled student</p>
             </div>
           </div>
 
@@ -328,7 +328,7 @@ export default function SlotPreferencesPage() {
                       }
                     </button>
 
-                    {/* Inline survey form */}
+                    {/* Inline preference form */}
                     {isOpen && (
                       <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100">
                         <SlotPreferenceSurvey

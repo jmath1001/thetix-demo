@@ -5,7 +5,7 @@ import { DB, withCenter } from '@/lib/db';
 import {
   Mail, Send, Clock, Check, AlertCircle, Edit3, Save,
   X, RefreshCw, ChevronDown, ChevronUp, Users, Calendar,
-  Megaphone, Loader2, Eye, AlertTriangle, ChevronRight, Clipboard, Play, Search,
+  Link2, Loader2, Eye, AlertTriangle, ChevronRight, Clipboard, Play, Search,
 } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 import { SlotPreferenceSurvey, type SlotPreferences } from '@/components/SlotPreferenceSurvey';
@@ -327,6 +327,7 @@ export default function ContactCenter() {
   const [logs, setLogs]                 = useState<Log[]>([]);
   const [loadingLogs, setLoadingLogs]   = useState(true);
   const [logsExpanded, setLogsExpanded] = useState(false);
+  const [cronHistoryExpanded, setCronHistoryExpanded] = useState(false);
 
   // ── Auto-reminder schedule (cron) ──────────────────────────────────────────
   type CronSchedule = { hours: number[]; minutes: number[]; timezone: string }
@@ -456,8 +457,8 @@ export default function ContactCenter() {
       setSelectedTermId(preferred?.id ?? '');
       setBlastTermId(preferred?.id ?? '');
       if (preferred?.name) {
-        setBlastSubject(`Availability Is Now Open for ${preferred.name} – Submit Your Preferences`);
-        setBlastBody(`Hi {{name}},\n\nWe're now collecting availability for ${preferred.name}. Please use the link below to submit your preferred schedule.\n\n{{link}}\n\nThank you,\n{{center}}`);
+        setBlastSubject(`Availability Is Now Open for {{term}} – Submit Your Preferences`);
+        setBlastBody(`Hi {{name}},\n\nWe're now collecting availability for {{term}}. Please use the link below to submit your preferred schedule.\n\n{{link}}\n\nThank you,\n{{center}}`);
       }
     } catch (err) {
       console.error('Failed to load terms:', err);
@@ -595,11 +596,11 @@ export default function ContactCenter() {
   useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
 
   useEffect(() => {
-    supabase
+    withCenter(supabase
       .from(DB.terms)
-      .select('id, name, status, session_times_by_day')
+      .select('id, name, status, session_times_by_day'))
       .order('start_date', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data }: { data: SpTermRow[] | null }) => {
         const rows = (data ?? []) as SpTermRow[]
         setSpTerms(rows)
         const active = rows.find(t => t.status === 'active') ?? rows[0]
@@ -1137,7 +1138,7 @@ export default function ContactCenter() {
           <nav className="flex gap-1 overflow-x-auto">
             {([
               { id: 'reminders',    label: 'Reminders',         icon: <Send size={13} /> },
-              { id: 'availability', label: 'Availability',      icon: <Megaphone size={13} /> },
+              { id: 'availability', label: 'Availability',      icon: <Link2 size={13} /> },
               { id: 'general',      label: 'General Blast',     icon: <Mail size={13} /> },
               { id: 'tutor',        label: 'Tutor Schedules',   icon: <Calendar size={13} /> },
               { id: 'history',      label: 'Send History',      icon: <Clock size={13} />, badge: logs.length || null },
@@ -1176,9 +1177,9 @@ export default function ContactCenter() {
 
             {/* ── Auto Reminder Schedule ───────────────────────────────────── */}
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Auto Reminder Schedule</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">Reminders send automatically every day at this time.</p>
+              <div className="border-b border-indigo-100 bg-linear-to-r from-indigo-50 to-white px-4 py-3">
+                <p className="text-xs font-bold text-indigo-900 uppercase tracking-wide">Auto Reminder Schedule</p>
+                <p className="mt-0.5 text-[11px] text-indigo-400">Reminders send automatically every day at this time.</p>
               </div>
               {cronLoading && cronConfigured === null ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
@@ -1234,18 +1235,26 @@ export default function ContactCenter() {
                   )}
                   {cronHistory.length > 0 && (
                     <div>
-                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Recent sends</p>
-                      <div className="overflow-hidden rounded border border-slate-100">
-                        {cronHistory.map((h, i) => (
-                          <div key={i} className="flex items-center gap-3 border-b border-slate-50 px-3 py-1.5 last:border-0 text-xs">
-                            <span className={`w-12 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${h.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                              {h.status === 1 ? 'Sent' : 'Failed'}
-                            </span>
-                            <span className="text-slate-500">{new Date(h.date * 1000).toLocaleString()}</span>
-                            <span className="ml-auto text-slate-400">{h.duration}ms</span>
-                          </div>
-                        ))}
-                      </div>
+                      <button
+                        onClick={() => setCronHistoryExpanded(v => !v)}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <ChevronDown size={11} className={`transition-transform ${cronHistoryExpanded ? 'rotate-180' : ''}`} />
+                        Recent sends ({cronHistory.length})
+                      </button>
+                      {cronHistoryExpanded && (
+                        <div className="mt-1.5 overflow-y-auto rounded border border-slate-100 max-h-24">
+                          {cronHistory.map((h, i) => (
+                            <div key={i} className="flex items-center gap-3 border-b border-slate-50 px-3 py-1 last:border-0 text-xs">
+                              <span className={`w-12 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${h.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                                {h.status === 1 ? 'OK' : 'Fail'}
+                              </span>
+                              <span className="text-slate-500">{new Date(h.date * 1000).toLocaleString()}</span>
+                              <span className="ml-auto text-slate-400">{h.duration}ms</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1253,7 +1262,7 @@ export default function ContactCenter() {
             </div>
 
             {/* Controls row */}
-            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-600">Session date</label>
                 <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1294,7 +1303,7 @@ export default function ContactCenter() {
 
             {/* Candidate list */}
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center justify-between border-b border-blue-100 bg-linear-to-r from-blue-50 to-white px-4 py-3">
                 <div className="flex items-center gap-2">
                   {selectableIds.length > 0 && (
                     <Checkbox checked={allChecked} indeterminate={someChecked && !allChecked} onChange={toggleAll} />
@@ -1320,7 +1329,7 @@ export default function ContactCenter() {
               ) : candidates.length === 0 ? (
                 <EmptyState icon={<Users size={24} />} label={`No sessions found for ${dispatchDate}`} />
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
                   {candidates.map(c => {
                     const noEmail     = !c.studentEmail && !c.momEmail && !c.dadEmail;
                     const allOptedOut = !noEmail &&
@@ -1374,8 +1383,8 @@ export default function ContactCenter() {
 
             {/* ── Reminder Email Template ───────────────────────────────────── */}
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Template</p>
+              <div className="flex items-center justify-between border-b border-violet-100 bg-linear-to-r from-violet-50 to-white px-4 py-3">
+                <p className="text-xs font-bold text-violet-900 uppercase tracking-wide">Email Template</p>
                 <div className="flex items-center gap-2">
                   <button onClick={openReminderPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                     <Eye size={11} /> Preview
@@ -1452,7 +1461,7 @@ export default function ContactCenter() {
         {activeTab === 'availability' && (
           <div className="space-y-4">
             <SectionHeader
-              icon={<Megaphone size={15} className="text-indigo-600" />}
+              icon={<Link2 size={15} className="text-indigo-600" />}
               title="Availability Email Blast"
               description="Send enrollment links to students and parents for a specific term. Recipients click the link to submit their preferred schedule."
             />
@@ -1478,8 +1487,8 @@ export default function ContactCenter() {
 
                 {/* Template */}
                 <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Template</p>
+                  <div className="flex items-center justify-between border-b border-violet-100 bg-linear-to-r from-violet-50 to-white px-4 py-3">
+                    <p className="text-xs font-bold text-violet-900 uppercase tracking-wide">Email Template</p>
                     <div className="flex items-center gap-2">
                       <button onClick={openAvailabilityPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
                         <Eye size={10} /> Preview
@@ -1529,9 +1538,9 @@ export default function ContactCenter() {
 
               {/* Right: recipients */}
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Recipients <span className="text-slate-400 font-normal normal-case">({blastRecipients.length})</span>
+                <div className="flex items-center justify-between border-b border-blue-100 bg-linear-to-r from-blue-50 to-white px-4 py-3">
+                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+                    Recipients <span className="text-blue-400 font-normal normal-case">({blastRecipients.length})</span>
                   </p>
                   <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
                     <Checkbox checked={blastAllChecked} indeterminate={blastSomeChecked && !blastAllChecked} onChange={toggleBlastAll} />
@@ -1566,6 +1575,7 @@ export default function ContactCenter() {
                   {!blastTermId && (
                     <p className="text-[11px] text-amber-600 font-medium">⚠ Select a term first to generate the availability link.</p>
                   )}
+                  <p className="text-[11px] text-amber-600 font-medium">⚠ Availability email blast is temporarily disabled — feature still in progress.</p>
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <button onClick={openAvailabilityFormPreview} disabled={!blastTermId} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40">
                       <Eye size={11} /> Preview form
@@ -1575,7 +1585,7 @@ export default function ContactCenter() {
                       loading={blastSending}
                       confirm={blastConfirm}
                       count={blastSelected.size}
-                      disabled={blastSelected.size === 0 || blastSending || !blastTermId}
+                      disabled={true}
                       label="Send availability"
                     />
                   </div>
@@ -1590,7 +1600,7 @@ export default function ContactCenter() {
                   <Clipboard className="w-5 h-5 text-indigo-600" />
                   <div>
                     <h2 className="text-sm font-bold text-slate-900 leading-tight">Slot Preferences</h2>
-                    <p className="text-xs text-slate-500">Enter paper survey choices for each enrolled student</p>
+                    <p className="text-xs text-slate-500">Enter paper form choices for each enrolled student</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1746,9 +1756,9 @@ export default function ContactCenter() {
 
               {/* Recipients */}
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
-                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Recipients <span className="text-slate-400 font-normal normal-case">({blastRecipients.length})</span>
+                <div className="flex items-center justify-between border-b border-blue-100 bg-linear-to-r from-blue-50 to-white px-4 py-3">
+                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+                    Recipients <span className="text-blue-400 font-normal normal-case">({blastRecipients.length})</span>
                   </p>
                   <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
                     <Checkbox
@@ -1890,7 +1900,7 @@ export default function ContactCenter() {
               ) : logs.length === 0 ? (
                 <EmptyState icon={<Mail size={24} />} label="No reminders sent yet" />
               ) : (
-                <div>
+                <div className="max-h-150 overflow-y-auto">
                   {Object.entries(groupedLogs)
                     .sort(([a], [b]) => b.localeCompare(a))
                     .map(([date, entries]) => (
@@ -1978,10 +1988,12 @@ export default function ContactCenter() {
 
 function SectionHeader({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5">
-      <div className="mt-0.5">{icon}</div>
+    <div className="flex items-center gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+        {icon}
+      </div>
       <div>
-        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+        <h2 className="text-base font-bold text-slate-900 leading-tight">{title}</h2>
         <p className="text-xs text-slate-500 mt-0.5">{description}</p>
       </div>
     </div>

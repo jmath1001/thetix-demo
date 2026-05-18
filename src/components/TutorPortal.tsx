@@ -44,7 +44,7 @@ function TutorDropdown({ tutors, selected, onSelect }: {
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[#e7e3dd] bg-white hover:bg-[#faf9f7] transition-all shadow-sm min-w-[200px]"
+        className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-[#e7e3dd] bg-white hover:bg-[#faf9f7] transition-all shadow-sm min-w-50"
       >
         <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: selected ? '#6d28d9' : '#f0ece8' }}>
           <User size={13} className={selected ? 'text-white' : '#78716c'} />
@@ -56,7 +56,7 @@ function TutorDropdown({ tutors, selected, onSelect }: {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full right-0 mt-2 rounded-2xl overflow-hidden z-50 min-w-[220px] bg-white border border-[#e7e3dd] shadow-2xl">
+          <div className="absolute top-full right-0 mt-2 rounded-2xl overflow-hidden z-50 min-w-55 bg-white border border-[#e7e3dd] shadow-2xl">
             {tutors.map(tutor => (
               <button key={tutor.id} onClick={() => { onSelect(tutor); setOpen(false); }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-[#f0ece8] last:border-0 hover:bg-[#faf9f7]"
@@ -142,7 +142,7 @@ export default function TutorPortal() {
 
       {/* HEADER */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-[#e7e3dd]">
-        <div className="max-w-[1600px] mx-auto flex justify-between items-center px-4 md:px-8 py-3">
+        <div className="max-w-400 mx-auto flex justify-between items-center px-4 md:px-8 py-3">
           <div>
             <h1 className="text-xl font-black uppercase tracking-tighter text-[#1c1917] leading-none">Tutor View</h1>
             <p className="text-[9px] font-black text-[#6d28d9] uppercase tracking-widest mt-1">Attendance & Scheduling</p>
@@ -150,13 +150,13 @@ export default function TutorPortal() {
           <TutorDropdown tutors={tutors} selected={selectedTutor} onSelect={setSelectedTutor} />
         </div>
         {portalMessage && (
-          <div className="max-w-[1600px] mx-auto px-4 md:px-8 pb-2">
+          <div className="max-w-400 mx-auto px-4 md:px-8 pb-2">
             <p className="text-xs text-[#78716c] leading-relaxed">{portalMessage}</p>
           </div>
         )}
       </div>
 
-      <div className="relative z-10 max-w-[1600px] mx-auto px-4 md:px-8">
+      <div className="relative z-10 max-w-400 mx-auto px-4 md:px-8">
 
         {/* STATS STRIP */}
         {selectedTutor && (
@@ -233,7 +233,7 @@ export default function TutorPortal() {
                   <span className={`text-sm font-bold uppercase tracking-widest ${isToday ? 'text-[#6d28d9]' : 'text-[#a8a29e]'}`}>
                     {dateLabel}
                   </span>
-                  <div className={`h-[2px] grow rounded-full ${isToday ? 'bg-[#ede9fe]' : 'bg-[#f0ece8]'}`} />
+                  <div className={`h-0.5 grow rounded-full ${isToday ? 'bg-[#ede9fe]' : 'bg-[#f0ece8]'}`} />
                   {!isAvailableDay && <span className="text-[10px] font-black text-[#d6d3d1] uppercase tracking-widest">Off Schedule</span>}
                 </div>
 
@@ -244,7 +244,7 @@ export default function TutorPortal() {
                         <thead>
                           <tr className="bg-[#faf9f7] border-b border-[#e7e3dd]">
                             {daySessions.map(block => (
-                              <th key={block.id} className="p-3 text-center border-r border-[#e7e3dd] last:border-0 min-w-[160px]">
+                              <th key={block.id} className="p-3 text-center border-r border-[#e7e3dd] last:border-0 min-w-40">
                                 <div className="text-[10px] font-black text-[#78716c] uppercase tracking-tighter">{block.label}</div>
                                 <div className="text-[9px] font-medium text-[#a8a29e] mt-0.5">{block.display}</div>
                               </th>
@@ -259,7 +259,7 @@ export default function TutorPortal() {
                               const isAvail = isTutorAvailable(selectedTutor, dow, block.time);
 
                               return (
-                                <td key={block.id} className="p-3 align-top h-[180px] border-r border-[#e7e3dd] last:border-0"
+                                <td key={block.id} className="p-3 align-top h-45 border-r border-[#e7e3dd] last:border-0"
                                   style={{ background: isAvail ? 'white' : '#faf9f7' }}>
                                   <div className="flex flex-col gap-2 h-full">
                                     {hasStudents ? (
@@ -295,7 +295,7 @@ export default function TutorPortal() {
                                       </div>
                                     ) : (
                                       <div className="w-full h-full flex items-center justify-center opacity-20">
-                                        <div className="w-8 h-[2px] bg-[#d6d3d1] rounded-full" />
+                                        <div className="w-8 h-0.5 bg-[#d6d3d1] rounded-full" />
                                       </div>
                                     )}
                                   </div>

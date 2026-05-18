@@ -46,9 +46,9 @@ const EMPTY_TUTOR: Omit<TutorWithContact, 'id'> = {
   email: '', phone: '',
 };
 
-const inputCls = "w-full rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
-const fieldCardCls = "rounded border border-slate-200 bg-white px-3 py-2.5";
-const fieldLabelCls = "block text-[10px] font-semibold text-slate-400";
+const inputCls = "w-full rounded border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
+const fieldCardCls = "rounded border border-slate-200 bg-[#f8fafc] px-3 py-2.5";
+const fieldLabelCls = "block text-[10px] font-semibold text-slate-500";
 
 function toDateValue(isoDate: string) {
   return new Date(`${isoDate}T00:00:00`);
@@ -526,7 +526,7 @@ function TutorListItem({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className={`w-full rounded border px-2 py-2 text-left transition-colors ${isActive ? 'border-slate-300 bg-slate-50' : isSelected ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+      className={`w-full rounded-lg border px-2 py-2 text-left transition-colors ${isActive ? 'border-indigo-300 bg-indigo-50 shadow-sm' : isSelected ? 'border-red-300 bg-red-50' : 'border-slate-300 bg-white hover:bg-slate-50 shadow-sm'}`}>
       <div className="flex items-start gap-2.5">
         <button
           type="button"
@@ -584,7 +584,7 @@ function TutorDetailPanel({
 }) {
   const [tab, setTab] = useState<'details' | 'timeoff'>('details');
   const [isEditing, setIsEditing] = useState(false);
-  const effectiveBlocks = termAvailabilityBlocks ?? tutor.availabilityBlocks;
+  const effectiveBlocks = selectedTermId ? (termAvailabilityBlocks ?? []) : (termAvailabilityBlocks ?? tutor.availabilityBlocks);
   const [draft, setDraft] = useState<TutorWithContact>({
     ...tutor,
     availabilityBlocks: effectiveBlocks,
@@ -594,7 +594,7 @@ function TutorDetailPanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    const blocks = termAvailabilityBlocks ?? tutor.availabilityBlocks;
+    const blocks = selectedTermId ? (termAvailabilityBlocks ?? []) : (termAvailabilityBlocks ?? tutor.availabilityBlocks);
     setDraft({
       ...tutor,
       availabilityBlocks: blocks,
@@ -637,8 +637,8 @@ function TutorDetailPanel({
   const catBg = draft.cat === 'math' ? '#dbeafe' : '#fce7f3';
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-white px-4 py-4 md:px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-md">
+      <div className="border-b border-slate-200 bg-white px-4 py-4 md:px-5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -697,8 +697,8 @@ function TutorDetailPanel({
             <p className="mt-1 text-sm font-black text-slate-900">{conflictCount} session{conflictCount === 1 ? '' : 's'} need movement</p>
             <p className="mt-0.5 text-[11px] text-slate-500">{conflictCount > 0 ? 'See details tab list below.' : 'No blocked-date conflicts right now.'}</p>
           </div>
-          <div className="rounded border border-slate-100 bg-slate-50 px-3.5 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Time off</p>
+          <div className="rounded-lg border border-slate-200 bg-[#f1f5f9] px-3.5 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Time off</p>
             <p className="mt-1 text-sm font-black text-slate-900">{timeOffCount} blocked day{timeOffCount === 1 ? '' : 's'}</p>
             <p className="mt-0.5 text-[11px] text-slate-500">{upcomingTimeOff ? `Next: ${formatDateLabel(upcomingTimeOff.date)}` : 'No upcoming blocks'}</p>
           </div>
@@ -723,7 +723,7 @@ function TutorDetailPanel({
         {tab === 'details' ? (
           <div className="space-y-5">
             <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-[#f1f5f9] p-3.5">
                 {isEditing && (
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className={fieldCardCls}>
@@ -755,7 +755,7 @@ function TutorDetailPanel({
                   </div>
                 )}
 
-                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
                   {isEditing ? (
                     <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} />
                   ) : (
@@ -777,22 +777,22 @@ function TutorDetailPanel({
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5">
-                {/* Override status banner */}
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-[#f8fafc] p-3.5">
+                {/* Term schedule status banner */}
                 {selectedTermId ? (
                   <div className={`rounded border px-3 py-2 text-[11px] font-semibold flex items-center justify-between gap-2 ${hasTermOverride ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
                     <span>{hasTermOverride
-                      ? `✓ Term override · ${termLabel ?? selectedTermId}`
-                      : `Default · no override for ${termLabel ?? 'this term'}`}
+                      ? `✓ Custom schedule set for ${termLabel ?? 'this term'}`
+                      : `No custom schedule set for ${termLabel ?? 'this term'} yet`}
                     </span>
                     {!hasTermOverride && !isEditing && (
                       <button onClick={() => setIsEditing(true)} className="shrink-0 text-[10px] font-bold underline underline-offset-2">
-                        Create override
+                        Set hours for this term
                       </button>
                     )}
                   </div>
                 ) : !isEditing && (
-                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Default Availability</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Default weekly schedule</p>
                 )}
 
                 {/* Availability grid — always visible, interactive only when editing */}
@@ -970,17 +970,17 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, scheduledSessions, o
                 </div>
 
                 <div className="mt-3 grid gap-2.5 xl:grid-cols-3">
-                  <div className="rounded-xl border border-[#e2e8f0] bg-white px-3.5 py-3">
+                  <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-3.5 py-3">
                     <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Availability</p>
                     <p className="mt-1 text-sm font-black text-[#0f172a]">{availabilitySummary.slotCount} slots across {availabilitySummary.dayCount || 0} day{availabilitySummary.dayCount === 1 ? '' : 's'}</p>
                     <p className="mt-0.5 text-[11px] text-[#64748b]">{availabilitySummary.dayLabels.length > 0 ? availabilitySummary.dayLabels.join(' • ') : 'No weekly availability set'}</p>
                   </div>
-                  <div className="rounded-xl border border-[#e2e8f0] bg-white px-3.5 py-3">
+                  <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-3.5 py-3">
                     <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Time off</p>
                     <p className="mt-1 text-sm font-black text-[#0f172a]">{timeOffCount} blocked day{timeOffCount === 1 ? '' : 's'}</p>
                     <p className="mt-0.5 text-[11px] text-[#64748b]">{bookedConflictCount > 0 ? `${bookedConflictCount} booked session${bookedConflictCount === 1 ? '' : 's'} need rearranging` : upcomingTimeOff ? `Next: ${formatDateLabel(upcomingTimeOff.date)}` : 'No upcoming blocks'}</p>
                   </div>
-                  <div className="rounded-xl border border-[#e2e8f0] bg-white px-3.5 py-3">
+                  <div className="rounded-xl border border-[#cbd5e1] bg-[#f8fafc] px-3.5 py-3">
                     <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748b]">Profile status</p>
                     <p className="mt-1 text-sm font-black text-[#0f172a]">{draft.subjects.length > 0 && availabilitySummary.slotCount > 0 ? 'Ready for scheduling' : 'Needs setup'}</p>
                     <p className="mt-0.5 text-[11px] text-[#64748b]">{draft.subjects.length > 0 && availabilitySummary.slotCount > 0 ? 'Subjects and weekly slots are in place.' : 'Add subjects and availability for cleaner scheduling.'}</p>
@@ -992,9 +992,9 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, scheduledSessions, o
         </div>
 
         {expanded && (
-        <div style={{ borderTop: '1px solid #e2e8f0', background: '#fafbfd', boxShadow: 'inset 0 3px 10px rgba(15,23,42,0.04)' }}>
+        <div style={{ borderTop: '1px solid #cbd5e1', background: '#f1f5f9', boxShadow: 'inset 0 3px 12px rgba(15,23,42,0.06)' }}>
           {/* Tab bar */}
-          <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <div className="flex items-center gap-0 px-6" style={{ borderBottom: '1px solid #cbd5e1', background: '#edf0f4' }}>
             {(['details', 'timeoff'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className="relative mr-6 py-3 text-[11px] font-bold transition-colors"
@@ -1394,8 +1394,8 @@ export default function TutorManagementPage() {
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
-      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl items-center justify-center overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-md">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={24} className="animate-spin" style={{ color: '#dc2626' }} />
           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>Loading tutors…</p>
@@ -1405,9 +1405,9 @@ export default function TutorManagementPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
-      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="tutor-admin flex h-full flex-col overflow-hidden overscroll-contain bg-white">
+    <div className="min-h-screen bg-slate-100 px-4 py-5 text-slate-900" style={{ fontFamily: 'Inter, Segoe UI, ui-sans-serif, system-ui, sans-serif' }}>
+      <div className="mx-auto flex h-[calc(100vh-2.5rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-md">
+      <div className="tutor-admin flex h-full flex-col overflow-hidden overscroll-contain bg-[#f8fafc]">
 
       {/* Top bar */}
       <div className="sticky top-0 z-40 border-b border-slate-200 bg-white">
@@ -1563,7 +1563,7 @@ export default function TutorManagementPage() {
                 </p>
               </div>
               <button onClick={handleSendSchedules} disabled={sendingSched || tutorsWithEmail.length === 0}
-                className="flex items-center gap-1.5 rounded px-4 py-2 text-xs font-black uppercase tracking-[0.1em] text-white transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded px-4 py-2 text-xs font-black uppercase tracking-widest text-white transition-all disabled:opacity-50"
                 style={{ background: '#4f46e5' }}>
                 {sendingSched ? <><Loader2 size={12} className="animate-spin" /> Sending…</> : <><Mail size={12} /> Send All</>}
               </button>
@@ -1593,41 +1593,48 @@ export default function TutorManagementPage() {
         )}
 
         {/* Term availability scope selector */}
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-          <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 mr-1">Editing for</span>
-          <button
-            onClick={() => setSelectedTermId('')}
-            className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
-            style={selectedTermId === ''
-              ? { background: '#1e293b', color: 'white' }
-              : { background: '#f1f5f9', color: '#64748b' }}
-          >
-            Default
-          </button>
-          {terms.map(t => {
-            const isActive = (t.status ?? '').trim().toLowerCase() === 'active';
-            const isSelected = selectedTermId === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setSelectedTermId(t.id)}
-                className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
-                style={isSelected
-                  ? { background: '#4f46e5', color: 'white' }
-                  : { background: '#f1f5f9', color: '#64748b' }}
-              >
-                {t.name}{isActive ? ' ·\u00a0Active' : ''}
-              </button>
-            );
-          })}
-          {loadingTermAvailability && <Loader2 size={12} className="animate-spin text-slate-400 ml-1" />}
-          {selectedTermId && !loadingTermAvailability && (
-            <span className="ml-1 text-[11px] text-slate-400">
-              {Object.keys(termAvailabilityByTutor).length > 0
-                ? `${Object.keys(termAvailabilityByTutor).length} tutor${Object.keys(termAvailabilityByTutor).length === 1 ? '' : 's'} with overrides`
-                : 'No overrides yet'}
-            </span>
-          )}
+        <div className="mb-3 rounded-xl border-2 border-indigo-300 bg-indigo-50 px-4 py-3 shadow-sm">
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">Viewing schedule for</p>
+              <p className="mt-0.5 text-[11px] text-indigo-400">Each term can have its own set of hours — pick one below to view or edit it.</p>
+            </div>
+            {loadingTermAvailability && <Loader2 size={13} className="animate-spin text-indigo-400" />}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelectedTermId('')}
+              className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
+              style={selectedTermId === ''
+                ? { background: '#1e293b', color: 'white' }
+                : { background: '#e0e7ff', color: '#6366f1' }}
+            >
+              Default (no term)
+            </button>
+            {terms.map(t => {
+              const isActive = (t.status ?? '').trim().toLowerCase() === 'active';
+              const isSelected = selectedTermId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedTermId(t.id)}
+                  className="rounded-full px-3 py-1 text-[11px] font-bold transition-all"
+                  style={isSelected
+                    ? { background: '#4f46e5', color: 'white' }
+                    : { background: '#e0e7ff', color: '#6366f1' }}
+                >
+                  {t.name}{isActive ? ' ·\u00a0Active' : ''}
+                </button>
+              );
+            })}
+            {selectedTermId && !loadingTermAvailability && (
+              <span className="ml-1 text-[11px] text-indigo-400">
+                {Object.keys(termAvailabilityByTutor).length > 0
+                  ? `${Object.keys(termAvailabilityByTutor).length} tutor${Object.keys(termAvailabilityByTutor).length === 1 ? '' : 's'} with custom schedules set`
+                  : 'No custom schedules set yet for this term'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Tutors list */}
@@ -1639,8 +1646,8 @@ export default function TutorManagementPage() {
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
-            <div className="flex min-h-0 flex-col space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-              <div className="rounded border border-slate-200 bg-white p-2.5">
+            <div className="flex min-h-0 flex-col space-y-2.5 rounded-xl border border-slate-300 bg-[#f1f5f9] p-2.5">
+              <div className="rounded-lg border border-slate-300 bg-white p-2.5 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Roster</p>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <p className="text-sm font-black text-slate-900">{tutors.length} tutors</p>
@@ -1654,7 +1661,7 @@ export default function TutorManagementPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm">
                 <button onClick={toggleAll} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                   {allSelected ? <CheckSquare size={14} className="text-slate-900" /> : <Square size={14} />}
                   {allSelected ? 'Clear selection' : 'Select all'}
