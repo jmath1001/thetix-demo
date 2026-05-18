@@ -3,20 +3,20 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   Calendar, Users, GraduationCap,
-  Repeat, Mail, Settings, ChevronLeft, ChevronRight, Layers,
+  Repeat, Bell, Settings, ChevronLeft, ChevronRight, Layers,
 } from 'lucide-react';
 
 const ENV_CENTER_NAME  = process.env.NEXT_PUBLIC_CENTER_NAME       ?? 'Scheduler';
 const ENV_CENTER_SHORT = process.env.NEXT_PUBLIC_CENTER_SHORT_NAME ?? 'S';
 
 const navItems = [
-  { name: 'Schedule',  icon: Calendar,      href: '/' },
-  { name: 'Recurring', icon: Repeat,        href: '/recurring' },
-  { name: 'Tutors',    icon: Users,         href: '/tutor' },
-  { name: 'Students',  icon: GraduationCap, href: '/students' },
-  { name: 'Center',    icon: Settings,      href: '/center-settings' },
-  { name: 'Contact',   icon: Mail,          href: '/contact' },
-  { name: 'Builder',   icon: Layers,        href: '/schedule-builder' },
+  { name: 'Schedule',       icon: Calendar,      href: '/' },
+  { name: 'Recurring',      icon: Repeat,        href: '/recurring' },
+  { name: 'Tutors',         icon: Users,         href: '/tutor' },
+  { name: 'Students',       icon: GraduationCap, href: '/students' },
+  { name: 'Center',         icon: Settings,      href: '/center-settings' },
+  { name: 'Notifications',  icon: Bell,          href: '/contact' },
+  { name: 'Builder',        icon: Layers,        href: '/schedule-builder' },
 ];
 
 /* ─── shared accent colours ──────────────────────────── */

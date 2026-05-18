@@ -24,7 +24,7 @@ const SESSIONS = DB.sessions
 const SS       = DB.sessionStudents
 
 const EMPTY_FORM = {
-  name: '', grade: '', email: '', phone: '',
+  name: '', grade: '', school_name: '', email: '', phone: '',
   mom_name: '', mom_email: '', mom_phone: '',
   dad_name: '', dad_email: '', dad_phone: '',
   notify_student: true, notify_mom: true, notify_dad: true,
@@ -144,7 +144,7 @@ function StudentSlideOver({
   const handleSave = async () => {
     setSaving(true)
     await withCenter(supabase.from(STUDENTS).update({
-      name: draft.name, grade: draft.grade,
+      name: draft.name, grade: draft.grade, school_name: draft.school_name || null,
       email: draft.email || null, phone: draft.phone || null,
       mom_name: draft.mom_name || null, mom_email: draft.mom_email || null,
       mom_phone: draft.mom_phone || null,
@@ -231,7 +231,7 @@ function StudentSlideOver({
             <div>
               <p className="text-sm font-bold text-slate-900">{student.name}</p>
               <p className="text-xs text-slate-400">
-                {student.grade ? `Grade ${student.grade}` : 'No grade'} · {sessions.length} sessions
+                {student.grade ? `Grade ${student.grade}` : 'No grade'}{student.school_name ? ` · ${student.school_name}` : ''} · {sessions.length} sessions
               </p>
             </div>
           </div>
@@ -326,7 +326,7 @@ function StudentSlideOver({
                 </div>
                 {editing ? (
                   <div className="space-y-2">
-                    {[['Email', 'email', 'email'], ['Phone', 'phone', 'tel'], ['Grade', 'grade', 'text']].map(([label, field, type]) => (
+                    {[['Email', 'email', 'email'], ['Phone', 'phone', 'tel'], ['Grade', 'grade', 'text'], ['School', 'school_name', 'text']].map(([label, field, type]) => (
                       <div key={field}>
                         <label className="text-[10px] font-semibold text-slate-400 mb-1 block">{label}</label>
                         <input type={type} value={draft[field] ?? ''} onChange={e => setDraft((p: any) => ({ ...p, [field]: e.target.value }))} className={inputCls} />
@@ -648,7 +648,7 @@ export default function StudentAdminPage() {
     if (!newStudent.name) return
     setCreating(true)
     await supabase.from(STUDENTS).insert([withCenterPayload({
-      name: newStudent.name, grade: newStudent.grade || null,
+      name: newStudent.name, grade: newStudent.grade || null, school_name: newStudent.school_name || null,
       email: newStudent.email || null, phone: newStudent.phone || null,
       mom_name: newStudent.mom_name || null, mom_email: newStudent.mom_email || null, mom_phone: newStudent.mom_phone || null,
       dad_name: newStudent.dad_name || null, dad_email: newStudent.dad_email || null, dad_phone: newStudent.dad_phone || null,
@@ -714,7 +714,7 @@ export default function StudentAdminPage() {
             <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {[['Name *', 'name', 'text'], ['Grade', 'grade', 'text'], ['Email', 'email', 'email'], ['Phone', 'phone', 'tel'],
+            {[['Name *', 'name', 'text'], ['Grade', 'grade', 'text'], ['School', 'school_name', 'text'], ['Email', 'email', 'email'], ['Phone', 'phone', 'tel'],
               ['Mom Name', 'mom_name', 'text'], ['Mom Email', 'mom_email', 'email'],
               ['Dad Name', 'dad_name', 'text'], ['Dad Email', 'dad_email', 'email']
             ].map(([label, field, type]) => (
@@ -753,13 +753,15 @@ export default function StudentAdminPage() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 border-l border-slate-100 pl-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Term</span>
-          <select value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}
-            className="h-7 rounded border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700">
-            {terms.length === 0 && <option value="">No terms</option>}
-            {terms.map(term => <option key={term.id} value={term.id}>{term.name}</option>)}
-          </select>
+        <div className="flex items-center gap-1.5 border-l border-slate-100 pl-3">
+          <div className="flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Term</span>
+            <select value={selectedTermId} onChange={e => setSelectedTermId(e.target.value)}
+              className="border-0 bg-transparent p-0 text-xs font-bold text-indigo-700 outline-none focus:ring-0 cursor-pointer">
+              {terms.length === 0 && <option value="">No terms</option>}
+              {terms.map(term => <option key={term.id} value={term.id}>{term.name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="ml-auto text-[11px] text-slate-400">{filtered.length} of {students.length} students</div>
       </div>
@@ -784,7 +786,7 @@ export default function StudentAdminPage() {
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('name')}>Name <SortIcon col="name" /></th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('grade')}>Grade <SortIcon col="grade" /></th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Subject</th>
-                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('hours')}>Hours Left <SortIcon col="hours" /></th>
+                <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">School</th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Booked</th>
                 <th className="px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 cursor-pointer hover:text-slate-600" onClick={() => handleSort('attendance')}>Attendance <SortIcon col="attendance" /></th>
                 <th className="w-24 px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Actions</th>
@@ -838,9 +840,7 @@ export default function StudentAdminPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      {student.hours_left != null
-                        ? <span className={`text-sm font-semibold tabular-nums ${student.hours_left <= 2 ? 'text-red-500' : 'text-slate-700'}`}>{student.hours_left}h</span>
-                        : <span className="text-slate-300 text-sm">—</span>}
+                      <span className="text-xs text-slate-500">{student.school_name ?? <span className="text-slate-300">—</span>}</span>
                     </td>
                     <td className="px-3 py-2.5">
                       {isBooked ? <Badge color="green"><Check size={9} />Booked</Badge> : <Badge color="gray">Not booked</Badge>}

@@ -1126,7 +1126,7 @@ export default function ContactCenter() {
             <Mail size={16} />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900 leading-tight">Contact Center</h1>
+            <h1 className="text-lg font-bold text-slate-900 leading-tight">Notifications</h1>
             <p className="text-xs text-slate-500">Send emails, reminders, and announcements</p>
           </div>
         </div>
@@ -1174,92 +1174,6 @@ export default function ContactCenter() {
               title="Send Session Reminders"
               description="Select a date, pick the students to remind, and dispatch. A second click confirms before sending."
             />
-
-            {/* ── Auto Reminder Schedule ───────────────────────────────────── */}
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-              <div className="border-b border-indigo-100 bg-linear-to-r from-indigo-50 to-white px-4 py-3">
-                <p className="text-xs font-bold text-indigo-900 uppercase tracking-wide">Auto Reminder Schedule</p>
-                <p className="mt-0.5 text-[11px] text-indigo-400">Reminders send automatically every day at this time.</p>
-              </div>
-              {cronLoading && cronConfigured === null ? (
-                <div className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
-                  <Loader2 size={12} className="animate-spin" /> Checking reminder status…
-                </div>
-              ) : cronConfigured === false ? (
-                <div className="px-4 py-3 text-xs text-slate-500">
-                  Automatic reminders aren&apos;t connected. Configure{' '}
-                  <code className="rounded bg-slate-100 px-1">CRONJOB_ORG_API_KEY</code> and{' '}
-                  <code className="rounded bg-slate-100 px-1">CRONJOB_ORG_JOB_ID</code> to enable.
-                </div>
-              ) : cronConfigured ? (
-                <div className="space-y-4 p-4">
-                  {cronJob && (
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${cronJob.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                        {cronJob.enabled ? 'Auto reminders on' : 'Auto reminders off'}
-                      </span>
-                      <button
-                        onClick={toggleCronEnabled}
-                        disabled={cronSaving}
-                        className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {cronSaving ? 'Saving…' : cronJob.enabled ? 'Turn off' : 'Turn on'}
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-end gap-3 flex-wrap">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-600">Send daily at</label>
-                      <input
-                        type="time"
-                        value={reminderTime}
-                        onChange={e => setReminderTime(e.target.value)}
-                        className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 outline-none"
-                      />
-                      <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob?.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE}</p>
-                    </div>
-                    <button
-                      onClick={saveReminderTime}
-                      disabled={cronSaving}
-                      className="mb-5 flex items-center gap-1.5 rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-                    >
-                      <Save size={11} />
-                      {cronSaving ? 'Saving…' : 'Save'}
-                    </button>
-                  </div>
-                  {cronJob && cronJob.nextExecution > 0 && (
-                    <p className="text-[11px] text-slate-400">
-                      Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE })}
-                    </p>
-                  )}
-                  {cronHistory.length > 0 && (
-                    <div>
-                      <button
-                        onClick={() => setCronHistoryExpanded(v => !v)}
-                        className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        <ChevronDown size={11} className={`transition-transform ${cronHistoryExpanded ? 'rotate-180' : ''}`} />
-                        Recent sends ({cronHistory.length})
-                      </button>
-                      {cronHistoryExpanded && (
-                        <div className="mt-1.5 overflow-y-auto rounded border border-slate-100 max-h-24">
-                          {cronHistory.map((h, i) => (
-                            <div key={i} className="flex items-center gap-3 border-b border-slate-50 px-3 py-1 last:border-0 text-xs">
-                              <span className={`w-12 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${h.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-                                {h.status === 1 ? 'OK' : 'Fail'}
-                              </span>
-                              <span className="text-slate-500">{new Date(h.date * 1000).toLocaleString()}</span>
-                              <span className="ml-auto text-slate-400">{h.duration}ms</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </div>
 
             {/* Controls row */}
             <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1379,6 +1293,92 @@ export default function ContactCenter() {
                   />
                 </div>
               )}
+            </div>
+
+            {/* ── Auto Reminder Schedule ───────────────────────────────────── */}
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div className="border-b border-indigo-100 bg-linear-to-r from-indigo-50 to-white px-4 py-3">
+                <p className="text-xs font-bold text-indigo-900 uppercase tracking-wide">Auto Reminder Schedule</p>
+                <p className="mt-0.5 text-[11px] text-indigo-400">Reminders send automatically every day at this time.</p>
+              </div>
+              {cronLoading && cronConfigured === null ? (
+                <div className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
+                  <Loader2 size={12} className="animate-spin" /> Checking reminder status…
+                </div>
+              ) : cronConfigured === false ? (
+                <div className="px-4 py-3 text-xs text-slate-500">
+                  Automatic reminders aren&apos;t connected. Configure{' '}
+                  <code className="rounded bg-slate-100 px-1">CRONJOB_ORG_API_KEY</code> and{' '}
+                  <code className="rounded bg-slate-100 px-1">CRONJOB_ORG_JOB_ID</code> to enable.
+                </div>
+              ) : cronConfigured ? (
+                <div className="space-y-4 p-4">
+                  {cronJob && (
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${cronJob.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        {cronJob.enabled ? 'Auto reminders on' : 'Auto reminders off'}
+                      </span>
+                      <button
+                        onClick={toggleCronEnabled}
+                        disabled={cronSaving}
+                        className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {cronSaving ? 'Saving…' : cronJob.enabled ? 'Turn off' : 'Turn on'}
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">Send daily at</label>
+                      <input
+                        type="time"
+                        value={reminderTime}
+                        onChange={e => setReminderTime(e.target.value)}
+                        className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 outline-none"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob?.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE}</p>
+                    </div>
+                    <button
+                      onClick={saveReminderTime}
+                      disabled={cronSaving}
+                      className="mb-5 flex items-center gap-1.5 rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      <Save size={11} />
+                      {cronSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                  {cronJob && cronJob.nextExecution > 0 && (
+                    <p className="text-[11px] text-slate-400">
+                      Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE })}
+                    </p>
+                  )}
+                  {cronHistory.length > 0 && (
+                    <div>
+                      <button
+                        onClick={() => setCronHistoryExpanded(v => !v)}
+                        className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <ChevronDown size={11} className={`transition-transform ${cronHistoryExpanded ? 'rotate-180' : ''}`} />
+                        Recent sends ({cronHistory.length})
+                      </button>
+                      {cronHistoryExpanded && (
+                        <div className="mt-1.5 overflow-y-auto rounded border border-slate-100 max-h-24">
+                          {cronHistory.map((h, i) => (
+                            <div key={i} className="flex items-center gap-3 border-b border-slate-50 px-3 py-1 last:border-0 text-xs">
+                              <span className={`w-12 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${h.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                                {h.status === 1 ? 'OK' : 'Fail'}
+                              </span>
+                              <span className="text-slate-500">{new Date(h.date * 1000).toLocaleString()}</span>
+                              <span className="ml-auto text-slate-400">{h.duration}ms</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             {/* ── Reminder Email Template ───────────────────────────────────── */}

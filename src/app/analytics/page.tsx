@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, BarChart2, Activity, RefreshCw, TrendingUp, TrendingDown, Users, CheckCircle2, Calendar, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { DB } from '@/lib/db';
+import { DB, getCenterId } from '@/lib/db';
 import { toISODate, dayOfWeek, getCentralTimeNow, getWeekStart } from '@/lib/useScheduleData';
 
 type Event = { id: string; event_name: string; properties: Record<string, any>; created_at: string; };
@@ -244,9 +244,10 @@ export default function AnalyticsPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    const centerId = getCenterId();
     const [evRes, sesRes] = await Promise.all([
-      supabase.from(DB.events).select('*').order('created_at', { ascending: false }).limit(1000),
-      supabase.from(DB.sessions).select(`id, session_date, ${DB.sessionStudents}(id, status)`).order('session_date'),
+      supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }).limit(1000),
+      supabase.from(DB.sessions).select(`id, session_date, ${DB.sessionStudents}(id, status)`).eq('center_id', centerId).order('session_date'),
     ]);
     setEvents(evRes.data ?? []);
     setSessionStudents(
@@ -264,9 +265,14 @@ export default function AnalyticsPage() {
     setClearing(true);
     setClearResult(null);
     try {
-      const { error: e1 } = await supabase.from(DB.sessionStudents).delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (e1) throw e1;
-      const { error: e2 } = await supabase.from(DB.sessions).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const centerId = getCenterId();
+      const { data: sessions } = await supabase.from(DB.sessions).select('id').eq('center_id', centerId);
+      const sessionIds = (sessions ?? []).map((s: any) => s.id);
+      if (sessionIds.length > 0) {
+        const { error: e1 } = await supabase.from(DB.sessionStudents).delete().in('session_id', sessionIds);
+        if (e1) throw e1;
+      }
+      const { error: e2 } = await supabase.from(DB.sessions).delete().eq('center_id', centerId);
       if (e2) throw e2;
       setClearResult('All bookings cleared.');
       setClearConfirm(false);
