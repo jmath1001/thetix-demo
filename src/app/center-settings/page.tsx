@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clock, Loader2, Plus, Save, Settings, Trash2, Zap, Pencil } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -97,7 +97,7 @@ function parseSlot(slot: string): { start: string; end: string } {
   return { start: slot, end: '' }
 }
 
-const TABS = ['general', 'notifications', 'portals', 'subjects'] as const
+const TABS = ['general', 'notifications', 'subjects'] as const
 type Tab = typeof TABS[number]
 
 export default function CenterSettingsPage() {
@@ -173,9 +173,12 @@ export default function CenterSettingsPage() {
   const [cronSaving, setCronSaving] = useState(false)
   const [cronConfigured, setCronConfigured] = useState<boolean | null>(null)
   const [reminderTime, setReminderTime] = useState('07:00')
+  const cronFetchedRef = useRef(false)
 
   useEffect(() => {
     if (tab !== 'notifications') return
+    if (cronFetchedRef.current) return   // only fetch once per page load
+    cronFetchedRef.current = true
     let cancelled = false
     setCronLoading(true)
     Promise.all([
@@ -628,18 +631,18 @@ export default function CenterSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5">
-      <div className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="min-h-screen bg-slate-50 px-4 py-6">
+      <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-linear-to-r from-slate-50 to-white px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-900 text-white">
-              <Settings size={15} />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900 text-white shadow-sm">
+              <Settings size={16} />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6366f1' }}>Admin</p>
-              <h1 className="text-base font-bold text-slate-900">Center Settings</h1>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">Admin</p>
+              <h1 className="text-sm font-bold text-slate-900">Center Settings</h1>
             </div>
           </div>
           {tab === 'general' && (
@@ -647,14 +650,14 @@ export default function CenterSettingsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleCancelEdit}
-                  className="rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving || !isDirty}
-                  className="inline-flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-sm"
                 >
                   {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                   Save
@@ -663,7 +666,7 @@ export default function CenterSettingsPage() {
             ) : (
               <button
                 onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
               >
                 <Pencil size={11} />
                 Edit
@@ -673,20 +676,20 @@ export default function CenterSettingsPage() {
         </div>
 
         {/* ── Tab bar ── */}
-        <div className="flex border-b border-slate-100 px-5">
+        <div className="flex gap-1 border-b border-slate-100 px-5 pt-1">
           {([
             { id: 'general',       label: 'General' },
             { id: 'notifications', label: 'Notifications' },
-            { id: 'portals',       label: 'Portals' },
             { id: 'subjects',      label: 'Subjects' },
           ] as const).map(t => (
             <button
               key={t.id}
               onClick={() => handleTabChange(t.id)}
-              className="relative mr-4 py-3 text-xs font-semibold transition-colors"
+              className="relative px-3 py-2.5 text-xs font-semibold transition-all rounded-t"
               style={{
                 color: tab === t.id ? '#0f172a' : '#94a3b8',
-                borderBottom: tab === t.id ? '2px solid #0f172a' : '2px solid transparent',
+                borderBottom: tab === t.id ? '2px solid #6366f1' : '2px solid transparent',
+                background: tab === t.id ? 'white' : 'transparent',
               }}
             >
               {t.label}
@@ -695,9 +698,16 @@ export default function CenterSettingsPage() {
         </div>
 
         {/* ── Tab content ── */}
-        <div className="p-5">
-          {error && <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{error}</div>}
-          {success && <div className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">{success}</div>}
+        <div className="p-6">
+          {error && (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-medium text-red-700">
+              <span className="mt-px shrink-0">⚠</span>
+              <span>{error}</span>
+            </div>
+          )}
+          {success && (
+            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-medium text-emerald-700">{success}</div>
+          )}
 
           {/* ── General ── */}
           {tab === 'general' && (
@@ -705,7 +715,7 @@ export default function CenterSettingsPage() {
 
               {/* Center Info */}
               <div>
-                <p className="mb-4 text-xs font-black uppercase tracking-widest text-slate-800">Center Info</p>
+                <p className="mb-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">Center Info</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-500">Center Name</label>
@@ -749,6 +759,42 @@ export default function CenterSettingsPage() {
                 </div>
               </div>
 
+              {/* ── Scheduling & Portals ── */}
+              <div className="border-t border-slate-100 pt-6">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Scheduling</p>
+                <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Default Session Duration (min)</label>
+                    {editing
+                      ? <>
+                          <input type="number" min={30} max={240} step={5} value={sessionDurationMinutes}
+                            onChange={e => setSessionDurationMinutes(Number(e.target.value))}
+                            className={baseInputCls}
+                          />
+                          <p className="mt-1 text-[11px] text-slate-400">Used as the default when creating new sessions (30–240 min).</p>
+                        </>
+                      : <p className={readonlyInputCls}>{sessionDurationMinutes} min</p>
+                    }
+                  </div>
+                </div>
+                <div className="mb-5 grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Enrollment Form Instructions</label>
+                    {editing
+                      ? <textarea value={enrollmentInstructions} onChange={e => setEnrollmentInstructions(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Instructions shown at the top of the enrollment form." />
+                      : <p className={readonlyInputCls}>{enrollmentInstructions || <span className="text-slate-400">—</span>}</p>
+                    }
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">Tutor Portal Welcome Message</label>
+                    {editing
+                      ? <textarea value={tutorPortalMessage} onChange={e => setTutorPortalMessage(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Message shown at the top of the tutor availability portal." />
+                      : <p className={readonlyInputCls}>{tutorPortalMessage || <span className="text-slate-400">—</span>}</p>
+                    }
+                  </div>
+                </div>
+              </div>
+
               {/* ── Terms ── */}
               <div className="border-t border-slate-100 pt-6">
 
@@ -759,7 +805,7 @@ export default function CenterSettingsPage() {
                     className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
                   >
                     <div>
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-800">Default Session Times</p>
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Default Session Times</p>
                       <p className="mt-0.5 text-[11px] text-slate-500">Global fallback used when a term has no session times configured.</p>
                     </div>
                     <span className="ml-4 text-slate-400 text-sm">{defaultOpen ? '▲' : '▼'}</span>
@@ -867,7 +913,7 @@ export default function CenterSettingsPage() {
                 {/* Academic Terms list */}
                 <div className="mb-4 flex items-start justify-between">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-800">Academic Terms</p>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Academic Terms</p>
                     <p className="mt-0.5 text-xs text-slate-500">Each term has its own operating hours, session times, and date exceptions.</p>
                   </div>
                   {!termFormOpen && (
@@ -1057,7 +1103,7 @@ export default function CenterSettingsPage() {
 
                     {/* Session Times by Day */}
                     <div className="mt-5 border-t border-slate-100 pt-4">
-                      <p className="mb-1 text-xs font-black uppercase tracking-widest text-slate-800">Session Times by Day</p>
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Session Times by Day</p>
                       <p className="mb-3 text-[11px] text-slate-400">Set the specific time slots for each open day.</p>
                       {ALL_DAYS.map(({ dow, label }) => {
                         const oh = termDraft.operating_hours[dow]
@@ -1166,7 +1212,7 @@ export default function CenterSettingsPage() {
 
                     {/* Special Days */}
                     <div className="mt-5 border-t border-slate-100 pt-4">
-                      <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-800">Special Days / Holidays</p>
+                    <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Special Days / Holidays</p>
                       <p className="mb-3 text-[11px] text-slate-400">Mark individual dates as closed or with a custom note.</p>
                       {termDraft.date_exceptions.length > 0 && (
                         <div className="mb-3 space-y-1.5">
@@ -1244,7 +1290,7 @@ export default function CenterSettingsPage() {
 
               {/* Reminder Send Time */}
               <div>
-                <p className="mb-1 text-xs font-black uppercase tracking-widest text-slate-800">Reminder Send Time</p>
+                <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">Reminder Send Time</p>
                 <p className="mb-4 text-[11px] text-slate-500">
                   Reminders are sent automatically every day at this time, for all sessions scheduled that day.
                 </p>
@@ -1261,24 +1307,26 @@ export default function CenterSettingsPage() {
                   </div>
                 )}
 
-                {cronConfigured && cronJob && (
+                {cronConfigured && (
                   <div className="space-y-4">
-                    {/* On/off toggle */}
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${cronJob.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                        {cronJob.enabled ? 'Reminders on' : 'Reminders off'}
-                      </span>
-                      <button
-                        onClick={toggleCronEnabled}
-                        disabled={cronSaving}
-                        className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        {cronSaving ? 'Saving…' : cronJob.enabled ? 'Turn off' : 'Turn on'}
-                      </button>
-                    </div>
+                    {/* On/off toggle — only when job details are loaded */}
+                    {cronJob && (
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${cronJob.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                          {cronJob.enabled ? 'Reminders on' : 'Reminders off'}
+                        </span>
+                        <button
+                          onClick={toggleCronEnabled}
+                          disabled={cronSaving}
+                          className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {cronSaving ? 'Saving…' : cronJob.enabled ? 'Turn off' : 'Turn on'}
+                        </button>
+                      </div>
+                    )}
 
-                    {/* Time picker */}
+                    {/* Time picker — always available when configured */}
                     <div className="flex items-end gap-3">
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-600">Send reminders at</label>
@@ -1288,7 +1336,7 @@ export default function CenterSettingsPage() {
                           onChange={e => setReminderTime(e.target.value)}
                           className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 outline-none"
                         />
-                        <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE}</p>
+                        <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob?.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE}</p>
                       </div>
                       <button
                         onClick={saveReminderTime}
@@ -1300,7 +1348,7 @@ export default function CenterSettingsPage() {
                       </button>
                     </div>
 
-                    {cronJob.nextExecution > 0 && (
+                    {cronJob && cronJob.nextExecution > 0 && (
                       <p className="text-[11px] text-slate-400">
                         Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE })}
                       </p>
@@ -1328,7 +1376,7 @@ export default function CenterSettingsPage() {
 
               {/* Email Template */}
               <div className="border-t border-slate-100 pt-5">
-                <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-800">Email Template</p>
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Email Template</p>
                 <p className="mb-3 text-[11px] text-slate-500">
                   Variables: <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{name}}'}</code> <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{date}}'}</code> <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{time}}'}</code>
                 </p>
@@ -1352,49 +1400,11 @@ export default function CenterSettingsPage() {
             </div>
           )}
 
-          {/* ── Portals ── */}
-          {tab === 'portals' && (
-            <div className="space-y-5">
-              <div>
-                <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-800">Scheduling</p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Default Session Duration (min)</label>
-                    <input type="number" min={30} max={240} step={5} value={sessionDurationMinutes}
-                      onChange={e => setSessionDurationMinutes(Number(e.target.value))}
-                      className={baseInputCls}
-                    />
-                    <p className="mt-1 text-[11px] text-slate-400">Used as the default when creating new sessions (30–240 min).</p>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-800">Portal Messages</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Enrollment Form Instructions</label>
-                    <textarea value={enrollmentInstructions} onChange={e => setEnrollmentInstructions(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Instructions shown at the top of the enrollment form sent to families." />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Tutor Portal Welcome Message</label>
-                    <textarea value={tutorPortalMessage} onChange={e => setTutorPortalMessage(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Message displayed at the top of the tutor availability portal." />
-                  </div>
-                  <button onClick={handleSave} disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ── Subjects ── */}
           {tab === 'subjects' && (
             <div className="space-y-5">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-black uppercase tracking-widest text-slate-800">Subjects</p>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Subjects</p>
                 <button onClick={handleSaveSubjects} disabled={subjectsSaving}
                   className="flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white transition-opacity disabled:opacity-50"
                   style={{ background: '#0f172a' }}

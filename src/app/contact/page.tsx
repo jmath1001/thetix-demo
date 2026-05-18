@@ -887,6 +887,8 @@ export default function ContactCenter() {
     }
   };
 
+  const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'template' | 'history'>('reminders');
+
   const openReminderPreview = () => {
     setPreviewLoading(false);
     const sampleCandidate = candidates[0];
@@ -916,239 +918,245 @@ export default function ContactCenter() {
   };
 
   return (
-    <div className="min-h-screen px-4 py-5" style={{ background: '#f1f5f9' }}>
-      <div className="mx-auto w-full max-w-5xl rounded-2xl bg-white" style={{ border: '1px solid #cbd5e1', boxShadow: '0 4px 20px rgba(15,23,42,0.08)' }}>
+    <div className="min-h-screen bg-slate-50">
 
-        {/* Page Header */}
-        <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '2px solid #e2e8f0', background: '#f8fafc', borderRadius: '1rem 1rem 0 0' }}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ background: '#1e293b' }}>
+      {/* ── Page header ────────────────────────────────────────────────── */}
+      <div className="border-b border-slate-200 bg-white px-6 py-4">
+        <div className="mx-auto max-w-4xl flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
             <Mail size={16} />
           </div>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#6366f1' }}>Operations</p>
-            <h1 className="text-base font-black text-slate-900">Contact Center</h1>
+            <h1 className="text-lg font-bold text-slate-900 leading-tight">Contact Center</h1>
+            <p className="text-xs text-slate-500">Send emails, reminders, and announcements</p>
           </div>
         </div>
+      </div>
 
-        <div className="space-y-5 p-5">
+      {/* ── Tab bar ─────────────────────────────────────────────────────── */}
+      <div className="border-b border-slate-200 bg-white px-6">
+        <div className="mx-auto max-w-4xl">
+          <nav className="flex gap-1 overflow-x-auto">
+            {([
+              { id: 'reminders',    label: 'Reminders',         icon: <Send size={13} /> },
+              { id: 'availability', label: 'Availability',      icon: <Megaphone size={13} /> },
+              { id: 'general',      label: 'General Blast',     icon: <Mail size={13} /> },
+              { id: 'tutor',        label: 'Tutor Schedules',   icon: <Calendar size={13} /> },
+              { id: 'template',     label: 'Email Template',    icon: <Edit3 size={13} /> },
+              { id: 'history',      label: 'Send History',      icon: <Clock size={13} />, badge: logs.length || null },
+            ] as const).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-xs font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-indigo-600 text-indigo-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+                {'badge' in tab && tab.badge ? (
+                  <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{tab.badge}</span>
+                ) : null}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
 
-        {/* Send Reminders */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+      {/* ── Tab panels ──────────────────────────────────────────────────── */}
+      <div className="mx-auto max-w-4xl px-6 py-6">
+
+        {/* ── REMINDERS ─────────────────────────────────────────────────── */}
+        {activeTab === 'reminders' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Send size={15} className="text-indigo-600" />}
+              title="Send Session Reminders"
+              description="Select a date, pick the students to remind, and dispatch. A second click confirms before sending."
+            />
+
+            {/* Controls row */}
+            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Send Reminders</p>
-                <p className="text-xs text-slate-500">Dispatch session reminders. Two-step confirmation enabled.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5">
-                  <Calendar size={11} className="text-slate-400" />
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Session date</label>
+                <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <Calendar size={12} className="text-slate-400" />
                   <input
                     type="date"
                     value={dispatchDate}
                     onChange={e => setDispatchDate(e.target.value)}
-                    className="bg-transparent text-xs text-slate-700 outline-none"
+                    className="bg-transparent text-sm text-slate-800 outline-none"
                   />
                 </div>
-                <div className="flex items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Term</span>
-                  <select
-                    value={selectedTermId}
-                    onChange={e => setSelectedTermId(e.target.value)}
-                    className="bg-transparent text-xs text-slate-700 outline-none"
-                  >
-                    {terms.length === 0 && <option value="">No terms</option>}
-                    {terms.map(term => (
-                      <option key={term.id} value={term.id}>{term.name}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
-            </div>
-
-            {sendResult && (
-              <div className={`mb-3 flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${sendResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                {sendResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
-                <div>
-                  {sendResult.mode === 'redirect' && sendResult.redirectedTo && (
-                    <p>Protected mode — redirected to {sendResult.redirectedTo}.</p>
-                  )}
-                  {sendResult.skipped && sendResult.reason && <p>{sendResult.reason}</p>}
-                  {sendResult.sent > 0 && <p>{sendResult.sent} reminder{sendResult.sent !== 1 ? 's' : ''} sent.</p>}
-                  {sendResult.failed > 0 && <p>{sendResult.failed} failed.{sendResult.errors[0] ? ` (${sendResult.errors[0]})` : ''}</p>}
-                </div>
-              </div>
-            )}
-
-            {!loadingCandidates && candidates.length > 0 && (
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <label className="flex cursor-pointer select-none items-center gap-2">
-                  <div
-                    onClick={toggleAll}
-                    className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all"
-                    style={{ background: allChecked ? '#0f172a' : someChecked ? '#e2e8f0' : 'white', border: `2px solid ${allChecked || someChecked ? '#0f172a' : '#d1d5db'}` }}
-                  >
-                    {allChecked && <Check size={9} color="white" strokeWidth={3} />}
-                    {someChecked && !allChecked && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
-                  </div>
-                  <span className="text-xs font-semibold text-slate-700">
-                    {allChecked ? 'Deselect all' : `Select all unsent (${selectableIds.length})`}
-                  </span>
-                </label>
-                <button
-                  onClick={handleSend}
-                  disabled={selected.size === 0 || sending}
-                  className="inline-flex items-center justify-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                  style={{ background: confirmSend ? '#92400e' : '#0f172a' }}
-                >
-                  {sending
-                    ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
-                    : confirmSend
-                      ? <><AlertCircle size={12} /> Confirm — send to {selected.size}</>
-                      : <><Send size={12} /> Send to {selected.size}</>}
-                </button>
-              </div>
-            )}
-
-            {loadingCandidates ? (
-              <div className="flex items-center gap-2 py-4 text-slate-400">
-                <Loader2 size={13} className="animate-spin" />
-                <span className="text-xs">Loading sessions for {dispatchDate}…</span>
-              </div>
-            ) : candidates.length === 0 ? (
-              <div className="rounded border border-dashed border-slate-200 bg-white py-8 text-center">
-                <Users size={22} className="mx-auto mb-2 text-slate-300" />
-                <p className="text-xs font-semibold text-slate-400">No sessions found for {dispatchDate}</p>
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded border border-slate-200 bg-white">
-                {candidates.map((c, i) => {
-                  const noEmail     = !c.studentEmail && !c.momEmail && !c.dadEmail;
-                  const allOptedOut = !noEmail &&
-                    (!c.studentEmail || !c.notifyStudent) &&
-                    (!c.momEmail     || !c.notifyMom) &&
-                    (!c.dadEmail     || !c.notifyDad);
-                  const isDisabled  = noEmail || allOptedOut || c.reminderSent;
-                  const isChecked   = selected.has(c.rowId);
-                  return (
-                    <div
-                      key={c.rowId}
-                      className="flex items-center gap-3 px-3 py-3 transition-colors"
-                      style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none', background: c.reminderSent ? '#f8fafc' : 'white', opacity: noEmail || allOptedOut ? 0.45 : 1, cursor: isDisabled ? 'default' : 'pointer' }}
-                      onClick={() => !isDisabled && toggleWithConfirmReset(c.rowId)}
-                    >
-                      <div
-                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all"
-                        style={{ background: isChecked ? '#0f172a' : 'white', border: `2px solid ${isChecked ? '#0f172a' : isDisabled ? '#e5e7eb' : '#d1d5db'}` }}
-                      >
-                        {isChecked && <Check size={9} color="white" strokeWidth={3} />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <p className="text-sm font-semibold" style={{ color: c.reminderSent ? '#94a3b8' : '#0f172a' }}>{c.studentName}</p>
-                          {c.reminderSent && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700">
-                              <Check size={7} strokeWidth={3} /> Sent
-                            </span>
-                          )}
-                          {noEmail && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">No email</span>}
-                          {allOptedOut && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-600">Opted out</span>}
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] text-slate-500">{c.sessionTime} · {c.tutorName}</span>
-                          {(c.studentEmail || c.momEmail || c.dadEmail) && !c.reminderSent && (
-                            <span className="text-[10px] text-slate-400">
-                              → {[
-                                c.studentEmail ? { addr: c.studentEmail, notify: c.notifyStudent } : null,
-                                c.momEmail     ? { addr: c.momEmail,     notify: c.notifyMom }     : null,
-                                c.dadEmail     ? { addr: c.dadEmail,     notify: c.notifyDad }     : null,
-                              ].filter(Boolean).map((x, xi) => (
-                                <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
-                                  {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
-                                </span>
-                              ))}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* â”€â”€â”€ Announcement Blast â”€â”€â”€ */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <Megaphone size={13} style={{ color: '#4338ca' }} />
-                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Availability Emails</p>
-                </div>
-                <p className="mt-0.5 text-xs text-slate-500">Send per-term availability links to students and parents. Pick a term to generate the booking link.</p>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Filter by term</label>
+                <select
+                  value={selectedTermId}
+                  onChange={e => setSelectedTermId(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400"
+                >
+                  {terms.length === 0 && <option value="">No terms</option>}
+                  {terms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
               </div>
-              <button
-                onClick={() => setBlastExpanded(v => !v)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                {blastExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                {blastExpanded ? 'Collapse' : 'Expand'}
-              </button>
             </div>
 
-            {blastExpanded && (
-              <div className="mt-4 space-y-4">
-                {/* Term selector */}
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">Term</label>
+            {/* Result banner */}
+            {sendResult && (
+              <ResultBanner
+                sent={sendResult.sent}
+                failed={sendResult.failed}
+                errors={sendResult.errors}
+                mode={sendResult.mode}
+                redirectedTo={sendResult.redirectedTo}
+                skipped={sendResult.skipped}
+                reason={sendResult.reason}
+              />
+            )}
+
+            {/* Candidate list */}
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  {selectableIds.length > 0 && (
+                    <Checkbox checked={allChecked} indeterminate={someChecked && !allChecked} onChange={toggleAll} />
+                  )}
+                  <span className="text-xs font-semibold text-slate-600">
+                    {loadingCandidates ? 'Loading…' : `${candidates.length} student${candidates.length !== 1 ? 's' : ''} on ${dispatchDate}`}
+                  </span>
+                </div>
+                {selected.size > 0 && (
+                  <SendButton
+                    onClick={handleSend}
+                    loading={sending}
+                    confirm={confirmSend}
+                    count={selected.size}
+                    disabled={selected.size === 0 || sending}
+                    label="Send reminders"
+                  />
+                )}
+              </div>
+
+              {loadingCandidates ? (
+                <LoadingRow label={`Loading sessions for ${dispatchDate}…`} />
+              ) : candidates.length === 0 ? (
+                <EmptyState icon={<Users size={24} />} label={`No sessions found for ${dispatchDate}`} />
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {candidates.map(c => {
+                    const noEmail     = !c.studentEmail && !c.momEmail && !c.dadEmail;
+                    const allOptedOut = !noEmail &&
+                      (!c.studentEmail || !c.notifyStudent) &&
+                      (!c.momEmail     || !c.notifyMom) &&
+                      (!c.dadEmail     || !c.notifyDad);
+                    const isDisabled  = noEmail || allOptedOut || c.reminderSent;
+                    const isChecked   = selected.has(c.rowId);
+                    return (
+                      <li
+                        key={c.rowId}
+                        className={`flex items-start gap-3 px-4 py-3 transition-colors ${isDisabled ? 'opacity-50' : 'cursor-pointer hover:bg-slate-50'}`}
+                        onClick={() => !isDisabled && toggleWithConfirmReset(c.rowId)}
+                      >
+                        <div className="mt-0.5">
+                          <Checkbox checked={isChecked} disabled={isDisabled} onChange={() => !isDisabled && toggleWithConfirmReset(c.rowId)} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className={`text-sm font-semibold ${c.reminderSent ? 'text-slate-400' : 'text-slate-900'}`}>{c.studentName}</span>
+                            {c.reminderSent && <StatusBadge color="green" label="Sent" icon={<Check size={8} strokeWidth={3} />} />}
+                            {noEmail && <StatusBadge color="gray" label="No email" />}
+                            {allOptedOut && !noEmail && <StatusBadge color="amber" label="Opted out" />}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {c.sessionTime} · {c.tutorName}
+                            {(c.studentEmail || c.momEmail || c.dadEmail) && !c.reminderSent && (
+                              <> · <EmailList student={c} /></>
+                            )}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {!loadingCandidates && candidates.length > 0 && (
+                <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 flex justify-end">
+                  <SendButton
+                    onClick={handleSend}
+                    loading={sending}
+                    confirm={confirmSend}
+                    count={selected.size}
+                    disabled={selected.size === 0 || sending}
+                    label="Send reminders"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── AVAILABILITY BLAST ──────────────────────────────────────────── */}
+        {activeTab === 'availability' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Megaphone size={15} className="text-indigo-600" />}
+              title="Availability Email Blast"
+              description="Send enrollment links to students and parents for a specific term. Recipients click the link to submit their preferred schedule."
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Left: term + template */}
+              <div className="space-y-4">
+                {/* Term */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Term</p>
                   <select
                     value={blastTermId}
-                    onChange={e => {
-                      setBlastTermId(e.target.value);
-                      setBlastResult(null);
-                      setBlastConfirm(false);
-                    }}
+                    onChange={e => { setBlastTermId(e.target.value); setBlastResult(null); setBlastConfirm(false); }}
                     className={baseInputCls}
                   >
                     {terms.length === 0 && <option value="">No terms available</option>}
-                    {terms.map(t => (
-                      <option key={t.id} value={t.id}>{t.name} ({t.status})</option>
-                    ))}
+                    {terms.map(t => <option key={t.id} value={t.id}>{t.name} ({t.status})</option>)}
                   </select>
                   {blastTermId && (
-                    <p className="mt-1 font-mono text-[11px] text-slate-400">{blastLinkPreview}</p>
+                    <p className="font-mono text-[10px] text-slate-400 break-all">{blastLinkPreview}</p>
                   )}
                 </div>
 
-                {/* Email template */}
-                <div className="overflow-hidden rounded border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2.5">
-                    <p className="text-xs font-semibold text-slate-700">Email Template</p>
-                    <button
-                      onClick={() => setEditingBlastTemplate(v => !v)}
-                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
-                    >
-                      {editingBlastTemplate ? <><X size={10} /> Close</> : <><Edit3 size={10} /> Edit</>}
-                    </button>
+                {/* Template */}
+                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Template</p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={openAvailabilityPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
+                        <Eye size={10} /> Preview
+                      </button>
+                      <button onClick={() => setEditingBlastTemplate(v => !v)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
+                        {editingBlastTemplate ? <><X size={10} /> Close</> : <><Edit3 size={10} /> Edit</>}
+                      </button>
+                    </div>
                   </div>
                   {!editingBlastTemplate ? (
-                    <div className="space-y-1.5 px-3 py-3">
+                    <div className="px-4 py-3 space-y-2">
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Subject</p>
-                        <p className="mt-0.5 text-sm text-slate-700">{blastSubject || '(empty)'}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Subject</p>
+                        <p className="text-sm text-slate-800">{blastSubject || <span className="text-slate-400 italic">Empty</span>}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Body</p>
-                        <p className="mt-0.5 line-clamp-3 whitespace-pre-line text-xs text-slate-500">{blastBody || '(empty)'}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Body</p>
+                        <p className="line-clamp-4 whitespace-pre-line text-xs text-slate-500">{blastBody || <span className="italic">Empty</span>}</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3 p-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="p-4 space-y-3">
+                      <div className="flex flex-wrap gap-1.5">
                         {['{{name}}', '{{link}}', '{{term}}', '{{center}}'].map(v => (
                           <span key={v} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
                         ))}
-                        <span className="text-[10px] text-slate-400">available variables</span>
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
@@ -1159,575 +1167,530 @@ export default function ContactCenter() {
                         <textarea value={blastBody} onChange={e => setBlastBody(e.target.value)} rows={7} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
                       </div>
                       {blastTermId && (
-                        <div className="space-y-1.5 rounded border border-slate-200 bg-slate-50 p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Preview</p>
-                          <p className="text-xs font-semibold text-slate-700">
-                            {applyTemplate(blastSubject, {
-                              name: 'Alex Student',
-                              link: blastLinkPreview,
-                              term: selectedBlastTerm?.name ?? '',
-                              center: settings?.center_name ?? 'Tutoring Center',
-                            })}
-                          </p>
-                          <p className="whitespace-pre-line text-xs text-slate-500">
-                            {applyTemplate(blastBody, {
-                              name: 'Alex Student',
-                              link: blastLinkPreview,
-                              term: selectedBlastTerm?.name ?? '',
-                              center: settings?.center_name ?? 'Tutoring Center',
-                            })}
-                          </p>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
+                          <p className="font-bold text-slate-500 uppercase tracking-widest text-[10px]">Preview</p>
+                          <p className="font-semibold text-slate-800">{applyTemplate(blastSubject, { name: 'Alex Student', link: blastLinkPreview, term: selectedBlastTerm?.name ?? '', center: settings?.center_name ?? 'Tutoring Center' })}</p>
+                          <p className="whitespace-pre-line text-slate-500">{applyTemplate(blastBody, { name: 'Alex Student', link: blastLinkPreview, term: selectedBlastTerm?.name ?? '', center: settings?.center_name ?? 'Tutoring Center' })}</p>
                         </div>
                       )}
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* Recipient list */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-semibold text-slate-500">
-                      Recipients — {blastRecipients.length} student{blastRecipients.length !== 1 ? 's' : ''} with email
-                    </p>
-                    <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
-                      <div
-                        onClick={toggleBlastAll}
-                        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all"
-                        style={{ background: blastAllChecked ? '#0f172a' : blastSomeChecked ? '#e2e8f0' : 'white', border: `2px solid ${blastAllChecked || blastSomeChecked ? '#0f172a' : '#d1d5db'}` }}
+              {/* Right: recipients */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Recipients <span className="text-slate-400 font-normal normal-case">({blastRecipients.length})</span>
+                  </p>
+                  <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
+                    <Checkbox checked={blastAllChecked} indeterminate={blastSomeChecked && !blastAllChecked} onChange={toggleBlastAll} />
+                    {blastAllChecked ? 'Deselect all' : 'Select all'}
+                  </label>
+                </div>
+                {loadingBlastRecipients ? (
+                  <LoadingRow label="Loading recipients…" />
+                ) : blastRecipients.length === 0 ? (
+                  <EmptyState icon={<Users size={22} />} label="No students with email addresses" />
+                ) : (
+                  <ul className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-72">
+                    {blastRecipients.map(r => (
+                      <li
+                        key={r.studentId}
+                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        onClick={() => { setBlastConfirm(false); toggleBlast(r.studentId); }}
                       >
-                        {blastAllChecked && <Check size={9} color="white" strokeWidth={3} />}
-                        {blastSomeChecked && !blastAllChecked && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
-                      </div>
-                      {blastAllChecked ? 'Deselect all' : 'Select all'}
-                    </label>
-                  </div>
-
-                  {loadingBlastRecipients ? (
-                    <div className="flex items-center gap-2 py-4 text-slate-400">
-                      <Loader2 size={13} className="animate-spin" />
-                      <span className="text-xs">Loading recipients…</span>
-                    </div>
-                  ) : blastRecipients.length === 0 ? (
-                    <div className="rounded border border-dashed border-slate-200 bg-white py-6 text-center">
-                      <Users size={20} className="mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs text-slate-400">No students with email addresses found</p>
-                    </div>
-                  ) : (
-                    <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white">
-                      {blastRecipients.map((r, i) => {
-                        const isChecked = blastSelected.has(r.studentId);
-                        return (
-                          <div
-                            key={r.studentId}
-                            className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-slate-50"
-                            style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}
-                            onClick={() => { setBlastConfirm(false); toggleBlast(r.studentId); }}
-                          >
-                            <div
-                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all"
-                              style={{ background: isChecked ? '#0f172a' : 'white', border: `2px solid ${isChecked ? '#0f172a' : '#d1d5db'}` }}
-                            >
-                              {isChecked && <Check size={9} color="white" strokeWidth={3} />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
-                              <p className="truncate text-[10px] text-slate-400">
-                                {[
-                                  r.studentEmail ? { addr: r.studentEmail, notify: r.notifyStudent } : null,
-                                  r.momEmail     ? { addr: r.momEmail,     notify: r.notifyMom }     : null,
-                                  r.dadEmail     ? { addr: r.dadEmail,     notify: r.notifyDad }     : null,
-                                ].filter(Boolean).map((x, xi) => (
-                                  <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
-                                    {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
-                                  </span>
-                                ))}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {blastResult && (
-                  <div className={`flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${blastResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                    {blastResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
-                    <div>
-                      {blastResult.mode === 'redirect' && blastResult.redirectedTo && (
-                        <p>Protected mode — redirected to {blastResult.redirectedTo}.</p>
-                      )}
-                      {blastResult.sent > 0 && <p>{blastResult.sent} announcement{blastResult.sent !== 1 ? 's' : ''} sent.</p>}
-                      {blastResult.failed > 0 && <p>{blastResult.failed} failed.{blastResult.errors[0] ? ` (${blastResult.errors[0]})` : ''}</p>}
-                    </div>
-                  </div>
+                        <Checkbox checked={blastSelected.has(r.studentId)} onChange={() => { setBlastConfirm(false); toggleBlast(r.studentId); }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
+                          <p className="truncate text-[10px] text-slate-400"><EmailList student={{ studentEmail: r.studentEmail, momEmail: r.momEmail, dadEmail: r.dadEmail, notifyStudent: r.notifyStudent, notifyMom: r.notifyMom, notifyDad: r.notifyDad } as any} /></p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={openAvailabilityPreview}
-                      className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <Eye size={12} /> View email preview
-                    </button>
-                    <button
-                      onClick={openAvailabilityFormPreview}
-                      disabled={!blastTermId}
-                      className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      View availability form
-                    </button>
-                  </div>
-                  {!blastTermId && (
-                    <p className="text-xs text-amber-600">Select a term to generate the availability link.</p>
+                <div className="border-t border-slate-100 bg-slate-50 p-4 space-y-3">
+                  {blastResult && (
+                    <ResultBanner sent={blastResult.sent} failed={blastResult.failed} errors={blastResult.errors} mode={blastResult.mode} redirectedTo={blastResult.redirectedTo} />
                   )}
-                  <div className="ml-auto">
-                    <button
-                      onClick={handleBlastSend}
-                      disabled={blastSelected.size === 0 || blastSending || !blastTermId}
-                      className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                      style={{ background: blastConfirm ? '#92400e' : '#0f172a' }}
-                    >
-                      {blastSending
-                        ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
-                        : blastConfirm
-                          ? <><AlertCircle size={12} /> Confirm — blast to {blastSelected.size}</>
-                          : <><Megaphone size={12} /> Blast to {blastSelected.size} student{blastSelected.size !== 1 ? 's' : ''}</>}
+                  {!blastTermId && (
+                    <p className="text-[11px] text-amber-600 font-medium">⚠ Select a term first to generate the availability link.</p>
+                  )}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <button onClick={openAvailabilityFormPreview} disabled={!blastTermId} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40">
+                      <Eye size={11} /> Preview form
                     </button>
+                    <SendButton
+                      onClick={handleBlastSend}
+                      loading={blastSending}
+                      confirm={blastConfirm}
+                      count={blastSelected.size}
+                      disabled={blastSelected.size === 0 || blastSending || !blastTermId}
+                      label="Send availability"
+                    />
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── GENERAL BLAST ───────────────────────────────────────────────── */}
+        {activeTab === 'general' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Mail size={15} className="text-indigo-600" />}
+              title="General Email Blast"
+              description="Write any message and send it to any students and parents. No term required."
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Compose */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Compose</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['{{name}}', '{{center}}'].map(v => (
+                    <span key={v} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
+                  ))}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
+                  <input value={generalSubject} onChange={e => { setGeneralSubject(e.target.value); setGeneralResult(null); }} placeholder="e.g. Important update from the center" className={baseInputCls} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
+                  <textarea value={generalBody} onChange={e => { setGeneralBody(e.target.value); setGeneralResult(null); }} rows={8} placeholder={"Hi {{name}},\n\n..."} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
+                </div>
+                <button onClick={openGeneralPreview} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700">
+                  <Eye size={11} /> Preview email
+                </button>
+              </div>
+
+              {/* Recipients */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Recipients <span className="text-slate-400 font-normal normal-case">({blastRecipients.length})</span>
+                  </p>
+                  <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
+                    <Checkbox
+                      checked={blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId))}
+                      indeterminate={blastRecipients.some(r => generalSelected.has(r.studentId)) && !blastRecipients.every(r => generalSelected.has(r.studentId))}
+                      onChange={() => {
+                        setGeneralConfirm(false);
+                        const allSel = blastRecipients.every(r => generalSelected.has(r.studentId));
+                        setGeneralSelected(allSel ? new Set() : new Set(blastRecipients.map(r => r.studentId)));
+                      }}
+                    />
+                    {blastRecipients.every(r => generalSelected.has(r.studentId)) ? 'Deselect all' : 'Select all'}
+                  </label>
+                </div>
+                {loadingBlastRecipients ? (
+                  <LoadingRow label="Loading recipients…" />
+                ) : blastRecipients.length === 0 ? (
+                  <EmptyState icon={<Users size={22} />} label="No students with email addresses" />
+                ) : (
+                  <ul className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-72">
+                    {blastRecipients.map(r => (
+                      <li
+                        key={r.studentId}
+                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        onClick={() => { setGeneralConfirm(false); setGeneralSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; }); }}
+                      >
+                        <Checkbox
+                          checked={generalSelected.has(r.studentId)}
+                          onChange={() => { setGeneralConfirm(false); setGeneralSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; }); }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
+                          <p className="truncate text-[10px] text-slate-400"><EmailList student={{ studentEmail: r.studentEmail, momEmail: r.momEmail, dadEmail: r.dadEmail, notifyStudent: r.notifyStudent, notifyMom: r.notifyMom, notifyDad: r.notifyDad } as any} /></p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="border-t border-slate-100 bg-slate-50 p-4 space-y-3">
+                  {generalResult && (
+                    <ResultBanner sent={generalResult.sent} failed={generalResult.failed} errors={generalResult.errors} mode={generalResult.mode} redirectedTo={generalResult.redirectedTo} />
+                  )}
+                  <div className="flex justify-end">
+                    <SendButton
+                      onClick={handleGeneralSend}
+                      loading={generalSending}
+                      confirm={generalConfirm}
+                      count={generalSelected.size}
+                      disabled={generalSelected.size === 0 || generalSending || !generalSubject.trim() || !generalBody.trim()}
+                      label="Send email"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TUTOR SCHEDULES ─────────────────────────────────────────────── */}
+        {activeTab === 'tutor' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Calendar size={15} className="text-indigo-600" />}
+              title="Tutor Weekly Schedules"
+              description="Email each tutor a summary of their sessions for the selected week."
+            />
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5">
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">Week starting (Monday)</label>
+                  <input
+                    type="date"
+                    value={tutorSchedWeek}
+                    onChange={e => { setTutorSchedWeek(e.target.value); setTutorSchedResult(null); }}
+                    className={`${baseInputCls} w-auto`}
+                  />
+                </div>
+                <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
+                  {tutorsWithEmail.length > 0 ? (
+                    <><span className="font-bold text-slate-800">{tutorsWithEmail.length}</span> <span className="text-slate-500">tutor{tutorsWithEmail.length !== 1 ? 's' : ''} will receive their schedule</span></>
+                  ) : (
+                    <span className="text-slate-400">No tutors with email addresses found</span>
+                  )}
+                </div>
+              </div>
+
+              {tutorsWithEmail.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">Tutors</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tutorsWithEmail.map(t => (
+                      <span key={t.id} className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs font-medium text-slate-700">{t.name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {tutorSchedResult && (
+                <ResultBanner
+                  sent={tutorSchedResult.sent}
+                  failed={tutorSchedResult.failed}
+                  errors={tutorSchedResult.errors}
+                  mode={tutorSchedResult.mode}
+                  redirectedTo={tutorSchedResult.redirectedTo}
+                  skipped={tutorSchedResult.skipped}
+                  reason={tutorSchedResult.reason}
+                />
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <button onClick={() => void openTutorSchedulePreview()} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Eye size={12} /> Preview schedule email
+                </button>
+                <button
+                  onClick={handleSendTutorSchedules}
+                  disabled={tutorSchedSending || tutorsWithEmail.length === 0}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  {tutorSchedSending ? <><Loader2 size={13} className="animate-spin" /> Sending…</> : <><Send size={13} /> Send to {tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── TEMPLATE ────────────────────────────────────────────────────── */}
+        {activeTab === 'template' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Edit3 size={15} className="text-indigo-600" />}
+              title="Reminder Email Template"
+              description="Customize the subject and body used when session reminders are sent. Variables are replaced with real data when sending."
+            />
+
+            {settingsError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                <AlertCircle size={14} /> {settingsError}
               </div>
             )}
-          </div>
-
-
-          {/* General Email Blast */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Send size={13} style={{ color: '#4338ca' }} />
-                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>General Email Blast</p>
-                </div>
-                <p className="mt-0.5 text-xs text-slate-500">Send any email to students and parents — write whatever you want, no term required.</p>
+            {templateSaved && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
+                <Check size={14} /> Template saved successfully
               </div>
-              <button
-                onClick={() => setGeneralExpanded(v => !v)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                {generalExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                {generalExpanded ? 'Collapse' : 'Expand'}
-              </button>
-            </div>
+            )}
 
-            {generalExpanded && (
-              <div className="mt-4 space-y-4">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {["{{name}}", "{{center}}"].map(v => (
-                      <span key={v} className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Template</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={openReminderPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                    <Eye size={11} /> Preview
+                  </button>
+                  {!editingTemplate ? (
+                    <button onClick={() => setEditingTemplate(true)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                      <Edit3 size={11} /> Edit
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={cancelEdit} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                        <X size={11} /> Cancel
+                      </button>
+                      <button onClick={saveTemplate} disabled={savingTemplate || loadingSettings || !!settingsError} className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                        {savingTemplate ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {loadingSettings ? (
+                <LoadingRow label="Loading template…" />
+              ) : !editingTemplate ? (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Subject</p>
+                    <p className="text-sm text-slate-800">{settings?.reminder_subject || DEFAULT_SETTINGS.reminder_subject}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Body</p>
+                    <p className="whitespace-pre-line text-sm text-slate-600">{settings?.reminder_body || DEFAULT_SETTINGS.reminder_body}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                    <p className="text-[10px] text-slate-400">Click <strong>Edit</strong> to change the subject or body. Use variables: <code className="text-slate-600">{`{{name}}`}</code>, <code className="text-slate-600">{`{{date}}`}</code>, <code className="text-slate-600">{`{{time}}`}</code>, <code className="text-slate-600">{`{{link}}`}</code></p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 space-y-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {['{{name}}', '{{date}}', '{{time}}', '{{link}}'].map(v => (
+                      <span key={v} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
                     ))}
-                    <span className="text-[10px] text-slate-400">available variables</span>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
-                    <input
-                      value={generalSubject}
-                      onChange={e => { setGeneralSubject(e.target.value); setGeneralResult(null); }}
-                      placeholder="e.g. Important update from the center"
-                      className={baseInputCls}
-                    />
+                    <input value={draftSubject} onChange={e => setDraftSubject(e.target.value)} className={baseInputCls} />
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
-                    <textarea
-                      value={generalBody}
-                      onChange={e => { setGeneralBody(e.target.value); setGeneralResult(null); }}
-                      rows={7}
-                      placeholder={"Hi {{name}},\n\n..."}
-                      className={`${baseInputCls} resize-none`}
-                      style={{ lineHeight: '1.6' }}
-                    />
+                    <textarea value={draftBody} onChange={e => setDraftBody(e.target.value)} rows={8} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Live preview</p>
+                    <p className="text-xs font-semibold text-slate-800">{previewSubject}</p>
+                    <p className="whitespace-pre-line text-xs text-slate-500">{previewBody}</p>
                   </div>
                 </div>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-semibold text-slate-500">
-                      Recipients — {blastRecipients.length} student{blastRecipients.length !== 1 ? 's' : ''} with email
-                    </p>
-                    <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-slate-500">
-                      <div
-                        onClick={() => {
-                          setGeneralConfirm(false);
-                          const allSel = blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId));
-                          setGeneralSelected(allSel ? new Set() : new Set(blastRecipients.map(r => r.studentId)));
-                        }}
-                        className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all"
-                        style={{
-                          background: blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) ? '#0f172a' : blastRecipients.some(r => generalSelected.has(r.studentId)) ? '#e2e8f0' : 'white',
-                          border: `2px solid ${blastRecipients.some(r => generalSelected.has(r.studentId)) ? '#0f172a' : '#d1d5db'}`,
-                        }}
-                      >
-                        {blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) && <Check size={9} color="white" strokeWidth={3} />}
-                        {blastRecipients.some(r => generalSelected.has(r.studentId)) && !blastRecipients.every(r => generalSelected.has(r.studentId)) && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
-                      </div>
-                      {blastRecipients.length > 0 && blastRecipients.every(r => generalSelected.has(r.studentId)) ? 'Deselect all' : 'Select all'}
-                    </label>
-                  </div>
-
-                  {loadingBlastRecipients ? (
-                    <div className="flex items-center gap-2 py-4 text-slate-400">
-                      <Loader2 size={13} className="animate-spin" />
-                      <span className="text-xs">Loading recipients…</span>
-                    </div>
-                  ) : blastRecipients.length === 0 ? (
-                    <div className="rounded border border-dashed border-slate-200 bg-white py-6 text-center">
-                      <Users size={20} className="mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs text-slate-400">No students with email addresses found</p>
-                    </div>
-                  ) : (
-                    <div className="max-h-56 overflow-y-auto rounded border border-slate-200 bg-white">
-                      {blastRecipients.map((r, i) => {
-                        const isChecked = generalSelected.has(r.studentId);
-                        return (
-                          <div
-                            key={r.studentId}
-                            className="flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-slate-50"
-                            style={{ borderTop: i > 0 ? '1px solid #f1f5f9' : 'none' }}
-                            onClick={() => {
-                              setGeneralConfirm(false);
-                              setGeneralSelected(prev => {
-                                const next = new Set(prev);
-                                next.has(r.studentId) ? next.delete(r.studentId) : next.add(r.studentId);
-                                return next;
-                              });
-                            }}
-                          >
-                            <div
-                              className="flex h-4 w-4 shrink-0 items-center justify-center rounded transition-all"
-                              style={{ background: isChecked ? '#0f172a' : 'white', border: `2px solid ${isChecked ? '#0f172a' : '#d1d5db'}` }}
-                            >
-                              {isChecked && <Check size={9} color="white" strokeWidth={3} />}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
-                              <p className="truncate text-[10px] text-slate-400">
-                                {[
-                                  r.studentEmail ? { addr: r.studentEmail, notify: r.notifyStudent } : null,
-                                  r.momEmail     ? { addr: r.momEmail,     notify: r.notifyMom }     : null,
-                                  r.dadEmail     ? { addr: r.dadEmail,     notify: r.notifyDad }     : null,
-                                ].filter(Boolean).map((x, xi) => (
-                                  <span key={xi} style={x!.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
-                                    {xi > 0 ? ', ' : ''}{x!.addr}{!x!.notify && ' (opted out)'}
-                                  </span>
-                                ))}
-                              </p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {generalResult && (
-                  <div className={`flex items-start gap-2 rounded border px-3 py-2.5 text-xs font-semibold ${generalResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                    {generalResult.failed > 0 ? <AlertCircle size={13} className="mt-0.5 shrink-0" /> : <Check size={13} className="mt-0.5 shrink-0" />}
-                    <div>
-                      {generalResult.mode === 'redirect' && generalResult.redirectedTo && (
-                        <p>Protected mode — redirected to {generalResult.redirectedTo}.</p>
-                      )}
-                      {generalResult.sent > 0 && <p>{generalResult.sent} email{generalResult.sent !== 1 ? 's' : ''} sent.</p>}
-                      {generalResult.failed > 0 && <p>{generalResult.failed} failed.{generalResult.errors[0] ? ` (${generalResult.errors[0]})` : ''}</p>}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    onClick={openGeneralPreview}
-                    className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <Eye size={12} /> View preview
-                  </button>
-                  <button
-                    onClick={handleGeneralSend}
-                    disabled={generalSelected.size === 0 || generalSending || !generalSubject.trim() || !generalBody.trim()}
-                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                    style={{ background: generalConfirm ? '#92400e' : '#0f172a' }}
-                  >
-                    {generalSending
-                      ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
-                      : generalConfirm
-                        ? <><AlertCircle size={12} /> Confirm — send to {generalSelected.size}</>
-                        : <><Send size={12} /> Send to {generalSelected.size} student{generalSelected.size !== 1 ? 's' : ''}</>}
-                  </button>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+        )}
 
-          {/* Tutor Schedule Emails */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Calendar size={13} style={{ color: '#4338ca' }} />
-                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Tutor Weekly Schedules</p>
+        {/* ── HISTORY ─────────────────────────────────────────────────────── */}
+        {activeTab === 'history' && (
+          <div className="space-y-4">
+            <SectionHeader
+              icon={<Clock size={15} className="text-indigo-600" />}
+              title="Send History"
+              description="A log of all reminder emails that have been dispatched."
+            />
+
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              {loadingLogs ? (
+                <LoadingRow label="Loading history…" />
+              ) : logs.length === 0 ? (
+                <EmptyState icon={<Mail size={24} />} label="No reminders sent yet" />
+              ) : (
+                <div>
+                  {Object.entries(groupedLogs)
+                    .sort(([a], [b]) => b.localeCompare(a))
+                    .map(([date, entries]) => (
+                      <div key={date}>
+                        <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+                          <span className="text-xs font-bold text-slate-700">{date}</span>
+                          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{entries.length} sent</span>
+                        </div>
+                        <ul className="divide-y divide-slate-100">
+                          {entries.map(log => (
+                            <li key={log.id} className="flex items-center justify-between px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+                                  <Check size={11} className="text-emerald-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-800">{log.student_name}</p>
+                                  <p className="text-[11px] text-slate-400">{log.emailed_to}</p>
+                                </div>
+                              </div>
+                              <div className="text-right ml-4 shrink-0">
+                                <p className="text-xs font-semibold text-slate-700">{log.session_time}</p>
+                                <p className="text-[10px] text-slate-400">{formatSentAt(log.sent_at)}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">Email each tutor their sessions for the selected week.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* ── Email preview modal ──────────────────────────────────────────── */}
+      {previewModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-[1px]"
+          onClick={() => { if (!previewLoading) setPreviewModal(null); }}
+        >
+          <div className="flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">{previewModal.title}</p>
+                {previewModal.note && <p className="mt-1 text-xs text-slate-500">{previewModal.note}</p>}
+                {previewModal.subject && <p className="mt-2 text-[11px] font-semibold text-slate-700">Subject: {previewModal.subject}</p>}
               </div>
               <button
-                onClick={() => { setTutorSchedExpanded(v => !v); setTutorSchedResult(null); }}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setPreviewModal(null)}
+                disabled={previewLoading}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
               >
-                {tutorSchedExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                {tutorSchedExpanded ? 'Collapse' : 'Expand'}
+                <X size={12} /> Close
               </button>
             </div>
-
-            {tutorSchedExpanded && (
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap items-end gap-4">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-700">Week starting</label>
-                    <input type="date" value={tutorSchedWeek}
-                      onChange={e => { setTutorSchedWeek(e.target.value); setTutorSchedResult(null); }}
-                      className={baseInputCls}
-                      style={{ width: 'auto' }}
-                    />
-                  </div>
-                  <div className="flex-1 text-xs text-slate-500">
-                    {tutorsWithEmail.length > 0
-                      ? <><span className="font-semibold text-slate-700">{tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</span> will receive their schedule.</>
-                      : 'No tutors with email addresses found.'}
+            <div className="bg-slate-100 p-4">
+              {previewLoading ? (
+                <div className="flex min-h-[72vh] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-slate-500">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Loader2 size={14} className="animate-spin" /> Building preview…
                   </div>
                 </div>
-
-                {tutorSchedResult && (
-                  <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${
-                    tutorSchedResult.skipped ? 'border-slate-200 bg-slate-50 text-slate-600' :
-                    tutorSchedResult.failed > 0 ? 'border-red-200 bg-red-50 text-red-700' :
-                    'border-green-200 bg-green-50 text-green-700'
-                  }`}>
-                    {tutorSchedResult.skipped
-                      ? tutorSchedResult.reason
-                      : (
-                        <>
-                          {tutorSchedResult.sent} sent, {tutorSchedResult.failed} failed.
-                          {tutorSchedResult.redirectedTo && <span className="ml-2 text-slate-500">Redirected to {tutorSchedResult.redirectedTo}.</span>}
-                          {tutorSchedResult.errors.map((e, i) => <p key={i} className="mt-0.5">{e}</p>)}
-                        </>
-                      )}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <button
-                    onClick={() => void openTutorSchedulePreview()}
-                    className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <Eye size={12} /> View preview
-                  </button>
-                  <button
-                    onClick={handleSendTutorSchedules}
-                    disabled={tutorSchedSending || tutorsWithEmail.length === 0}
-                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#0f172a' }}
-                  >
-                    {tutorSchedSending
-                      ? <><Loader2 size={12} className="animate-spin" /> Sending…</>
-                      : <><Send size={12} /> Send to {tutorsWithEmail.length} tutor{tutorsWithEmail.length !== 1 ? 's' : ''}</>}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* â”€â”€â”€ Reminder Email Template â”€â”€â”€ */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Reminder Email Template</p>
-                <p className="text-xs text-slate-500">Subject and body used for session reminder emails.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={openReminderPreview}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <Eye size={10} /> View preview
-                </button>
-                {!editingTemplate ? (
-                  <button
-                    onClick={() => setEditingTemplate(true)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <Edit3 size={10} /> Edit
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button onClick={cancelEdit} className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
-                      <X size={10} /> Cancel
-                    </button>
-                    <button onClick={saveTemplate} disabled={savingTemplate || loadingSettings || !!settingsError} className="inline-flex items-center gap-1 rounded bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
-                      {savingTemplate ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />} Save
-                    </button>
-                  </div>
-                )}
-              </div>
+              ) : (
+                <iframe
+                  title={previewModal.title}
+                  src={previewModal.url}
+                  srcDoc={previewModal.url ? undefined : previewModal.html}
+                  className="h-[72vh] w-full rounded-xl border border-slate-200 bg-white"
+                />
+              )}
             </div>
-
-            {templateSaved && (
-              <div className="mt-3 flex items-center gap-1.5 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                <Check size={12} /> Template saved
-              </div>
-            )}
-            {settingsError && (
-              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{settingsError}</div>
-            )}
-
-            {editingTemplate && (
-              <div className="mt-4 space-y-3">
-                {loadingSettings ? (
-                  <div className="flex items-center gap-2 py-3 text-slate-400">
-                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loading…</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {['{{name}}', '{{date}}', '{{time}}', '{{link}}'].map(v => (
-                        <span key={v} className="rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
-                      ))}
-                      <span className="text-[10px] text-slate-400">available variables</span>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
-                      <input value={draftSubject} onChange={e => setDraftSubject(e.target.value)} className={baseInputCls} />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
-                      <textarea value={draftBody} onChange={e => setDraftBody(e.target.value)} rows={8} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
-                    </div>
-                    <div className="space-y-2 rounded border border-slate-200 bg-white p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Preview</p>
-                      <p className="text-xs font-semibold text-slate-700">{previewSubject}</p>
-                      <p className="whitespace-pre-line text-xs text-slate-500">{previewBody}</p>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {!editingTemplate && !templateSaved && !settingsError && (
-              <p className="mt-2 text-xs text-slate-400">Click Edit to update the subject and body used in session reminder emails.</p>
-            )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-          {/* â”€â”€â”€ Send History â”€â”€â”€ */}
-          <div className="rounded-xl p-4" style={{ border: '1.5px solid #c7d2fe', background: '#fafafe' }}>
-            <button className="flex w-full items-center justify-between" onClick={() => setLogsExpanded(v => !v)}>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Clock size={13} style={{ color: '#4338ca' }} />
-                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#4338ca' }}>Send History</p>
-                  {logs.length > 0 && (
-                    <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{logs.length}</span>
-                  )}
-                </div>
-                <p className="mt-0.5 text-left text-xs text-slate-500">Log of all reminder emails dispatched.</p>
-              </div>
-              {logsExpanded ? <ChevronUp size={14} className="text-slate-600" /> : <ChevronDown size={14} className="text-slate-600" />}
-            </button>
+// ── Shared sub-components ──────────────────────────────────────────────────────
 
-            {logsExpanded && (
-              <div className="mt-3 overflow-hidden rounded border border-slate-200 bg-white">
-                {loadingLogs ? (
-                  <div className="flex items-center gap-2 px-3 py-4 text-slate-400">
-                    <Loader2 size={13} className="animate-spin" /><span className="text-xs">Loading history…</span>
-                  </div>
-                ) : logs.length === 0 ? (
-                  <div className="px-3 py-8 text-center">
-                    <Mail size={20} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-xs text-slate-400">No reminders sent yet</p>
-                  </div>
-                ) : (
-                  Object.entries(groupedLogs).sort(([a], [b]) => b.localeCompare(a)).map(([date, entries]) => (
-                    <div key={date}>
-                      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{date}</span>
-                        <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">{entries.length} sent</span>
-                      </div>
-                      {entries.map(log => (
-                        <div key={log.id} className="flex items-center justify-between border-b border-slate-100 px-3 py-3 last:border-b-0">
-                          <div className="flex items-center gap-2.5">
-                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
-                              <Check size={10} className="text-emerald-600" />
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-800">{log.student_name}</p>
-                              <p className="text-[11px] text-slate-400">{log.emailed_to}</p>
-                            </div>
-                          </div>
-                          <div className="ml-4 shrink-0 text-right">
-                            <p className="text-[11px] font-semibold text-slate-600">{log.session_time}</p>
-                            <p className="text-[10px] text-slate-400">{formatSentAt(log.sent_at)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {previewModal && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-[1px]"
-              onClick={() => { if (!previewLoading) setPreviewModal(null); }}
-            >
-              <div className="flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
-                <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-widest text-indigo-600">{previewModal.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">{previewModal.note ?? 'Rendered with the current form values.'}</p>
-                    {previewModal.subject && (
-                      <p className="mt-2 text-[11px] font-semibold text-slate-700">Subject: {previewModal.subject}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => setPreviewModal(null)}
-                    disabled={previewLoading}
-                    className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                  >
-                    <X size={12} /> Close
-                  </button>
-                </div>
-                <div className="bg-slate-100 p-4">
-                  {previewLoading ? (
-                    <div className="flex min-h-[72vh] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white text-slate-500">
-                      <div className="flex items-center gap-2 text-sm font-semibold">
-                        <Loader2 size={14} className="animate-spin" /> Building preview…
-                      </div>
-                    </div>
-                  ) : (
-                    <iframe
-                      title={previewModal.title}
-                      src={previewModal.url}
-                      srcDoc={previewModal.url ? undefined : previewModal.html}
-                      className="h-[72vh] w-full rounded-xl border border-slate-200 bg-white"
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-        </div>{/* end space-y-5 p-5 */}
+function SectionHeader({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5">
+      <div className="mt-0.5">{icon}</div>
+      <div>
+        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
       </div>
     </div>
   );
 }
+
+function Checkbox({ checked, indeterminate, disabled, onChange }: { checked: boolean; indeterminate?: boolean; disabled?: boolean; onChange: () => void }) {
+  return (
+    <div
+      onClick={e => { e.stopPropagation(); if (!disabled) onChange(); }}
+      className={`flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-all ${disabled ? 'cursor-default' : ''}`}
+      style={{
+        background: checked ? '#0f172a' : indeterminate ? '#e2e8f0' : 'white',
+        border: `2px solid ${checked || indeterminate ? '#0f172a' : disabled ? '#e5e7eb' : '#d1d5db'}`,
+      }}
+    >
+      {checked && <Check size={9} color="white" strokeWidth={3} />}
+      {indeterminate && !checked && <div className="h-1.5 w-1.5 rounded-sm bg-slate-700" />}
+    </div>
+  );
+}
+
+function StatusBadge({ color, label, icon }: { color: 'green' | 'amber' | 'gray'; label: string; icon?: React.ReactNode }) {
+  const map: Record<string, string> = {
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    gray:  'bg-slate-100 text-slate-500 border-slate-200',
+  };
+  return (
+    <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${map[color]}`}>
+      {icon}{label}
+    </span>
+  );
+}
+
+function EmailList({ student }: { student: { studentEmail: string | null; momEmail: string | null; dadEmail: string | null; notifyStudent: boolean; notifyMom: boolean; notifyDad: boolean } }) {
+  const entries = [
+    student.studentEmail ? { addr: student.studentEmail, notify: student.notifyStudent } : null,
+    student.momEmail     ? { addr: student.momEmail,     notify: student.notifyMom }     : null,
+    student.dadEmail     ? { addr: student.dadEmail,     notify: student.notifyDad }     : null,
+  ].filter(Boolean) as { addr: string; notify: boolean }[];
+
+  return (
+    <>
+      {entries.map((x, i) => (
+        <span key={i} style={x.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
+          {i > 0 ? ', ' : ''}{x.addr}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function SendButton({ onClick, loading, confirm, count, disabled, label }: { onClick: () => void; loading: boolean; confirm: boolean; count: number; disabled: boolean; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+      style={{ background: confirm ? '#92400e' : '#0f172a' }}
+    >
+      {loading ? (
+        <><Loader2 size={13} className="animate-spin" /> Sending…</>
+      ) : confirm ? (
+        <><AlertCircle size={13} /> Confirm — {count} recipient{count !== 1 ? 's' : ''}</>
+      ) : (
+        <><Send size={13} /> {label} ({count})</>
+      )}
+    </button>
+  );
+}
+
+function ResultBanner({ sent, failed, errors, mode, redirectedTo, skipped, reason }: { sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null; skipped?: boolean; reason?: string }) {
+  const isSuccess = failed === 0 && !skipped;
+  return (
+    <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs font-semibold ${isSuccess ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+      {isSuccess ? <Check size={13} className="mt-0.5 shrink-0" /> : <AlertCircle size={13} className="mt-0.5 shrink-0" />}
+      <div className="space-y-0.5">
+        {skipped && reason && <p>{reason}</p>}
+        {mode === 'redirect' && redirectedTo && <p>Protected mode — redirected to {redirectedTo}.</p>}
+        {sent > 0 && <p>{sent} email{sent !== 1 ? 's' : ''} sent successfully.</p>}
+        {failed > 0 && <p>{failed} failed.{errors[0] ? ` ${errors[0]}` : ''}</p>}
+      </div>
+    </div>
+  );
+}
+
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-6 text-slate-400">
+      <Loader2 size={13} className="animate-spin" />
+      <span className="text-xs">{label}</span>
+    </div>
+  );
+}
+
+function EmptyState({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+      <div className="mb-2 opacity-40">{icon}</div>
+      <p className="text-xs font-medium">{label}</p>
+    </div>
+  );
+}
+

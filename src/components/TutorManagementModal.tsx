@@ -398,6 +398,9 @@ export function TutorManagementModal({
 
   const handleDelete = async (id: string) => {
     setError(null);
+    // Delete child rows first to avoid FK constraint violations
+    await supabase.from(DB.tutorTermAvailability).delete().eq('tutor_id', id);
+    await supabase.from(DB.timeOff).delete().eq('tutor_id', id);
     const { error } = await supabase.from(DB.tutors).delete().eq('id', id);
     if (error) setError(error.message);
     else onRefetch();

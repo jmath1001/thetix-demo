@@ -1309,16 +1309,23 @@ export default function TutorManagementPage() {
   };
 
   const handleDelete = async (id: string) => {
-    setError(null);
-    const { error } = await withCenter(supabase.from(TUTORS).delete()).eq('id', id);
-    if (error) setError(error.message);
-    else fetchAll();
-  };
+    setError(null)
+    // Delete child rows first to avoid FK constraint violations
+    await withCenter(supabase.from(DB.tutorTermAvailability).delete()).eq('tutor_id', id)
+    await withCenter(supabase.from(DB.timeOff).delete()).eq('tutor_id', id)
+    const { error } = await withCenter(supabase.from(TUTORS).delete()).eq('id', id)
+    if (error) setError(error.message)
+    else fetchAll()
+  }
 
   const handleBulkDelete = async () => {
     if (!confirmBulk) { setConfirmBulk(true); setTimeout(() => setConfirmBulk(false), 3000); return; }
-    setBulkDeleting(true);
-    await withCenter(supabase.from(TUTORS).delete()).in('id', Array.from(selected));
+    setBulkDeleting(true)
+    const ids = Array.from(selected)
+    // Delete child rows first to avoid FK constraint violations
+    await withCenter(supabase.from(DB.tutorTermAvailability).delete()).in('tutor_id', ids)
+    await withCenter(supabase.from(DB.timeOff).delete()).in('tutor_id', ids)
+    await withCenter(supabase.from(TUTORS).delete()).in('id', ids)
     logEvent('tutors_bulk_deleted', { count: selected.size });
     setSelected(new Set());
     setConfirmBulk(false);

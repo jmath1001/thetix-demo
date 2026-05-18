@@ -657,7 +657,11 @@ export default function StudentAdminPage() {
   const handleBulkDelete = async () => {
     if (!confirmBulkDelete) { setConfirmBulkDelete(true); setTimeout(() => setConfirmBulkDelete(false), 3000); return }
     setBulkDeleting(true)
-    await withCenter(supabase.from(STUDENTS).delete()).in('id', Array.from(selected))
+    const ids = Array.from(selected)
+    // Clear FK'd child rows before deleting students
+    // slake_term_enrollments has no center_id — filter by student_id directly
+    await supabase.from(DB.termEnrollments).delete().in('student_id', ids)
+    await withCenter(supabase.from(STUDENTS).delete()).in('id', ids)
     setSelected(new Set()); setConfirmBulkDelete(false); setBulkDeleting(false); fetchData()
   }
 
