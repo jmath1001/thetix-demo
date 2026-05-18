@@ -715,23 +715,21 @@ export default function CenterSettingsPage() {
 
               {/* Center Info */}
               <div>
-                <p className="mb-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">Center Info</p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">Center Info</p>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-500">Center Name</label>
                     {editing
                       ? <input value={centerName} onChange={e => setCenterName(e.target.value)} className={baseInputCls} placeholder="My Tutoring Center" />
                       : <p className={readonlyInputCls}>{centerName || <span className="text-slate-400">—</span>}</p>
                     }
-                    {editing && <p className="mt-1 text-[11px] text-slate-400">Shown in the sidebar and outgoing emails.</p>}
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-500">Short Name / Initials</label>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">Short Name</label>
                     {editing
                       ? <input value={centerShortName} onChange={e => setCenterShortName(e.target.value.slice(0, 3))} maxLength={3} className={baseInputCls} placeholder="TC" />
                       : <p className={readonlyInputCls}>{centerShortName || <span className="text-slate-400">—</span>}</p>
                     }
-                    {editing && <p className="mt-1 text-[11px] text-slate-400">Up to 3 chars — used in the nav logo icon.</p>}
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-semibold text-slate-500">Director Email(s)</label>
@@ -739,57 +737,19 @@ export default function CenterSettingsPage() {
                       ? <input value={centerEmail} onChange={e => setCenterEmail(e.target.value)} className={baseInputCls} placeholder="director@yourcenter.com" />
                       : <p className={readonlyInputCls}>{centerEmail || <span className="text-slate-400">—</span>}</p>
                     }
-                    {editing && <p className="mt-1 text-[11px] text-slate-400">Separate multiple addresses with commas.</p>}
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-500">Phone Number</label>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">Phone</label>
                     {editing
                       ? <input value={centerPhone} onChange={e => setCenterPhone(e.target.value)} className={baseInputCls} placeholder="(555) 555-5555" />
                       : <p className={readonlyInputCls}>{centerPhone || <span className="text-slate-400">—</span>}</p>
                     }
                   </div>
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-xs font-semibold text-slate-500">Center Address</label>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500">Address</label>
                     {editing
                       ? <input value={centerAddress} onChange={e => setCenterAddress(e.target.value)} className={baseInputCls} placeholder="123 Main St, City, State 12345" />
                       : <p className={readonlyInputCls}>{centerAddress || <span className="text-slate-400">—</span>}</p>
-                    }
-                    {editing && <p className="mt-1 text-[11px] text-slate-400">Shown in email footers.</p>}
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Scheduling & Portals ── */}
-              <div className="border-t border-slate-100 pt-6">
-                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Scheduling</p>
-                <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Default Session Duration (min)</label>
-                    {editing
-                      ? <>
-                          <input type="number" min={30} max={240} step={5} value={sessionDurationMinutes}
-                            onChange={e => setSessionDurationMinutes(Number(e.target.value))}
-                            className={baseInputCls}
-                          />
-                          <p className="mt-1 text-[11px] text-slate-400">Used as the default when creating new sessions (30–240 min).</p>
-                        </>
-                      : <p className={readonlyInputCls}>{sessionDurationMinutes} min</p>
-                    }
-                  </div>
-                </div>
-                <div className="mb-5 grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Enrollment Form Instructions</label>
-                    {editing
-                      ? <textarea value={enrollmentInstructions} onChange={e => setEnrollmentInstructions(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Instructions shown at the top of the enrollment form." />
-                      : <p className={readonlyInputCls}>{enrollmentInstructions || <span className="text-slate-400">—</span>}</p>
-                    }
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Tutor Portal Welcome Message</label>
-                    {editing
-                      ? <textarea value={tutorPortalMessage} onChange={e => setTutorPortalMessage(e.target.value)} rows={3} className={baseInputCls + ' resize-y'} placeholder="Message shown at the top of the tutor availability portal." />
-                      : <p className={readonlyInputCls}>{tutorPortalMessage || <span className="text-slate-400">—</span>}</p>
                     }
                   </div>
                 </div>
@@ -1374,29 +1334,6 @@ export default function CenterSettingsPage() {
                 )}
               </div>
 
-              {/* Email Template */}
-              <div className="border-t border-slate-100 pt-5">
-                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">Email Template</p>
-                <p className="mb-3 text-[11px] text-slate-500">
-                  Variables: <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{name}}'}</code> <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{date}}'}</code> <code className="rounded bg-slate-100 px-1 text-slate-700">{'{{time}}'}</code>
-                </p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Subject</label>
-                    <input value={subject} onChange={e => setSubject(e.target.value)} className={baseInputCls} />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-600">Body</label>
-                    <textarea value={body} onChange={e => setBody(e.target.value)} rows={5} className={baseInputCls + ' resize-y'} />
-                  </div>
-                  <button onClick={handleSave} disabled={saving}
-                    className="inline-flex items-center gap-1.5 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                    Save Template
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 

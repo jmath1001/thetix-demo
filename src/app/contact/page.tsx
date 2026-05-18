@@ -999,7 +999,7 @@ export default function ContactCenter() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'template' | 'history' | 'survey'>('reminders');
+  const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'history'>('reminders');
 
   const openReminderPreview = () => {
     setPreviewLoading(false);
@@ -1054,9 +1054,7 @@ export default function ContactCenter() {
               { id: 'availability', label: 'Availability',      icon: <Megaphone size={13} /> },
               { id: 'general',      label: 'General Blast',     icon: <Mail size={13} /> },
               { id: 'tutor',        label: 'Tutor Schedules',   icon: <Calendar size={13} /> },
-              { id: 'template',     label: 'Email Template',    icon: <Edit3 size={13} /> },
               { id: 'history',      label: 'Send History',      icon: <Clock size={13} />, badge: logs.length || null },
-              { id: 'survey',       label: 'Survey',            icon: <Clipboard size={13} /> },
             ] as const).map(tab => (
               <button
                 key={tab.id}
@@ -1209,6 +1207,80 @@ export default function ContactCenter() {
                 </div>
               )}
             </div>
+
+            {/* ── Reminder Email Template ───────────────────────────────────── */}
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Template</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={openReminderPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                    <Eye size={11} /> Preview
+                  </button>
+                  {!editingTemplate ? (
+                    <button onClick={() => setEditingTemplate(true)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                      <Edit3 size={11} /> Edit
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={cancelEdit} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                        <X size={11} /> Cancel
+                      </button>
+                      <button onClick={saveTemplate} disabled={savingTemplate || loadingSettings || !!settingsError} className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                        {savingTemplate ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {settingsError && (
+                <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex items-center gap-2">
+                  <AlertCircle size={12} /> {settingsError}
+                </div>
+              )}
+              {templateSaved && (
+                <div className="mx-4 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 flex items-center gap-2">
+                  <Check size={12} /> Template saved
+                </div>
+              )}
+              {loadingSettings ? (
+                <LoadingRow label="Loading template…" />
+              ) : !editingTemplate ? (
+                <div className="p-4 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Subject</p>
+                    <p className="text-sm text-slate-800">{settings?.reminder_subject || DEFAULT_SETTINGS.reminder_subject}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Body</p>
+                    <p className="whitespace-pre-line text-sm text-slate-600">{settings?.reminder_body || DEFAULT_SETTINGS.reminder_body}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                    <p className="text-[10px] text-slate-400">Click <strong>Edit</strong> to change. Variables: <code className="text-slate-600">{`{{name}}`}</code> <code className="text-slate-600">{`{{date}}`}</code> <code className="text-slate-600">{`{{time}}`}</code> <code className="text-slate-600">{`{{link}}`}</code></p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 space-y-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {['{{name}}', '{{date}}', '{{time}}', '{{link}}'].map(v => (
+                      <span key={v} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
+                    <input value={draftSubject} onChange={e => setDraftSubject(e.target.value)} className={baseInputCls} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
+                    <textarea value={draftBody} onChange={e => setDraftBody(e.target.value)} rows={8} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Live preview</p>
+                    <p className="text-xs font-semibold text-slate-800">{previewSubject}</p>
+                    <p className="whitespace-pre-line text-xs text-slate-500">{previewBody}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1344,6 +1416,134 @@ export default function ContactCenter() {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* ── Slot Preferences Survey ─────────────────────────────────── */}
+            <div className="space-y-5 pt-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3.5">
+                <div className="flex items-center gap-2.5">
+                  <Clipboard className="w-5 h-5 text-indigo-600" />
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900 leading-tight">Slot Preferences</h2>
+                    <p className="text-xs text-slate-500">Enter paper survey choices for each enrolled student</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <select
+                      value={spSelectedTermId}
+                      onChange={e => setSpSelectedTermId(e.target.value)}
+                      className="appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                    >
+                      {spTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                  </div>
+                  <button
+                    onClick={spRunScheduler}
+                    disabled={spRunning || spPrefCount === 0}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {spRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    Run Scheduler
+                  </button>
+                </div>
+              </div>
+
+              {!spLoading && spSelectedTermId && (
+                <div className="flex flex-wrap gap-3">
+                  <SpStatPill icon={<Users className="w-3.5 h-3.5" />} label="Enrolled" value={spEnrolledStudents.length} color="blue" />
+                  <SpStatPill icon={<Check className="w-3.5 h-3.5" />} label="Preferences entered" value={spPrefCount} color="green" />
+                  <SpStatPill icon={<AlertTriangle className="w-3.5 h-3.5" />} label="Awaiting" value={spEnrolledStudents.length - spPrefCount} color={spEnrolledStudents.length - spPrefCount > 0 ? 'amber' : 'gray'} />
+                </div>
+              )}
+
+              {spProposal && (
+                <SpProposalPanel
+                  proposal={spProposal}
+                  onClose={() => setSpProposal(null)}
+                  studentNames={Object.fromEntries(spStudents.map(s => [s.id, s.name]))}
+                />
+              )}
+              {spRunError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  {spRunError}
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                  <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                  <input
+                    value={spSearch}
+                    onChange={e => setSpSearch(e.target.value)}
+                    placeholder="Search enrolled students…"
+                    className="flex-1 text-sm bg-transparent outline-none placeholder:text-slate-400"
+                  />
+                </div>
+                {spLoading ? (
+                  <LoadingRow label="Loading students…" />
+                ) : spFilteredStudents.length === 0 ? (
+                  <EmptyState icon={<Users size={24} />} label={spSelectedTermId ? 'No enrolled students found.' : 'Select a term to begin.'} />
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {spFilteredStudents.map(student => {
+                      const enrollment = spEnrollmentMap[student.id]
+                      const prefs = enrollment?.slot_preferences ?? null
+                      const hasPrefs = Array.isArray(prefs) && prefs.length > 0
+                      const isOpen = spOpenStudentId === student.id
+                      return (
+                        <li key={student.id}>
+                          <button
+                            onClick={() => setSpOpenStudentId(isOpen ? null : student.id)}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-slate-800 truncate">{student.name}</span>
+                                {hasPrefs ? (
+                                  <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                    {prefs!.length} choice{prefs!.length !== 1 ? 's' : ''}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                                    No preferences
+                                  </span>
+                                )}
+                              </div>
+                              {hasPrefs && (
+                                <div className="mt-0.5 flex flex-wrap gap-1">
+                                  {prefs!.map((choice, ci) => (
+                                    <span key={ci} className="text-[11px] text-slate-500">
+                                      {ci + 1}. {spBlockLabel(choice)}
+                                      {ci < prefs!.length - 1 && <span className="mx-1 text-slate-300">·</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
+                          </button>
+                          {isOpen && (
+                            <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100">
+                              <SlotPreferenceSurvey
+                                studentId={student.id}
+                                studentName={student.name}
+                                termId={spSelectedTermId}
+                                sessionTimesByDay={spSessionTimesByDay}
+                                initialPreferences={prefs}
+                                onSave={newPrefs => handleSpSave(student.id, newPrefs)}
+                                onClose={() => setSpOpenStudentId(null)}
+                              />
+                            </div>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </div>
             </div>
           </div>
@@ -1511,92 +1711,6 @@ export default function ContactCenter() {
           </div>
         )}
 
-        {/* ── TEMPLATE ────────────────────────────────────────────────────── */}
-        {activeTab === 'template' && (
-          <div className="space-y-4">
-            <SectionHeader
-              icon={<Edit3 size={15} className="text-indigo-600" />}
-              title="Reminder Email Template"
-              description="Customize the subject and body used when session reminders are sent. Variables are replaced with real data when sending."
-            />
-
-            {settingsError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-                <AlertCircle size={14} /> {settingsError}
-              </div>
-            )}
-            {templateSaved && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
-                <Check size={14} /> Template saved successfully
-              </div>
-            )}
-
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Template</p>
-                <div className="flex items-center gap-2">
-                  <button onClick={openReminderPreview} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                    <Eye size={11} /> Preview
-                  </button>
-                  {!editingTemplate ? (
-                    <button onClick={() => setEditingTemplate(true)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                      <Edit3 size={11} /> Edit
-                    </button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button onClick={cancelEdit} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                        <X size={11} /> Cancel
-                      </button>
-                      <button onClick={saveTemplate} disabled={savingTemplate || loadingSettings || !!settingsError} className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
-                        {savingTemplate ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {loadingSettings ? (
-                <LoadingRow label="Loading template…" />
-              ) : !editingTemplate ? (
-                <div className="p-4 space-y-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Subject</p>
-                    <p className="text-sm text-slate-800">{settings?.reminder_subject || DEFAULT_SETTINGS.reminder_subject}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Body</p>
-                    <p className="whitespace-pre-line text-sm text-slate-600">{settings?.reminder_body || DEFAULT_SETTINGS.reminder_body}</p>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-                    <p className="text-[10px] text-slate-400">Click <strong>Edit</strong> to change the subject or body. Use variables: <code className="text-slate-600">{`{{name}}`}</code>, <code className="text-slate-600">{`{{date}}`}</code>, <code className="text-slate-600">{`{{time}}`}</code>, <code className="text-slate-600">{`{{link}}`}</code></p>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 space-y-4">
-                  <div className="flex flex-wrap gap-1.5">
-                    {['{{name}}', '{{date}}', '{{time}}', '{{link}}'].map(v => (
-                      <span key={v} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] text-slate-600">{v}</span>
-                    ))}
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-700">Subject</label>
-                    <input value={draftSubject} onChange={e => setDraftSubject(e.target.value)} className={baseInputCls} />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-slate-700">Body</label>
-                    <textarea value={draftBody} onChange={e => setDraftBody(e.target.value)} rows={8} className={`${baseInputCls} resize-none`} style={{ lineHeight: '1.6' }} />
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Live preview</p>
-                    <p className="text-xs font-semibold text-slate-800">{previewSubject}</p>
-                    <p className="whitespace-pre-line text-xs text-slate-500">{previewBody}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* ── HISTORY ─────────────────────────────────────────────────────── */}
         {activeTab === 'history' && (
           <div className="space-y-4">
@@ -1648,135 +1762,7 @@ export default function ContactCenter() {
           </div>
         )}
 
-        {/* ── SURVEY ──────────────────────────────────────────────────────── */}
-        {activeTab === 'survey' && (
-          <div className="space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3.5">
-              <div className="flex items-center gap-2.5">
-                <Clipboard className="w-5 h-5 text-indigo-600" />
-                <div>
-                  <h2 className="text-sm font-bold text-slate-900 leading-tight">Slot Preferences</h2>
-                  <p className="text-xs text-slate-500">Enter paper survey choices for each enrolled student</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <select
-                    value={spSelectedTermId}
-                    onChange={e => setSpSelectedTermId(e.target.value)}
-                    className="appearance-none bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
-                  >
-                    {spTerms.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                </div>
-                <button
-                  onClick={spRunScheduler}
-                  disabled={spRunning || spPrefCount === 0}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {spRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                  Run Scheduler
-                </button>
-              </div>
-            </div>
 
-            {!spLoading && spSelectedTermId && (
-              <div className="flex flex-wrap gap-3">
-                <SpStatPill icon={<Users className="w-3.5 h-3.5" />} label="Enrolled" value={spEnrolledStudents.length} color="blue" />
-                <SpStatPill icon={<Check className="w-3.5 h-3.5" />} label="Preferences entered" value={spPrefCount} color="green" />
-                <SpStatPill icon={<AlertTriangle className="w-3.5 h-3.5" />} label="Awaiting" value={spEnrolledStudents.length - spPrefCount} color={spEnrolledStudents.length - spPrefCount > 0 ? 'amber' : 'gray'} />
-              </div>
-            )}
-
-            {spProposal && (
-              <SpProposalPanel
-                proposal={spProposal}
-                onClose={() => setSpProposal(null)}
-                studentNames={Object.fromEntries(spStudents.map(s => [s.id, s.name]))}
-              />
-            )}
-            {spRunError && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                {spRunError}
-              </div>
-            )}
-
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-                <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                <input
-                  value={spSearch}
-                  onChange={e => setSpSearch(e.target.value)}
-                  placeholder="Search enrolled students…"
-                  className="flex-1 text-sm bg-transparent outline-none placeholder:text-slate-400"
-                />
-              </div>
-              {spLoading ? (
-                <LoadingRow label="Loading students…" />
-              ) : spFilteredStudents.length === 0 ? (
-                <EmptyState icon={<Users size={24} />} label={spSelectedTermId ? 'No enrolled students found.' : 'Select a term to begin.'} />
-              ) : (
-                <ul className="divide-y divide-slate-100">
-                  {spFilteredStudents.map(student => {
-                    const enrollment = spEnrollmentMap[student.id]
-                    const prefs = enrollment?.slot_preferences ?? null
-                    const hasPrefs = Array.isArray(prefs) && prefs.length > 0
-                    const isOpen = spOpenStudentId === student.id
-                    return (
-                      <li key={student.id}>
-                        <button
-                          onClick={() => setSpOpenStudentId(isOpen ? null : student.id)}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-semibold text-slate-800 truncate">{student.name}</span>
-                              {hasPrefs ? (
-                                <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                                  {prefs!.length} choice{prefs!.length !== 1 ? 's' : ''}
-                                </span>
-                              ) : (
-                                <span className="text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                                  No preferences
-                                </span>
-                              )}
-                            </div>
-                            {hasPrefs && (
-                              <div className="mt-0.5 flex flex-wrap gap-1">
-                                {prefs!.map((choice, ci) => (
-                                  <span key={ci} className="text-[11px] text-slate-500">
-                                    {ci + 1}. {spBlockLabel(choice)}
-                                    {ci < prefs!.length - 1 && <span className="mx-1 text-slate-300">·</span>}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
-                        </button>
-                        {isOpen && (
-                          <div className="px-4 pb-4 pt-1 bg-slate-50 border-t border-slate-100">
-                            <SlotPreferenceSurvey
-                              studentId={student.id}
-                              studentName={student.name}
-                              termId={spSelectedTermId}
-                              sessionTimesByDay={spSessionTimesByDay}
-                              initialPreferences={prefs}
-                              onSave={newPrefs => handleSpSave(student.id, newPrefs)}
-                              onClose={() => setSpOpenStudentId(null)}
-                            />
-                          </div>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
 
       </div>
 

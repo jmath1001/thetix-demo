@@ -40,6 +40,102 @@ function parseSessionTimesForDay(dow: number, sessionTimesByDay: Record<string, 
   })
 }
 
+const DOW_NAMES: Record<string, string> = { '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' }
+const CHOICE_COLORS = ['#dc2626', '#7c3aed', '#0ea5e9']
+const CHOICE_NAMES = ['1st Choice', '2nd Choice', '3rd Choice']
+
+function SlotChoicePicker({ index, choice, sessionTimesByDay, onChange }: {
+  index: number
+  choice: string[]
+  sessionTimesByDay: Record<string, string[]>
+  onChange: (c: string[]) => void
+}) {
+  const color = CHOICE_COLORS[index] ?? '#64748b'
+  const availableDays = Object.entries(sessionTimesByDay)
+    .filter(([, times]) => times.length > 0)
+    .map(([dow]) => dow)
+    .sort((a, b) => Number(a) - Number(b))
+
+  const pendingDow = choice.length === 1 && choice[0]?.endsWith('-PENDING')
+    ? choice[0].split('-PENDING')[0] : null
+  const activeDow = pendingDow ?? (choice[0]?.match(/^(\d)-/) ? choice[0].split('-')[0] : null)
+  const slotsForDay = activeDow ? (sessionTimesByDay[activeDow] ?? []) : []
+
+  function startOf(slot: string) { return slot.split('-')[0] }
+
+  function fmt12(t: string) {
+    const [hStr, mStr] = t.split(':')
+    const h = parseInt(hStr, 10)
+    const ampm = h >= 12 ? 'PM' : 'AM'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${h12}:${mStr ?? '00'} ${ampm}`
+  }
+
+  function toggleTime(startTime: string) {
+    const block = `${activeDow}-${startTime}`
+    const real = choice.filter(b => !b.endsWith('-PENDING'))
+    if (real.includes(block)) { onChange(real.filter(b => b !== block)); return }
+    if (real.length === 0) { onChange([block]); return }
+    if (real.length === 1) {
+      const otherTime = real[0].split('-').slice(1).join('-')
+      const [oh, om] = otherTime.split(':').map(Number)
+      const [nh, nm] = startTime.split(':').map(Number)
+      if (Math.abs(nh * 60 + nm - (oh * 60 + om)) === 60) {
+        const pair = nh * 60 + nm < oh * 60 + om ? [block, real[0]] : [real[0], block]
+        onChange(pair); return
+      }
+    }
+    onChange([block])
+  }
+
+  const selectedTimes = choice.filter(b => !b.endsWith('-PENDING')).map(b => b.split('-').slice(1).join('-'))
+  const hasSelection = selectedTimes.length > 0
+
+  return (
+    <div style={{ border: `1.5px solid ${hasSelection ? color : '#e2e8f0'}`, borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: 'white', background: color, borderRadius: 20, padding: '2px 10px' }}>{CHOICE_NAMES[index]}</span>
+        {hasSelection && (
+          <span style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>
+            {DOW_NAMES[activeDow ?? ''] ?? ''} {selectedTimes.map(fmt12).join(' – ')}{selectedTimes.length === 2 ? ' (2h)' : ''}
+          </span>
+        )}
+        {choice.length > 0 && (
+          <button onClick={() => onChange([])} style={{ fontSize: 10, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 6 }}>Clear</button>
+        )}
+      </div>
+      <div style={{ marginBottom: activeDow ? 8 : 0 }}>
+        <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', margin: '0 0 5px' }}>Day</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {availableDays.map(dow => (
+            <button key={dow} onClick={() => { if (activeDow !== dow) onChange([`${dow}-PENDING`]) }}
+              style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${activeDow === dow ? color : '#e2e8f0'}`, background: activeDow === dow ? color : 'white', color: activeDow === dow ? 'white' : '#64748b' }}>
+              {DOW_NAMES[dow] ?? `Day ${dow}`}
+            </button>
+          ))}
+        </div>
+      </div>
+      {activeDow && (
+        <div>
+          <p style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8', margin: '0 0 5px' }}>Time <span style={{ color: '#cbd5e1', fontWeight: 400, textTransform: 'none', fontSize: 9 }}>(pick 2 consecutive for a 2h session)</span></p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {slotsForDay.map(slot => {
+              const t = startOf(slot)
+              const isSelected = selectedTimes.includes(t)
+              return (
+                <button key={t} onClick={() => toggleTime(t)}
+                  style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: `1px solid ${isSelected ? color : '#e2e8f0'}`, background: isSelected ? color : 'white', color: isSelected ? 'white' : '#64748b' }}>
+                  {fmt12(t)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EnrollForm() {
   const searchParams = useSearchParams()
   const token = searchParams.get('token') ?? ''
@@ -59,6 +155,7 @@ function EnrollForm() {
   const [enrollmentInstructions, setEnrollmentInstructions] = useState<string | null>(null)
   const [lastSubmittedAt, setLastSubmittedAt] = useState<string | null>(null)
   const [submitNotice, setSubmitNotice] = useState<string | null>(null)
+  const [slotPreferences, setSlotPreferences] = useState<string[][]>([])
 
   useEffect(() => {
     withCenter(supabase.from('slake_center_settings').select('enrollment_instructions').limit(1))
@@ -101,6 +198,7 @@ function EnrollForm() {
         setSelectedSubjects(Array.isArray(enroll?.subjects) ? enroll.subjects : [])
         setSubjectSessionsPerWeek((enroll?.subject_sessions_per_week && typeof enroll.subject_sessions_per_week === 'object' && !Array.isArray(enroll.subject_sessions_per_week)) ? enroll.subject_sessions_per_week : {})
         setSelectedBlocks(Array.isArray(enroll?.availability_blocks) ? enroll.availability_blocks : [])
+        setSlotPreferences(Array.isArray(enroll?.slot_preferences) ? enroll.slot_preferences : [])
         setLastSubmittedAt(enroll?.form_submitted_at ?? null)
         setSubmitNotice(null)
         setStatus('ready')
@@ -135,7 +233,7 @@ function EnrollForm() {
     const res = await fetch('/api/enrollment-form', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, subjects: selectedSubjects, subjectSessionsPerWeek, availabilityBlocks: selectedBlocks }),
+      body: JSON.stringify({ token, subjects: selectedSubjects, subjectSessionsPerWeek, availabilityBlocks: selectedBlocks, slotPreferences: slotPreferences.filter(c => c.length > 0) }),
     })
     const data = await res.json()
     setSubmitting(false)
@@ -310,6 +408,26 @@ function EnrollForm() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Slot preferences */}
+        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', margin: '0 0 4px' }}>Preferred Time Slots <span style={{ fontWeight: 400, textTransform: 'none', color: '#94a3b8' }}>(optional)</span></p>
+          <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 10px' }}>Rank your top 3 preferred session slots. We'll do our best to match your first choice.</p>
+          {[0, 1, 2].map(i => (
+            <SlotChoicePicker
+              key={i}
+              index={i}
+              choice={slotPreferences[i] ?? []}
+              sessionTimesByDay={sessionTimesByDay ?? {}}
+              onChange={newChoice => setSlotPreferences(prev => {
+                const next = [...prev]
+                while (next.length <= i) next.push([])
+                next[i] = newChoice
+                return next
+              })}
+            />
+          ))}
         </div>
 
         {/* Recurring toggle */}

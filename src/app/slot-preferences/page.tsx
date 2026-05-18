@@ -1,14 +1,10 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-
-export default function SlotPreferencesRedirect() {
-  const router = useRouter()
-  useEffect(() => { router.replace('/contact') }, [router])
-  return null
-}
-
+import React, { useState, useMemo, useEffect } from 'react'
+import {
+  Clipboard, ChevronDown, ChevronRight, Loader2, Play,
+  Users, Check, AlertTriangle, Search, X,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { DB, withCenter } from '@/lib/db'
 import { SlotPreferenceSurvey, type SlotPreferences } from '@/components/SlotPreferenceSurvey'
