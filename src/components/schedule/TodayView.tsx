@@ -1,13 +1,14 @@
 "use client"
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
+import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search, ChevronDown,  } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
+import { PrintDailyButton } from '@/components/schedule/PrintDailyButton';
 
 // ─── Inline form state ───────────────────────────────────────────────────────
 interface InlineForm {
@@ -1002,6 +1003,7 @@ export function TodayView({
               </span>
             </p>
           </div>
+          <PrintDailyButton todayIso="{todayIso}" dayLabel="{dayLabel}" todayStudentCount="{todayStudentCount}" filteredDaySessions="{filteredDaySessions}" filteredTodayTutors="{filteredTodayTutors}" todaySessionByTutorTime="{todaySessionByTutorTime}"/>
           {/* Filter — lives in header row, zero extra height */}
           <div className="relative flex-1 min-w-0" data-inline-form>
             <div className="flex items-center gap-1.5 rounded-xl overflow-hidden"

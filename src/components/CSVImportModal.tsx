@@ -10,6 +10,7 @@ const STUDENTS = DB.students
 const DB_FIELDS = [
   { key: 'name',         label: 'Name',          required: true },
   { key: 'grade',        label: 'Grade' },
+  { key: 'subjects',     label: 'Subjects' }, // Added target field
   { key: 'email',        label: 'Student Email' },
   { key: 'phone',        label: 'Student Phone' },
   { key: 'mom_name',     label: 'Mom Name' },
@@ -43,7 +44,8 @@ function autoMap(headers: string[]): Record<string, string> {
         (hl.includes('grade') && f.key === 'grade') ||
         ((hl === 'name' || hl === 'studentname' || hl === 'fullname') && f.key === 'name') ||
         (hl.includes('hour') && f.key === 'hours_left') ||
-        (hl.includes('bluebook') && f.key === 'bluebook_url')
+        (hl.includes('bluebook') && f.key === 'bluebook_url') ||
+        ((hl.includes('subject') || hl.includes('course') || hl.includes('class')) && f.key === 'subjects') // Auto-match logic
       )
     })
     if (match) map[h] = match.key
@@ -79,7 +81,6 @@ export function CSVImportModal({ onClose, onImported }: Props) {
 
   const ingest = (text: string) => {
     setError('')
-    // Try tab first (Google Sheets), fall back to comma
     const delimiter = text.includes('\t') ? '\t' : ','
     const { headers, rows } = parseDelimited(text, delimiter)
     if (headers.length === 0) { setError('Could not parse — make sure you copied the header row too.'); return }
@@ -113,9 +114,21 @@ export function CSVImportModal({ onClose, onImported }: Props) {
     setStep('importing')
     const records = validRows.map(row => {
       const rec: any = {}
-      DB_FIELDS.forEach(f => { rec[f.key] = getMapped(row, f.key) || null })
+      DB_FIELDS.forEach(f => { 
+        const val = getMapped(row, f.key)
+        
+        // Dynamic handling for the array column
+        if (f.key === 'subjects') {
+          rec[f.key] = val 
+            ? val.split(/[,;|]/).map(s => s.trim()).filter(Boolean) 
+            : []
+        } else {
+          rec[f.key] = val || null
+        }
+      })
       return rec
     })
+    
     const { error } = await supabase.from(STUDENTS).insert(records.map(record => withCenterPayload(record)))
     if (error) { setError(error.message); setStep('map'); return }
     logEvent('students_imported', { count: records.length })
@@ -287,9 +300,8 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                       <div key={i} className="px-4 py-2.5 flex gap-4 text-xs">
                         <span className="font-bold text-[#0f172a] w-28 shrink-0 truncate">{getMapped(row, 'name')}</span>
                         {getMapped(row, 'grade') && <span className="text-[#64748b]">Gr. {getMapped(row, 'grade')}</span>}
+                        {getMapped(row, 'subjects') && <span className="text-[#16a34a] truncate">📚 {getMapped(row, 'subjects')}</span>}
                         {getMapped(row, 'email') && <span className="text-[#94a3b8] truncate">{getMapped(row, 'email')}</span>}
-                        {getMapped(row, 'mom_name') && <span className="text-[#94a3b8] truncate">{getMapped(row, 'mom_name')}</span>}
-                        {getMapped(row, 'dad_name') && <span className="text-[#94a3b8] truncate">{getMapped(row, 'dad_name')}</span>}
                       </div>
                     ))}
                   </div>
