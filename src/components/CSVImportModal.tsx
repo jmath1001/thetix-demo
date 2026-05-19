@@ -103,12 +103,15 @@ export function CSVImportModal({ onClose, onImported }: Props) {
 
   // Support mapping multiple columns to the same field (e.g., 'subjects')
   const getMapped = (row: string[], field: string) => {
-    // Find all headers mapped to this field
     const headersForField = Object.entries(mapping)
       .filter(([, v]) => v === field)
       .map(([k]) => k)
     if (headersForField.length === 0) return null
-    // Return array of values for this field
+    if (headersForField.length === 1) {
+      const idx = headers.indexOf(headersForField[0])
+      return idx >= 0 ? row[idx] || null : null
+    }
+    // Multiple columns mapped: return array
     return headersForField
       .map(header => {
         const idx = headers.indexOf(header)
@@ -139,7 +142,7 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                 allSubjects.push(...v.split(/[,;|]/).map(s => s.trim()).filter(Boolean))
               }
             })
-          } else if (val) {
+          } else if (typeof val === 'string' && val) {
             allSubjects = val.split(/[,;|]/).map(s => s.trim()).filter(Boolean)
           }
           rec[f.key] = allSubjects
