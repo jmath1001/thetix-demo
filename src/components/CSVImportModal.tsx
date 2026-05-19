@@ -2,7 +2,7 @@
 import { useState, useRef } from 'react';
 import { X, Upload, FileText, ChevronRight, Loader2, ClipboardPaste } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { DB, withCenterPayload } from '@/lib/db';
+import { DB, withCenterPayload, withCenter } from '@/lib/db';
 import { logEvent } from '@/lib/analytics';
 
 const STUDENTS = DB.students
@@ -63,6 +63,7 @@ function parseDelimited(text: string, delimiter: string): { headers: string[]; r
 
 type Step = 'upload' | 'map' | 'importing'
 type Mode = 'file' | 'paste'
+type DupStrategy = 'skip' | 'update' | 'add'
 
 interface Props {
   onClose: () => void
@@ -77,6 +78,7 @@ export function CSVImportModal({ onClose, onImported }: Props) {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
+  const [dupStrategy, setDupStrategy] = useState<DupStrategy>('skip')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const ingest = (text: string) => {
@@ -119,6 +121,18 @@ export function CSVImportModal({ onClose, onImported }: Props) {
       })
   }
 
+  // Flatten + dedupe subjects from a getMapped result for display
+  const getSubjectsPreview = (row: string[]): string => {
+    const val = getMapped(row, 'subjects')
+    if (!val) return ''
+    const parts = Array.isArray(val) ? val : [val]
+    return parts
+      .filter(Boolean)
+      .flatMap(v => (v as string).split(/[,;|]/).map(s => s.trim()).filter(Boolean))
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .join(', ')
+  }
+
   const validRows = rows.filter(r => {
     const mapped = getMapped(r, 'name')
     if (Array.isArray(mapped)) {
@@ -127,38 +141,65 @@ export function CSVImportModal({ onClose, onImported }: Props) {
     return !!mapped
   })
 
+  const buildRecords = () => validRows.map(row => {
+    const rec: any = {}
+    DB_FIELDS.forEach(f => {
+      const val = getMapped(row, f.key)
+      if (f.key === 'subjects') {
+        let allSubjects: string[] = []
+        if (Array.isArray(val)) {
+          val.forEach(v => { if (v) allSubjects.push(...v.split(/[,;|]/).map(s => s.trim()).filter(Boolean)) })
+        } else if (typeof val === 'string' && val) {
+          allSubjects = val.split(/[,;|]/).map(s => s.trim()).filter(Boolean)
+        }
+        rec[f.key] = allSubjects
+      } else {
+        rec[f.key] = Array.isArray(val) ? (val.find(Boolean) || null) : (val || null)
+      }
+    })
+    return rec
+  })
+
   const handleImport = async () => {
     setStep('importing')
-    const records = validRows.map(row => {
-      const rec: any = {}
-      DB_FIELDS.forEach(f => {
-        const val = getMapped(row, f.key)
-        if (f.key === 'subjects') {
-          // Merge all mapped columns, split by comma/semicolon/pipe, trim, and flatten
-          let allSubjects: string[] = []
-          if (Array.isArray(val)) {
-            val.forEach(v => {
-              if (v) {
-                allSubjects.push(...v.split(/[,;|]/).map(s => s.trim()).filter(Boolean))
-              }
-            })
-          } else if (typeof val === 'string' && val) {
-            allSubjects = val.split(/[,;|]/).map(s => s.trim()).filter(Boolean)
-          }
-          rec[f.key] = allSubjects
-        } else {
-          // If multiple columns mapped, just take the first non-empty value
-          if (Array.isArray(val)) {
-            rec[f.key] = val.find(Boolean) || null
-          } else {
-            rec[f.key] = val || null
+    const records = buildRecords()
+
+    if (dupStrategy === 'add') {
+      // Insert everything, no duplicate check
+      const { error } = await supabase.from(STUDENTS).insert(records.map(r => withCenterPayload(r)))
+      if (error) { setError(error.message); setStep('map'); return }
+    } else {
+      // Fetch existing students by name for this center
+      const { data: existing, error: fetchErr } = await withCenter(supabase.from(STUDENTS).select('id, name'))
+      if (fetchErr) { setError(fetchErr.message); setStep('map'); return }
+
+      const existingByName = new Map<string, string>(
+        (existing ?? []).map((s: { id: string; name: string }) => [s.name?.toLowerCase().trim(), s.id])
+      )
+
+      const newRecords = records.filter(r => !existingByName.has((r.name ?? '').toLowerCase().trim()))
+      const updateRecords = records.filter(r => existingByName.has((r.name ?? '').toLowerCase().trim()))
+
+      if (newRecords.length > 0) {
+        const { error } = await supabase.from(STUDENTS).insert(newRecords.map(r => withCenterPayload(r)))
+        if (error) { setError(error.message); setStep('map'); return }
+      }
+
+      if (dupStrategy === 'update' && updateRecords.length > 0) {
+        // Only patch the fields actually mapped in this import (don't null-out unmapped columns)
+        const mappedFields = [...new Set(Object.values(mapping).filter(Boolean))]
+        for (const rec of updateRecords) {
+          const id = existingByName.get((rec.name ?? '').toLowerCase().trim())
+          const patch: any = {}
+          mappedFields.forEach(f => { if (f !== 'name') patch[f] = rec[f] })
+          if (Object.keys(patch).length > 0) {
+            const { error } = await supabase.from(STUDENTS).update(patch).eq('id', id)
+            if (error) { setError(error.message); setStep('map'); return }
           }
         }
-      })
-      return rec
-    })
-    const { error } = await supabase.from(STUDENTS).insert(records.map(record => withCenterPayload(record)))
-    if (error) { setError(error.message); setStep('map'); return }
+      }
+    }
+
     logEvent('students_imported', { count: records.length })
     onImported()
     onClose()
@@ -286,6 +327,9 @@ export function CSVImportModal({ onClose, onImported }: Props) {
               <p className="text-xs text-[#64748b]">
                 We auto-matched what we could. Fix anything that looks wrong — unmatched columns are skipped.
               </p>
+              <p className="text-[10px] text-[#94a3b8]">
+                Tip: you can map multiple columns to <span className="font-bold text-[#64748b]">Subjects</span> — they&apos;ll be merged into one list. Comma-separated values in a single cell also work.
+              </p>
               <div className="space-y-2">
                 {headers.map(h => (
                   <div key={h} className="flex items-center gap-3 rounded-2xl p-3 shadow-[0_6px_18px_rgba(15,23,42,0.05)]"
@@ -328,13 +372,35 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                       <div key={i} className="px-4 py-2.5 flex gap-4 text-xs">
                         <span className="font-bold text-[#0f172a] w-28 shrink-0 truncate">{getMapped(row, 'name')}</span>
                         {getMapped(row, 'grade') && <span className="text-[#64748b]">Gr. {getMapped(row, 'grade')}</span>}
-                        {getMapped(row, 'subjects') && <span className="text-[#16a34a] truncate">📚 {getMapped(row, 'subjects')}</span>}
+                        {getSubjectsPreview(row) && <span className="text-[#16a34a] truncate">📚 {getSubjectsPreview(row)}</span>}
                         {getMapped(row, 'email') && <span className="text-[#94a3b8] truncate">{getMapped(row, 'email')}</span>}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Duplicate strategy */}
+              <div className="rounded-xl p-4 space-y-2" style={{ background: '#fff', border: '1.5px solid #e2e8f0' }}>
+                <p className="text-xs font-black text-[#1e293b]">If a student name already exists…</p>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'skip',   label: 'Skip duplicate',  desc: 'Leave existing record untouched' },
+                    { value: 'update', label: 'Update existing',  desc: 'Patch only the mapped columns' },
+                    { value: 'add',    label: 'Add anyway',       desc: 'Insert a second row regardless' },
+                  ] as { value: DupStrategy; label: string; desc: string }[]).map(opt => (
+                    <button key={opt.value}
+                      onClick={() => setDupStrategy(opt.value)}
+                      className="flex-1 rounded-xl px-3 py-2.5 text-left transition-all"
+                      style={dupStrategy === opt.value
+                        ? { background: '#fef2f2', border: '2px solid #dc2626' }
+                        : { background: '#f8fafc', border: '2px solid #e2e8f0' }}>
+                      <p className="text-xs font-black" style={{ color: dupStrategy === opt.value ? '#dc2626' : '#1e293b' }}>{opt.label}</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {error && <p className="text-xs text-[#dc2626] font-medium">{error}</p>}
             </div>
@@ -351,23 +417,25 @@ export function CSVImportModal({ onClose, onImported }: Props) {
 
         {/* Footer */}
         {step === 'map' && (
-          <div className="px-6 py-4 flex items-center justify-between shrink-0"
+          <div className="px-6 py-4 shrink-0"
             style={{ borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
-            <div className="text-xs text-[#94a3b8]">
-              <span className="font-bold text-[#1e293b]">{rows.length}</span> rows ·{' '}
-              <span className="font-bold text-[#dc2626]">{validRows.length}</span> with name ·{' '}
-              <span className="font-bold text-[#64748b]">{rows.length - validRows.length}</span> skipped
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => { setStep('upload'); setError('') }}
-                className="px-4 py-2 rounded-lg text-xs font-bold text-[#64748b]" style={{ background: '#f1f5f9' }}>
-                Back
-              </button>
-              <button onClick={handleImport} disabled={!hasMappedName || validRows.length === 0}
-                className="px-5 py-2 rounded-lg text-xs font-black text-white disabled:opacity-40 transition-all"
-                style={{ background: '#dc2626' }}>
-                Import {validRows.length} Students
-              </button>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-[#94a3b8]">
+                <span className="font-bold text-[#1e293b]">{rows.length}</span> rows ·{' '}
+                <span className="font-bold text-[#dc2626]">{validRows.length}</span> with name ·{' '}
+                <span className="font-bold text-[#64748b]">{rows.length - validRows.length}</span> skipped
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setStep('upload'); setError('') }}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-[#64748b]" style={{ background: '#f1f5f9' }}>
+                  Back
+                </button>
+                <button onClick={handleImport} disabled={!hasMappedName || validRows.length === 0}
+                  className="px-5 py-2 rounded-lg text-xs font-black text-white disabled:opacity-40 transition-all"
+                  style={{ background: '#dc2626' }}>
+                  Import {validRows.length} Students
+                </button>
+              </div>
             </div>
           </div>
         )}

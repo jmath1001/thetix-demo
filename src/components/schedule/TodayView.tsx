@@ -1004,6 +1004,15 @@ export function TodayView({
             </p>
           </div>
           
+          <PrintDailyButton
+            todayIso={todayIso}
+            dayLabel={dayLabel}
+            todayStudentCount={todayStudentCount}
+            filteredDaySessions={filteredDaySessions}
+            filteredTodayTutors={filteredTodayTutors}
+            todaySessionByTutorTime={todaySessionByTutorTime}
+          />
+
           {/* Filter — lives in header row, zero extra height */}
           <div className="relative flex-1 min-w-0" data-inline-form>
             <div className="flex items-center gap-1.5 rounded-xl overflow-hidden"

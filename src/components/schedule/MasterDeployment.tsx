@@ -1005,6 +1005,7 @@ export default function MasterDeployment() {
         students={students}
         sessions={localSessions}
         refetch={refetch}
+        currentTerm={weekDisplayTerm ?? null}
       />
 
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}

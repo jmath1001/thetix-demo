@@ -115,6 +115,9 @@ export async function POST(req: NextRequest) {
       if (typeof sessionHours === 'number') {
         await withCenter(supabase.from(DB.students).update({ session_hours: Math.max(1, sessionHours) }).eq('id', studentId))
       }
+      if (Array.isArray(subjects)) {
+        await withCenter(supabase.from(DB.students).update({ subjects }).eq('id', studentId))
+      }
 
       return NextResponse.json({ enrollment: data })
     }
@@ -147,6 +150,9 @@ export async function POST(req: NextRequest) {
     }
     if (typeof sessionHours === 'number') {
       await withCenter(supabase.from(DB.students).update({ session_hours: Math.max(1, sessionHours) }).eq('id', studentId))
+    }
+    if (Array.isArray(subjects)) {
+      await withCenter(supabase.from(DB.students).update({ subjects }).eq('id', studentId))
     }
 
     return NextResponse.json({ enrollment: data })

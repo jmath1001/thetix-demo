@@ -71,16 +71,14 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
   const [selectedTermId, setSelectedTermId] = useState('')
   const [originalSubjects, setOriginalSubjects] = useState<string[]>([])
   const [originalAvailability, setOriginalAvailability] = useState<string[]>([])
+  const [studentHours, setStudentHours] = useState(0)
+  const [originalStudentHours, setOriginalStudentHours] = useState(0)
   const [hoursPurchased, setHoursPurchased] = useState(0)
   const [originalHoursPurchased, setOriginalHoursPurchased] = useState(0)
-  const [sessionHours, setSessionHours] = useState<number>(typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2)
-  const [originalSessionHours, setOriginalSessionHours] = useState<number>(typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2)
-  const [isSavingHours, setIsSavingHours] = useState(false)
   const [termEnrollmentExists, setTermEnrollmentExists] = useState(false)
+  const [isSavingHours, setIsSavingHours] = useState(false)
   const [isRevertingHours, setIsRevertingHours] = useState(false)
-  const [isEditingTerm, setIsEditingTerm] = useState(false)
-  const [isSavingTerm, setIsSavingTerm] = useState(false)
-  const [termDraft, setTermDraft] = useState({ id: '', name: '', start_date: '', end_date: '', status: 'upcoming' })
+  const [showTutorPrefs, setShowTutorPrefs] = useState(false)
   const [centerSubjects, setCenterSubjects] = useState<string[]>(DEFAULT_SUBJECTS)
   // Per-subject scheduling preferences (stored in term enrollment)
   const [subjectSessionsPerWeek, setSubjectSessionsPerWeek] = useState<Record<string, number>>({})
@@ -179,19 +177,16 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
     if (editSubjects.includes(s)) return false
     if (!subjectSearch.trim()) return true
     return s.toLowerCase().includes(subjectSearch.toLowerCase())
-  }).slice(0, 10)
+  })
 
   const currentAvailabilityCount = editAvailability.length
   const hasAvailabilityChanges = JSON.stringify([...editAvailability].sort()) !== JSON.stringify([...originalAvailability].sort())
-  const hasHoursChanges = !termEnrollmentExists
-    || Number(hoursPurchased || 0) !== Number(originalHoursPurchased || 0)
-    || Number(sessionHours || 0) !== Number(originalSessionHours || 0)
+  const hasHoursChanges = Number(studentHours || 0) !== Number(originalStudentHours || 0)
 
   useEffect(() => {
-    const next = typeof (student as any).session_hours === 'number' ? (student as any).session_hours : 2
-    setSessionHours(next)
-    setOriginalSessionHours(next)
-  }, [student?.id, student?.session_hours])
+    setStudentHours(Number(student.hours_left ?? 0))
+    setOriginalStudentHours(Number(student.hours_left ?? 0))
+  }, [student?.id, student?.hours_left])
 
   useEffect(() => {
     let cancelled = false
@@ -233,8 +228,8 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
         setOriginalSubjects(fallbackSubjects)
         setEditAvailability(fallbackAvailability)
         setOriginalAvailability(fallbackAvailability)
-        setHoursPurchased(Number(student.hours_left ?? 0))
-        setOriginalHoursPurchased(Number(student.hours_left ?? 0))
+        setStudentHours(Number(student.hours_left ?? 0))
+        setOriginalStudentHours(Number(student.hours_left ?? 0))
         return
       }
 
@@ -248,18 +243,12 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
         const nextAvailability = Array.isArray(enrollment?.availability_blocks)
           ? enrollment.availability_blocks
           : fallbackAvailability
-        const nextHours = enrollment
-          ? Number(enrollment.hours_purchased ?? 0)
-          : Number(student.hours_left ?? 0)
-
         if (cancelled) return
         setTermEnrollmentExists(!!enrollment)
         setEditSubjects(nextSubjects)
         setOriginalSubjects(nextSubjects)
         setEditAvailability(nextAvailability)
         setOriginalAvailability(nextAvailability)
-        setHoursPurchased(nextHours)
-        setOriginalHoursPurchased(enrollment ? nextHours : -1)
         setSubjectSessionsPerWeek((enrollment?.subject_sessions_per_week && typeof enrollment.subject_sessions_per_week === 'object' && !Array.isArray(enrollment.subject_sessions_per_week)) ? enrollment.subject_sessions_per_week : {})
         setAllowSameDayDouble(enrollment?.allow_same_day_double === true)
         setSubjectTutorPreference((enrollment?.subject_tutor_preference && typeof enrollment.subject_tutor_preference === 'object' && !Array.isArray(enrollment.subject_tutor_preference)) ? enrollment.subject_tutor_preference : {})
@@ -273,7 +262,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
   }, [selectedTermId, student.id])
 
   const handleAddSubject = (subject: string) => {
-    if (!editSubjects.includes(subject) && editSubjects.length < 3) {
+    if (!editSubjects.includes(subject)) {
       setEditSubjects([...editSubjects, subject])
     }
   }
@@ -295,7 +284,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
             termId: selectedTermId,
             subjects: editSubjects,
             availabilityBlocks: editAvailability,
-            hoursPurchased,
+            hours: studentHours,
             subjectSessionsPerWeek,
             allowSameDayDouble,
             subjectTutorPreference,
@@ -321,8 +310,8 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
       setOriginalSubjects(nextSubjects)
       setEditAvailability(nextAvailability)
       setOriginalAvailability(nextAvailability)
-      setHoursPurchased(nextHours)
-      setOriginalHoursPurchased(nextHours)
+      setStudentHours(nextHours)
+      setOriginalStudentHours(nextHours)
 
       if (onSave) {
         onSave({
@@ -362,7 +351,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
             termId: selectedTermId,
             subjects: editSubjects,
             availabilityBlocks: editAvailability,
-            hoursPurchased,
+            hours: studentHours,
           }
           : { studentId: student.id, availabilityBlocks: editAvailability }
         ),
@@ -390,8 +379,8 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
       setOriginalSubjects(nextSubjects)
       setEditAvailability(nextAvailability)
       setOriginalAvailability(nextAvailability)
-      setHoursPurchased(nextHours)
-      setOriginalHoursPurchased(nextHours)
+      setStudentHours(nextHours)
+      setOriginalStudentHours(nextHours)
 
       if (onSave) {
         onSave({
@@ -414,45 +403,22 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
   }
 
   const handleSaveHours = async () => {
-    if (!selectedTermId) return
     setIsSavingHours(true)
     try {
-      const res = await fetch('/api/term-enrollment', {
-        method: 'POST',
+      const nextHours = Number(studentHours || 0)
+      const res = await fetch('/api/students', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: student.id,
-          termId: selectedTermId,
-          hoursPurchased: Number(hoursPurchased || 0),
-          sessionHours,
-          syncStudentBalance: true,
-        }),
+        body: JSON.stringify({ id: student.id, hours_left: nextHours }),
       })
-
       const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload?.error || 'Failed to save term hours')
-
-      const serverEnrollment = payload?.enrollment
-      const nextHours = typeof serverEnrollment?.hours_purchased === 'number'
-        ? serverEnrollment.hours_purchased
-        : Number(hoursPurchased || 0)
-
-      setHoursPurchased(nextHours)
-      setOriginalHoursPurchased(nextHours)
-      setTermEnrollmentExists(true)
-      setOriginalSessionHours(sessionHours)
-      if (onSave) {
-        onSave({
-          ...student,
-          hours_left: Number(nextHours || 0),
-          session_hours: sessionHours,
-          selected_term_id: selectedTermId,
-          selectedTermId,
-        })
-      }
+      if (!res.ok) throw new Error(payload?.error || 'Failed to save hours')
+      setStudentHours(nextHours)
+      setOriginalStudentHours(nextHours)
+      if (onSave) onSave({ ...student, hours_left: nextHours })
     } catch (err) {
-      console.error('Error saving term hours:', err)
-      alert((err as Error).message || 'Failed to save term hours.')
+      console.error('Error saving hours:', err)
+      alert((err as Error).message || 'Failed to save hours.')
     } finally {
       setIsSavingHours(false)
     }
@@ -496,65 +462,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
     }
   }
 
-  const startEditSelectedTerm = () => {
-    if (!selectedTerm) return
-    setTermDraft({
-      id: selectedTerm.id,
-      name: selectedTerm.name,
-      start_date: selectedTerm.start_date,
-      end_date: selectedTerm.end_date,
-      status: selectedTerm.status || 'upcoming',
-    })
-    setIsEditingTerm(true)
-  }
 
-  const startCreateTerm = () => {
-    setTermDraft({ id: '', name: '', start_date: '', end_date: '', status: 'upcoming' })
-    setIsEditingTerm(true)
-  }
-
-  const saveTerm = async () => {
-    if (!termDraft.name || !termDraft.start_date || !termDraft.end_date) {
-      alert('Term name, start date, and end date are required.')
-      return
-    }
-
-    setIsSavingTerm(true)
-    try {
-      const method = termDraft.id ? 'PATCH' : 'POST'
-      const res = await fetch('/api/terms', {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: termDraft.id || undefined,
-          name: termDraft.name,
-          startDate: termDraft.start_date,
-          endDate: termDraft.end_date,
-          status: termDraft.status,
-        }),
-      })
-
-      const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload?.error || 'Failed to save term')
-
-      const savedTerm = payload?.term
-      if (savedTerm?.id) {
-        setTerms(prev => {
-          const exists = prev.some(t => t.id === savedTerm.id)
-          if (exists) return prev.map(t => t.id === savedTerm.id ? savedTerm : t)
-          return [savedTerm, ...prev]
-        })
-        setSelectedTermId(savedTerm.id)
-      }
-
-      setIsEditingTerm(false)
-    } catch (err) {
-      console.error('Error saving term:', err)
-      alert((err as Error).message || 'Failed to save term.')
-    } finally {
-      setIsSavingTerm(false)
-    }
-  }
 
   return (
     <div className="fixed inset-0 bg-slate-200/60 backdrop-blur-[2px] flex items-center justify-center z-50"
@@ -569,26 +477,7 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
 
         <div className="space-y-4 mb-6">
           <div className="pb-2 border-b border-gray-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Term</p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={startCreateTerm}
-                  className="px-2.5 py-1 text-[11px] font-bold rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-                >
-                  Add Term
-                </button>
-                <button
-                  type="button"
-                  onClick={startEditSelectedTerm}
-                  disabled={!selectedTerm}
-                  className="px-2.5 py-1 text-[11px] font-bold rounded border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50"
-                >
-                  Edit Term
-                </button>
-              </div>
-            </div>
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Term</p>
 
             <select
               value={selectedTermId}
@@ -596,170 +485,163 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
               className="w-full rounded border border-gray-300 bg-white px-2.5 py-2 text-sm font-semibold text-gray-800"
               disabled={loadingTerms}
             >
-              {loadingTerms && <option value="">Loading terms...</option>}
-              {!loadingTerms && terms.length === 0 && <option value="">No terms yet</option>}
+              <option value="">Student Record (default)</option>
+              {loadingTerms && <option disabled>Loading terms...</option>}
               {!loadingTerms && terms.map(term => (
                 <option key={term.id} value={term.id}>{term.name} ({term.status})</option>
               ))}
             </select>
 
-            {isEditingTerm && (
-              <div className="rounded border border-purple-200 bg-purple-50/40 p-3 space-y-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <input
-                    value={termDraft.name}
-                    onChange={e => setTermDraft(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Term name"
-                    className="rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs"
-                  />
-                  <select
-                    value={termDraft.status}
-                    onChange={e => setTermDraft(prev => ({ ...prev, status: e.target.value }))}
-                    className="rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs"
-                  >
-                    <option value="upcoming">upcoming</option>
-                    <option value="active">active</option>
-                    <option value="completed">completed</option>
-                  </select>
-                  <input
-                    type="date"
-                    value={termDraft.start_date}
-                    onChange={e => setTermDraft(prev => ({ ...prev, start_date: e.target.value }))}
-                    className="rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="date"
-                    value={termDraft.end_date}
-                    onChange={e => setTermDraft(prev => ({ ...prev, end_date: e.target.value }))}
-                    className="rounded border border-gray-300 bg-white px-2.5 py-1.5 text-xs"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingTerm(false)}
-                    className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={saveTerm}
-                    disabled={isSavingTerm}
-                    className="flex-1 rounded bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50"
-                  >
-                    {isSavingTerm ? 'Saving term...' : 'Save Term'}
-                  </button>
-                </div>
-              </div>
-            )}
+
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">Subjects for Selected Term</p>
-            {!isEditing ? (
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-900">{currentSubjectsDisplay}</p>
-                <button 
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Subjects</p>
+                {selectedTermId && termEnrollmentExists && (
+                  <span className="rounded-full bg-purple-50 border border-purple-200 px-2 py-0.5 text-[10px] font-semibold text-purple-700">this term only</span>
+                )}
+              </div>
+              {!isEditing && (
+                <button
                   onClick={() => setIsEditing(true)}
                   className="px-3 py-1 text-xs font-bold bg-purple-50 border border-purple-300 text-purple-700 rounded hover:bg-purple-100">
                   Edit
                 </button>
-              </div>
-            ) : (
+              )}
+            </div>
+
+            {/* View mode */}
+            {!isEditing && (
+              editSubjects.length > 0
+                ? <div className="flex flex-wrap gap-1.5">
+                    {editSubjects.map(s => (
+                      <span key={s} className="rounded-full bg-purple-100 border border-purple-300 px-3 py-1 text-xs font-semibold text-purple-900">{s}</span>
+                    ))}
+                  </div>
+                : <p className="text-xs text-gray-400 italic">No subjects added yet</p>
+            )}
+
+            {/* Edit mode */}
+            {isEditing && (
               <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                  {editSubjects.map(subject => (
-                    <div key={subject} className="flex items-center gap-2 bg-purple-100 border border-purple-300 rounded-full px-3 py-1">
-                      <span className="text-xs font-semibold text-purple-900">{subject}</span>
-                      <button
-                        onClick={() => handleRemoveSubject(subject)}
-                        className="text-purple-600 hover:text-purple-900"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {editSubjects.length > 0 && selectedTermId && (
-                  <div className="space-y-2 mt-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Sessions per week &amp; tutor preference</p>
-                    {editSubjects.map(subject => {
-                      const sessionsVal = subjectSessionsPerWeek[subject] ?? 1
-                      const tutorId = subjectTutorPreference[subject] ?? ''
-                      const eligibleTutors = tutors.filter(t =>
-                        !t.subjects?.length || t.subjects.some(ts => ts.toLowerCase().includes(subject.toLowerCase()) || subject.toLowerCase().includes(ts.toLowerCase()))
-                      )
-                      return (
-                        <div key={subject} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                          <span className="w-28 shrink-0 text-xs font-semibold text-gray-800 truncate">{subject}</span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.max(1, (prev[subject] ?? 1) - 1) }))}
-                              className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
-                            >−</button>
-                            <span className="w-6 text-center text-xs font-bold text-gray-900">{sessionsVal}×</span>
-                            <button
-                              type="button"
-                              onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.min(5, (prev[subject] ?? 1) + 1) }))}
-                              className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
-                            >+</button>
-                          </div>
-                          <select
-                            value={tutorId}
-                            onChange={e => setSubjectTutorPreference(prev => {
-                              const next = { ...prev }
-                              if (e.target.value) next[subject] = e.target.value
-                              else delete next[subject]
-                              return next
-                            })}
-                            className="flex-1 text-xs border border-gray-300 rounded bg-white px-2 py-1 text-gray-800 min-w-0"
-                          >
-                            <option value="">Any tutor</option>
-                            {(eligibleTutors.length > 0 ? eligibleTutors : tutors).map(t => (
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
+
+                {/* Selected subjects */}
+                <div className="min-h-8 flex flex-wrap gap-2">
+                  {editSubjects.length > 0
+                    ? editSubjects.map(subject => (
+                        <div key={subject} className="flex items-center gap-1.5 bg-purple-600 rounded-full px-3 py-1">
+                          <span className="text-xs font-bold text-white">{subject}</span>
+                          <button onClick={() => handleRemoveSubject(subject)} className="text-purple-200 hover:text-white">
+                            <X size={11} />
+                          </button>
                         </div>
-                      )
-                    })}
-                    <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
-                      <input
-                        type="checkbox"
-                        checked={allowSameDayDouble}
-                        onChange={e => setAllowSameDayDouble(e.target.checked)}
-                        className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600"
-                      />
-                      <span className="text-[11px] text-gray-700">Allow two sessions on the same day</span>
-                    </label>
+                      ))
+                    : <p className="text-xs text-gray-400 italic self-center">Nothing selected — pick below</p>
+                  }
+                </div>
+
+                {/* Picker — visually distinct: compact plain-text list on gray bg */}
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2 space-y-1.5">
+                  <input
+                    value={subjectSearch}
+                    onChange={e => setSubjectSearch(e.target.value)}
+                    placeholder="Search subjects..."
+                    className="w-full text-xs px-2.5 py-1.5 border border-gray-200 rounded bg-white text-gray-800 outline-none"
+                  />
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto pt-1">
+                    {filteredSubjects.map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => handleAddSubject(s)}
+                        disabled={editSubjects.includes(s)}
+                        className="text-[11px] font-medium px-2 py-0.5 rounded border transition-colors"
+                        style={editSubjects.includes(s)
+                          ? { background: '#f3f4f6', color: '#d1d5db', borderColor: '#e5e7eb', cursor: 'default' }
+                          : { background: '#fff', color: '#374151', borderColor: '#d1d5db' }}
+                      >
+                        {editSubjects.includes(s) ? '✓' : '+'} {s}
+                      </button>
+                    ))}
+                    {filteredSubjects.length === 0 && (
+                      <span className="text-[11px] text-gray-400">No matching subjects</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sessions / tutor preference — always visible when subjects exist */}
+                {editSubjects.length > 0 && (
+                  <div className="rounded border border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setShowTutorPrefs(v => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-gray-500 hover:bg-gray-50"
+                    >
+                      <span>Sessions / tutor preference</span>
+                      <span>{showTutorPrefs ? '▲' : '▼'}</span>
+                    </button>
+                    {showTutorPrefs && (
+                      <div className="px-3 pb-3 space-y-2 border-t border-gray-200 pt-2">
+                        {!selectedTermId && (
+                          <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            Select a term above to save these preferences
+                          </p>
+                        )}
+                        {editSubjects.map(subject => {
+                          const sessionsVal = subjectSessionsPerWeek[subject] ?? 1
+                          const tutorId = subjectTutorPreference[subject] ?? ''
+                          const eligibleTutors = tutors.filter(t =>
+                            !t.subjects?.length || t.subjects.some(ts => ts.toLowerCase().includes(subject.toLowerCase()) || subject.toLowerCase().includes(ts.toLowerCase()))
+                          )
+                          return (
+                            <div key={subject} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                              <span className="w-28 shrink-0 text-xs font-semibold text-gray-800 truncate">{subject}</span>
+                              <div className="flex items-center gap-1">
+                                <button type="button"
+                                  onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.max(1, (prev[subject] ?? 1) - 1) }))}
+                                  className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+                                >−</button>
+                                <span className="w-6 text-center text-xs font-bold text-gray-900">{sessionsVal}×</span>
+                                <button type="button"
+                                  onClick={() => setSubjectSessionsPerWeek(prev => ({ ...prev, [subject]: Math.min(5, (prev[subject] ?? 1) + 1) }))}
+                                  className="w-5 h-5 rounded border border-gray-300 bg-white text-xs font-bold text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+                                >+</button>
+                              </div>
+                              <select
+                                value={tutorId}
+                                onChange={e => setSubjectTutorPreference(prev => {
+                                  const next = { ...prev }
+                                  if (e.target.value) next[subject] = e.target.value
+                                  else delete next[subject]
+                                  return next
+                                })}
+                                className="flex-1 text-xs border border-gray-300 rounded bg-white px-2 py-1 text-gray-800 min-w-0"
+                              >
+                                <option value="">Any tutor</option>
+                                {(eligibleTutors.length > 0 ? eligibleTutors : tutors).map(t => (
+                                  <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )
+                        })}
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={allowSameDayDouble}
+                            onChange={e => setAllowSameDayDouble(e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-purple-600"
+                          />
+                          <span className="text-[11px] text-gray-700">Allow two sessions on the same day</span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )}
-                {editSubjects.length < 3 && (
-                  <div className="space-y-2">
-                    <input
-                      value={subjectSearch}
-                      onChange={e => setSubjectSearch(e.target.value)}
-                      placeholder="Search subjects..."
-                      className="w-full text-xs font-semibold px-2.5 py-1.5 border border-gray-300 rounded bg-white text-gray-900"
-                    />
-                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto rounded border border-gray-200 p-2">
-                      {filteredSubjects.map(s => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => handleAddSubject(s)}
-                          className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          + {s}
-                        </button>
-                      ))}
-                      {filteredSubjects.length === 0 && (
-                        <span className="text-[11px] text-gray-400">No matching subjects</span>
-                      )}
-                    </div>
-                  </div>
-                )}
+
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsEditing(false)}
@@ -872,49 +754,25 @@ export default function StudentDetailsModal({ student, tutors: tutorsProp = [], 
 
           <div className="pt-2 border-t border-gray-200 space-y-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase mb-1">Hours Purchased for Selected Term</p>
+              <p className="text-xs font-bold text-gray-500 uppercase mb-1">Hours Purchased</p>
               <div className="flex items-center gap-2 flex-wrap">
                 <input
                   type="number"
                   min={0}
-                  value={hoursPurchased}
-                  onChange={e => setHoursPurchased(Number(e.target.value || 0))}
+                  value={studentHours}
+                  onChange={e => setStudentHours(Number(e.target.value || 0))}
                   className="w-28 rounded border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-semibold text-gray-800"
                 />
                 <button
                   type="button"
                   onClick={handleSaveHours}
-                  disabled={!selectedTermId || !hasHoursChanges || isSavingHours || isRevertingHours}
+                  disabled={!hasHoursChanges || isSavingHours}
                   className="rounded bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700 disabled:opacity-50"
                 >
-                  {isSavingHours ? 'Saving...' : 'Save & Set Balance'}
+                  {isSavingHours ? 'Saving...' : 'Save'}
                 </button>
-                {termEnrollmentExists && (
-                  <button
-                    type="button"
-                    onClick={handleRevertHours}
-                    disabled={isSavingHours || isRevertingHours}
-                    title="Reset the student's current balance back to the purchased amount"
-                    className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-                  >
-                    {isRevertingHours ? 'Reverting...' : 'Revert Balance'}
-                  </button>
-                )}
               </div>
-              <p className="mt-1 text-[10px] text-gray-400">Saving will also reset the student's running balance to this number.</p>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-gray-500 uppercase mb-1">Hours per Session</p>
-              <div className="flex gap-1 p-0.5 rounded-lg border border-gray-200 bg-gray-50 w-fit">
-                {[1, 2].map(h => (
-                  <button key={h} type="button" onClick={() => setSessionHours(h)}
-                    className="px-4 py-1.5 rounded-md text-xs font-bold transition-all"
-                    style={sessionHours === h ? { background: '#7c3aed', color: '#fff' } : { color: '#6b7280' }}>
-                    {h}h
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1 text-[10px] text-gray-400">Deducted per attended session. Save & Set Balance to apply.</p>
+              <p className="mt-1 text-[10px] text-gray-400">Total hours this student has purchased.</p>
             </div>
             {student.tutor && <p><strong className="text-xs font-bold text-gray-500 uppercase">Tutor:</strong> <span className="text-sm text-gray-900">{student.tutor}</span></p>}
             {student.day && <p><strong className="text-xs font-bold text-gray-500 uppercase">Day:</strong> <span className="text-sm text-gray-900">{student.day}</span></p>}

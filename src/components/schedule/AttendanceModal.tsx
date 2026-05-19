@@ -25,6 +25,7 @@ interface AttendanceModalProps {
   students: any[];
   sessions: any[];
   refetch: () => void;
+  currentTerm?: { id: string; name: string; start_date: string; end_date: string } | null;
 }
 
 interface ModalContentProps extends AttendanceModalProps {
@@ -68,7 +69,7 @@ function ContactRow({ href, icon, label, copyValue }: { href: string; icon: Reac
 function ModalContent({
   s, student, studentRecord, altTutors, hasContactInfo, sessionTime,
   selectedSession, setSelectedSession, patchSelectedSession,
-  modalTab, setModalTab, tutors, students, sessions, refetch,
+  modalTab, setModalTab, tutors, students, sessions, refetch, currentTerm,
 }: ModalContentProps) {
   const currentStatus = student.status;
   const currentConf = student.confirmationStatus ?? null;
@@ -79,6 +80,14 @@ function ModalContent({
   const [notesSaving, setNotesSaving] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [recurringDays, setRecurringDays] = useState<number>(4);
+  const [recurringMode, setRecurringMode] = useState<'weeks' | 'until_term_end'>('weeks');
+
+  const calculateWeeksUntilTermEnd = (startDate: string, endDate: string): number => {
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(1, Math.ceil((days + 1) / 7));
+  };
 
   useEffect(() => {
     if (!notesEditing) setNotesDraft(student.notes ?? '');
@@ -479,14 +488,41 @@ function ModalContent({
             </div>
 
             <p style={{ fontSize: 13, color: '#475569', marginBottom: 16, lineHeight: 1.6 }}>
-              Repeat this session every week for how many weeks?
+              Repeat this session every week.
             </p>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-              <input type="number" min="1" max="12" value={recurringDays} onChange={(e) => setRecurringDays(Math.max(1, parseInt(e.target.value) || 1))}
-                style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #cbd5e1', fontSize: 14, fontWeight: 700, color: '#0f172a' }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>weeks</span>
-            </div>
+            {/* Mode toggle — only show Until Term End if a term is active */}
+            {currentTerm && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+                <button
+                  onClick={() => setRecurringMode('weeks')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1.5px solid ' + (recurringMode === 'weeks' ? '#7c3aed' : '#cbd5e1'), background: recurringMode === 'weeks' ? '#7c3aed' : 'white', color: recurringMode === 'weeks' ? 'white' : '#64748b', fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Select Weeks
+                </button>
+                <button
+                  onClick={() => setRecurringMode('until_term_end')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1.5px solid ' + (recurringMode === 'until_term_end' ? '#7c3aed' : '#cbd5e1'), background: recurringMode === 'until_term_end' ? '#7c3aed' : 'white', color: recurringMode === 'until_term_end' ? 'white' : '#64748b', fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Until Term End
+                </button>
+              </div>
+            )}
+
+            {recurringMode === 'weeks' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <input type="number" min="1" max="24" value={recurringDays} onChange={(e) => setRecurringDays(Math.max(1, parseInt(e.target.value) || 1))}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1.5px solid #cbd5e1', fontSize: 14, fontWeight: 700, color: '#0f172a' }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>weeks</span>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 20, padding: '10px 14px', borderRadius: 10, background: '#f5f3ff', border: '1.5px solid #ddd6fe' }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9', margin: 0 }}>
+                  Until {new Date((currentTerm!.end_date) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+                <p style={{ fontSize: 11, color: '#7c3aed', margin: '3px 0 0', fontWeight: 600 }}>
+                  {calculateWeeksUntilTermEnd(s.date, currentTerm!.end_date)} week{calculateWeeksUntilTermEnd(s.date, currentTerm!.end_date) !== 1 ? 's' : ''} from this session
+                </p>
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setShowRecurringModal(false)}
@@ -503,7 +539,9 @@ function ModalContent({
                       tutorId: s.tutorId,
                       topic: student.topic,
                       startDate: s.date,
-                      weeks: recurringDays,
+                      weeks: recurringMode === 'until_term_end' && currentTerm
+                        ? calculateWeeksUntilTermEnd(s.date, currentTerm.end_date)
+                        : recurringDays,
                       time: sessionTime,
                       dayOfWeek: sessionDow,
                     }),

@@ -660,14 +660,19 @@ export default function StudentAdminPage() {
     if (!confirmBulkDelete) { setConfirmBulkDelete(true); setTimeout(() => setConfirmBulkDelete(false), 3000); return }
     setBulkDeleting(true)
     const ids = Array.from(selected)
-    // Clear FK'd child rows before deleting students
-    // slake_term_enrollments and slake_session_students have no center_id — filter by student_id directly
-    await supabase.from(DB.sessionStudents).delete().in('student_id', ids)
-    await supabase.from(DB.recurringSeries).delete().in('student_id', ids)
-    await supabase.from(DB.termEnrollments).delete().in('student_id', ids)
-    await withCenter(supabase.from(STUDENTS).delete()).in('id', ids)
-    logEvent('students_bulk_deleted', { count: ids.length })
-    setSelected(new Set()); setConfirmBulkDelete(false); setBulkDeleting(false); fetchData()
+    try {
+      const res = await fetch('/api/students', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok) { alert(payload?.error || 'Failed to delete students'); return }
+      logEvent('students_bulk_deleted', { count: ids.length })
+      setSelected(new Set()); setConfirmBulkDelete(false); fetchData()
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const activeStudent = students.find(s => s.id === activeStudentId) ?? null

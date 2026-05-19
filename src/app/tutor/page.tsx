@@ -193,33 +193,28 @@ function getMondayOfCurrentWeek(): string {
 }
 
 // ── Subject Pills ─────────────────────────────────────────────────────────────
-function SubjectCheckboxes({ selected, onChange }: { selected: string[]; onChange: (s: string[]) => void }) {
+function SubjectCheckboxes({ selected, onChange, subjects }: { selected: string[]; onChange: (s: string[]) => void; subjects: string[] }) {
   const toggle = (s: string) =>
     onChange(selected.includes(s) ? selected.filter(x => x !== s) : [...selected, s]);
 
   return (
     <div className="space-y-2">
       <label className="block text-[10px] font-semibold text-slate-400">Subjects</label>
-      <div className="space-y-2">
-        {SUBJECT_GROUPS.map(group => (
-          <div key={group.group} className="rounded border border-slate-200 bg-slate-50 p-2.5">
-            <p className="mb-2 text-[10px] font-semibold text-slate-500">{group.group}</p>
-            <div className="flex flex-wrap gap-1">
-              {group.subjects.map(subject => {
-                const active = selected.includes(subject);
-                return (
-                  <button key={subject} type="button" onClick={() => toggle(subject)}
-                    className="rounded-md px-2 py-1 text-[10px] font-semibold tracking-[0.02em] transition-all"
-                    style={active
-                      ? { background: '#0f172a', color: 'white', border: '1px solid #0f172a' }
-                      : { background: 'white', color: '#475569', border: '1px solid #cbd5e1' }}>
-                    {subject}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <div className="rounded border border-slate-200 bg-slate-50 p-2.5">
+        <div className="flex flex-wrap gap-1">
+          {subjects.map(subject => {
+            const active = selected.includes(subject);
+            return (
+              <button key={subject} type="button" onClick={() => toggle(subject)}
+                className="rounded-md px-2 py-1 text-[10px] font-semibold tracking-[0.02em] transition-all"
+                style={active
+                  ? { background: '#0f172a', color: 'white', border: '1px solid #0f172a' }
+                  : { background: 'white', color: '#475569', border: '1px solid #cbd5e1' }}>
+                {subject}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -570,6 +565,7 @@ function TutorDetailPanel({
   termAvailabilityBlocks,
   sessionTimesByDay,
   termLabel,
+  centerSubjects,
 }: {
   tutor: TutorWithContact;
   timeOffList: TimeOff[];
@@ -581,6 +577,7 @@ function TutorDetailPanel({
   termAvailabilityBlocks: string[] | undefined;
   sessionTimesByDay: SessionTimesByDay | null;
   termLabel?: string;
+  centerSubjects: string[];
 }) {
   const [tab, setTab] = useState<'details' | 'timeoff'>('details');
   const [isEditing, setIsEditing] = useState(false);
@@ -757,7 +754,7 @@ function TutorDetailPanel({
 
                 <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
                   {isEditing ? (
-                    <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} />
+                    <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} subjects={centerSubjects} />
                   ) : (
                     <>
                       <div className="flex items-center justify-between gap-3">
@@ -854,13 +851,14 @@ function TutorDetailPanel({
 }
 
 // ── Tutor Row ─────────────────────────────────────────────────────────────────
-function TutorRow({ tutor, selected, onToggle, timeOffList, scheduledSessions, onSave, onDelete, onRefetch }: {
+function TutorRow({ tutor, selected, onToggle, timeOffList, scheduledSessions, onSave, onDelete, onRefetch, centerSubjects }: {
   tutor: TutorWithContact; selected: boolean; onToggle: () => void;
   timeOffList: TimeOff[];
   scheduledSessions: ScheduledSession[];
   onSave: (u: TutorWithContact) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRefetch: () => Promise<void>;
+  centerSubjects: string[];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<'details' | 'timeoff'>('details');
@@ -1123,7 +1121,7 @@ function TutorRow({ tutor, selected, onToggle, timeOffList, scheduledSessions, o
                 {/* Edit-mode full controls */}
                 {isEditing && (
                   <div className="space-y-5 pt-2 border-t border-[#e2e8f0]">
-                    <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} />
+                    <SubjectCheckboxes selected={draft.subjects} onChange={subjects => setDraft({ ...draft, subjects })} subjects={centerSubjects} />
                     <AvailabilityGrid
                       blocks={draft.availabilityBlocks}
                       onChange={b => setDraft({
@@ -1164,6 +1162,7 @@ export default function TutorManagementPage() {
   const [timeOffList, setTimeOffList] = useState<TimeOff[]>([]);
   const [scheduledSessions, setScheduledSessions] = useState<ScheduledSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [centerSubjects, setCenterSubjects] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [newTutor, setNewTutor] = useState<Omit<TutorWithContact, 'id'>>(EMPTY_TUTOR);
   const [saving, setSaving] = useState(false);
@@ -1227,6 +1226,13 @@ export default function TutorManagementPage() {
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  useEffect(() => {
+    fetch('/api/center-subjects', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d?.subjects)) setCenterSubjects(d.subjects); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('/api/terms', { cache: 'no-store' })
@@ -1509,7 +1515,7 @@ export default function TutorManagementPage() {
                 </div>
               </div>
 
-              <SubjectCheckboxes selected={newTutor.subjects} onChange={subjects => setNewTutor({ ...newTutor, subjects })} />
+              <SubjectCheckboxes selected={newTutor.subjects} onChange={subjects => setNewTutor({ ...newTutor, subjects })} subjects={centerSubjects} />
               <AvailabilityGrid
                 blocks={newTutor.availabilityBlocks}
                 sessionTimesByDay={selectedTermSessionTimes}
@@ -1718,6 +1724,7 @@ export default function TutorManagementPage() {
                   termAvailabilityBlocks={termAvailabilityByTutor[activeTutor.id]}
                   sessionTimesByDay={selectedTermSessionTimes}
                   termLabel={terms.find(t => t.id === selectedTermId)?.name}
+                  centerSubjects={centerSubjects}
                 />
               ) : (
                 <div className="rounded-[28px] border border-[#cbd5e1] bg-white px-6 py-16 text-center shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
