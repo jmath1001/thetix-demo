@@ -21,6 +21,7 @@ interface InlineForm {
   creating: boolean;
   saving: boolean;
   error: string | null;
+  topicSaved: boolean;
 }
 
 const emptyForm = (tutor: Tutor): InlineForm => ({
@@ -34,7 +35,23 @@ const emptyForm = (tutor: Tutor): InlineForm => ({
   creating: false,
   saving: false,
   error: null,
+  topicSaved: false,
 });
+
+const addSubjectToCenter = async (subject: string) => {
+  try {
+    const existing = await fetch('/api/center-subjects').then(r => r.json()).catch(() => ({ subjects: [] }));
+    const current: string[] = Array.isArray(existing?.subjects) ? existing.subjects : [];
+    if (current.some(s => s.toLowerCase() === subject.toLowerCase())) return;
+    await fetch('/api/center-subjects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subjects: [...current, subject] }),
+    });
+  } catch (err) {
+    console.error('Failed to save subject to center:', err);
+  }
+};
 
 const slotKey = (tutorId: string, date: string, time: string) => `${tutorId}|${date}|${time}`;
 
@@ -380,6 +397,20 @@ export function WeekView({
             className="w-full text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none"
             style={{ background: '#fefefe', border: '1px solid #cbd5e1', color: '#374151' }}
           />
+        )}
+        {selectedTopicOption === '__custom__' && form.topic.trim() && (
+          <button
+            type="button"
+            className="w-full text-left px-3 py-1.5 text-[10px] font-bold rounded-lg"
+            style={{ color: form.topicSaved ? '#059669' : '#2563eb', background: form.topicSaved ? '#ecfdf5' : '#eff6ff', border: `1px solid ${form.topicSaved ? '#6ee7b7' : '#bfdbfe'}` }}
+            onClick={() => {
+              void addSubjectToCenter(form.topic.trim());
+              patchForm(key, { topicSaved: true });
+              setTimeout(() => patchForm(key, { topicSaved: false }), 2000);
+            }}
+          >
+            {form.topicSaved ? '✓ Added to center subjects!' : `+ Add "${form.topic.trim()}" to center subjects`}
+          </button>
         )}
         <textarea
           value={form.notes}

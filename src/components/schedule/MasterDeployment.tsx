@@ -846,62 +846,6 @@ export default function MasterDeployment() {
         weeklySessions={weeklySessions}
         onConfirmWeek={() => setIsConfirmWeekOpen(true)}
         weekConfirmedAt={weekConfirmedAt}
-        commandBarSlot={
-          <>
-            <CommandBar
-              sessions={[...localSessions, ...(nextWeekSessions ?? [])]}
-              students={students}
-              tutors={tutors}
-              timeOff={timeOff}
-              onDataChanged={refetch}
-              onBookingAction={handleAIBookingAction}
-              onOpenProposal={openPreview}
-              onOpenAttendanceModal={(session) => setSelectedSession(session)}
-              allAvailableSeats={allSeatsForBuilder}
-              weekStart={weekStartIso}
-              nextWeekStart={toISODate(nextWeekStart)}
-            />
-                        <button
-                onClick={() => {
-                  logEvent('auto_book_used', { action: 'batch_book', source: 'schedule_header' });
-                  setScheduleBuilderMode('batch');
-                  setIsScheduleBuilderOpen(true);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '7px 14px',
-                  borderRadius: 11,
-                  background: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%)',
-                  border: '1px solid #1d4ed8',
-                  color: '#ffffff',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  letterSpacing: '0.01em',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 10px 20px rgba(37,99,235,0.32), 0 2px 6px rgba(14,116,144,0.3)',
-                }}
-              >
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 999,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'rgba(255,255,255,0.22)',
-                    border: '1px solid rgba(255,255,255,0.38)',
-                  }}
-                >
-                  <Zap size={11} />
-                </span>
-                <span>Schedule Builder</span>
-              </button>
-          </>
-        }
       />
 
       {todayView && (

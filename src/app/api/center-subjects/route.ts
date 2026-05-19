@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { DB, withCenter } from '@/lib/db'
+import { DB, withCenter, getCenterId } from '@/lib/db'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,8 +50,15 @@ export async function POST(req: NextRequest) {
     ).maybeSingle()
 
     if (fetchErr) throw fetchErr
+
     if (!existing?.id) {
-      return NextResponse.json({ error: 'Center settings not found' }, { status: 404 })
+      // No center settings row yet — create one
+      const { error: insertErr } = await supabase.from(DB.centerSettings).insert({
+        center_id: getCenterId(),
+        subjects,
+      } as any)
+      if (insertErr) throw insertErr
+      return NextResponse.json({ subjects })
     }
 
     const { error: updateErr } = await withCenter(

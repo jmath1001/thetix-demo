@@ -26,31 +26,42 @@ const DB_FIELDS = [
 
 function autoMap(headers: string[]): Record<string, string> {
   const map: Record<string, string> = {}
+  const fls = DB_FIELDS.map(f => ({ key: f.key, fl: f.key.replace(/_/g, '') }))
   headers.forEach(h => {
     const hl = h.toLowerCase().replace(/[^a-z]/g, '')
-    const match = DB_FIELDS.find(f => {
-      const fl = f.key.replace(/_/g, '')
-      return (
-        hl === fl ||
-        hl.includes(fl) ||
-        fl.includes(hl) ||
-        ((hl.includes('parent') || hl.includes('mom') || hl.includes('mother')) && hl.includes('name') && f.key === 'mom_name') ||
-        ((hl.includes('parent') || hl.includes('mom') || hl.includes('mother')) && hl.includes('email') && f.key === 'mom_email') ||
-        ((hl.includes('parent') || hl.includes('mom') || hl.includes('mother')) && (hl.includes('phone') || hl.includes('cell')) && f.key === 'mom_phone') ||
-        ((hl.includes('dad') || hl.includes('father')) && hl.includes('name') && f.key === 'dad_name') ||
-        ((hl.includes('dad') || hl.includes('father')) && hl.includes('email') && f.key === 'dad_email') ||
-        ((hl.includes('dad') || hl.includes('father')) && (hl.includes('phone') || hl.includes('cell')) && f.key === 'dad_phone') ||
-        (!hl.includes('parent') && !hl.includes('mom') && !hl.includes('mother') && !hl.includes('dad') && !hl.includes('father') && hl.includes('email') && f.key === 'email') ||
-        (!hl.includes('parent') && !hl.includes('mom') && !hl.includes('mother') && !hl.includes('dad') && !hl.includes('father') && (hl.includes('phone') || hl.includes('cell')) && f.key === 'phone') ||
-        (hl.includes('grade') && f.key === 'grade') ||
-        ((hl.includes('school') || hl.includes('schoolname')) && f.key === 'school_name') ||
-        ((hl === 'name' || hl === 'studentname' || hl === 'fullname') && f.key === 'name') ||
-        (hl.includes('hour') && f.key === 'hours_left') ||
-        (hl.includes('bluebook') && f.key === 'bluebook_url') ||
-        ((hl.includes('subject') || hl.includes('course') || hl.includes('class')) && f.key === 'subjects') // Auto-match logic
-      )
-    })
-    if (match) map[h] = match.key
+    if (!hl) return
+
+    // 1. Exact match — handles "Name"→name, "School Name"→school_name, "Mom Name"→mom_name, etc.
+    const exact = fls.find(({ fl }) => fl === hl)
+    if (exact) { map[h] = exact.key; return }
+
+    // 2. Contextual patterns — must run before generic substring fallbacks
+    const isMom    = hl.includes('mom') || hl.includes('mother')
+    const isDad    = hl.includes('dad') || hl.includes('father')
+    const isParent = hl.includes('parent') && !isMom && !isDad
+    const hasName  = hl.includes('name')
+    const hasEmail = hl.includes('email')
+    const hasPhone = hl.includes('phone') || hl.includes('cell')
+
+    if ((isMom || isParent) && hasName)  { map[h] = 'mom_name';  return }
+    if ((isMom || isParent) && hasEmail) { map[h] = 'mom_email'; return }
+    if ((isMom || isParent) && hasPhone) { map[h] = 'mom_phone'; return }
+    if (isDad && hasName)                { map[h] = 'dad_name';  return }
+    if (isDad && hasEmail)               { map[h] = 'dad_email'; return }
+    if (isDad && hasPhone)               { map[h] = 'dad_phone'; return }
+
+    if (hl.includes('school'))                                           { map[h] = 'school_name'; return }
+    if (hl.includes('grade'))                                            { map[h] = 'grade';       return }
+    if (hl.includes('hour'))                                             { map[h] = 'hours_left';  return }
+    if (hl.includes('bluebook'))                                         { map[h] = 'bluebook_url'; return }
+    if (hl.includes('subject') || hl.includes('course') || hl.includes('class')) { map[h] = 'subjects'; return }
+
+    // 3. Generic fallbacks — only for non-family-context headers
+    if (!isMom && !isDad && !isParent && hasEmail) { map[h] = 'email'; return }
+    if (!isMom && !isDad && !isParent && hasPhone) { map[h] = 'phone'; return }
+
+    // 4. Name catch-all (student name variants: "First Name", "Full Name", "Student Name")
+    if (hasName) { map[h] = 'name'; return }
   })
   return map
 }
@@ -65,7 +76,6 @@ function parseDelimited(text: string, delimiter: string): { headers: string[]; r
 
 type Step = 'upload' | 'map' | 'importing'
 type Mode = 'file' | 'paste'
-type DupStrategy = 'skip' | 'update' | 'add'
 
 interface Props {
   onClose: () => void
@@ -80,7 +90,7 @@ export function CSVImportModal({ onClose, onImported }: Props) {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
-  const [dupStrategy, setDupStrategy] = useState<DupStrategy>('skip')
+  const [importingLabel, setImportingLabel] = useState('')
   const [centerSubjects, setCenterSubjects] = useState<string[]>([])
   const [existingNames, setExistingNames] = useState<Map<string, string>>(new Map())
   const [loadingExisting, setLoadingExisting] = useState(false)
@@ -188,63 +198,48 @@ export function CSVImportModal({ onClose, onImported }: Props) {
   })
 
   const handleImport = async () => {
+    setImportingLabel(`Importing ${validRows.length} student${validRows.length !== 1 ? 's' : ''}…`)
     setStep('importing')
     const records = buildRecords()
-
-    if (dupStrategy === 'add') {
-      // Insert everything, no duplicate check (intentional — user explicitly chose this)
-      const { error } = await supabase.from(STUDENTS).insert(records.map(r => withCenterPayload(r)))
+    let byName = existingNames
+    if (byName.size === 0 && !loadingExisting) {
+      const { data, error: fetchErr } = await withCenter(supabase.from(STUDENTS).select('id, name'))
+      if (fetchErr) { setError(fetchErr.message); setStep('map'); return }
+      byName = new Map((data ?? []).map((s: { id: string; name: string }) => [s.name?.toLowerCase().trim(), s.id]))
+    }
+    const newRecords = records.filter(r => !byName.has((r.name ?? '').toLowerCase().trim()))
+    const updateRecords = records.filter(r => byName.has((r.name ?? '').toLowerCase().trim()))
+    // Add new students
+    if (newRecords.length > 0) {
+      const { error } = await supabase.from(STUDENTS).insert(newRecords.map(r => withCenterPayload(r)))
       if (error) { setError(error.message); setStep('map'); return }
-    } else {
-      // Use pre-fetched names; fall back to a fresh fetch if somehow not loaded yet
-      let byName = existingNames
-      if (byName.size === 0 && !loadingExisting) {
-        const { data, error: fetchErr } = await withCenter(supabase.from(STUDENTS).select('id, name'))
-        if (fetchErr) { setError(fetchErr.message); setStep('map'); return }
-        byName = new Map((data ?? []).map((s: { id: string; name: string }) => [s.name?.toLowerCase().trim(), s.id]))
-      }
-
-      const newRecords = records.filter(r => !byName.has((r.name ?? '').toLowerCase().trim()))
-      const updateRecords = records.filter(r => byName.has((r.name ?? '').toLowerCase().trim()))
-
-      if (newRecords.length > 0) {
-        const { error } = await supabase.from(STUDENTS).insert(newRecords.map(r => withCenterPayload(r)))
-        if (error) { setError(error.message); setStep('map'); return }
-      }
-
-      if (dupStrategy === 'update' && updateRecords.length > 0) {
-        // Only patch the fields actually mapped in this import (don't null-out unmapped columns)
-        // Also skip any field whose value is null/empty — never overwrite real data with a blank cell
-        const mappedFields = [...new Set(Object.values(mapping).filter(Boolean))]
-        for (const rec of updateRecords) {
-          const id = byName.get((rec.name ?? '').toLowerCase().trim())
-          const patch: any = {}
-          mappedFields.forEach(f => {
-            if (f === 'name') return
-            const v = rec[f]
-            // Skip nulls and empty arrays — don't clobber existing data with blank CSV cells
-            if (v === null || v === undefined) return
-            if (Array.isArray(v) && v.length === 0) return
-            patch[f] = v
-          })
-          if (Object.keys(patch).length > 0) {
-            const { error } = await supabase.from(STUDENTS).update(patch).eq('id', id)
-            if (error) { setError(error.message); setStep('map'); return }
-          }
+    }
+    // Update existing students (only mapped, non-blank fields)
+    if (updateRecords.length > 0) {
+      const mappedFields = [...new Set(Object.values(mapping).filter(Boolean))]
+      for (const rec of updateRecords) {
+        const id = byName.get((rec.name ?? '').toLowerCase().trim())
+        const patch: any = {}
+        mappedFields.forEach(f => {
+          if (f === 'name') return
+          const v = rec[f]
+          if (v === null || v === undefined) return
+          if (Array.isArray(v) && v.length === 0) return
+          patch[f] = v
+        })
+        if (Object.keys(patch).length > 0) {
+          const { error } = await supabase.from(STUDENTS).update(patch).eq('id', id)
+          if (error) { setError(error.message); setStep('map'); return }
         }
       }
     }
-
     logEvent('students_imported', { count: records.length })
-    onImported()
-    onClose()
+    onImported(); onClose()
   }
 
   const hasMappedName = Object.values(mapping).includes('name')
 
-  // Live breakdown: how many of the valid rows are new vs already exist
   const importBreakdown = useMemo(() => {
-    if (dupStrategy === 'add') return null
     const names = validRows.map(r => {
       const v = getMapped(r, 'name')
       const raw = Array.isArray(v) ? (v.find(Boolean) ?? '') : (v ?? '')
@@ -253,21 +248,20 @@ export function CSVImportModal({ onClose, onImported }: Props) {
     const matchCount = names.filter(n => n && existingNames.has(n)).length
     const newCount = names.filter(n => n && !existingNames.has(n)).length
     return { newCount, matchCount }
-  }, [validRows, existingNames, mapping, dupStrategy])
-
+  }, [validRows, existingNames, mapping])
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden"
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 600, maxHeight: '88vh', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+        style={{ maxWidth: 780, maxHeight: '90vh', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
 
         {/* Header */}
         <div className="px-6 py-4 flex items-center justify-between shrink-0"
           style={{ borderBottom: '1px solid #f1f5f9', background: '#fafafa' }}>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#dc2626] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[#4f46e5] flex items-center justify-center">
               <Upload size={14} className="text-white" />
             </div>
             <div>
@@ -311,10 +305,10 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                   onClick={() => fileRef.current?.click()}
                   className="rounded-xl cursor-pointer flex flex-col items-center justify-center gap-3 py-12 transition-all"
                   style={{ border: '2px dashed #e2e8f0', background: '#fafafa' }}
-                  onMouseEnter={e => { const el = e.currentTarget; el.style.borderColor = '#dc2626'; el.style.background = '#fff5f5' }}
+                  onMouseEnter={e => { const el = e.currentTarget; el.style.borderColor = '#4f46e5'; el.style.background = '#f5f3ff' }}
                   onMouseLeave={e => { const el = e.currentTarget; el.style.borderColor = '#e2e8f0'; el.style.background = '#fafafa' }}>
-                  <div className="w-11 h-11 rounded-2xl bg-[#fef2f2] flex items-center justify-center">
-                    <FileText size={20} style={{ color: '#dc2626' }} />
+                  <div className="w-11 h-11 rounded-2xl bg-[#ede9fe] flex items-center justify-center">
+                    <FileText size={20} style={{ color: '#4f46e5' }} />
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-bold text-[#1e293b]">Drop CSV file here</p>
@@ -340,19 +334,19 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                     rows={8}
                     className="w-full px-4 py-3 text-sm rounded-xl resize-none outline-none font-mono"
                     style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', color: '#1e293b', lineHeight: 1.5 }}
-                    onFocus={e => { e.currentTarget.style.borderColor = '#dc2626' }}
+                    onFocus={e => { e.currentTarget.style.borderColor = '#4f46e5' }}
                     onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0' }}
                   />
                   <button onClick={handlePaste}
                     disabled={!pasteText.trim()}
                     className="w-full py-2.5 rounded-xl text-sm font-black text-white disabled:opacity-40 transition-all"
-                    style={{ background: '#dc2626' }}>
+                    style={{ background: '#4f46e5' }}>
                     Parse Data
                   </button>
                 </div>
               )}
 
-              {error && <p className="text-xs text-[#dc2626] font-medium">{error}</p>}
+              {error && <p className="text-xs font-medium" style={{ color: '#dc2626' }}>{error}</p>}
 
               {/* Field reference */}
               <div className="p-3 rounded-xl" style={{ background: '#f8fafc', border: '1px solid #f1f5f9' }}>
@@ -360,7 +354,7 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                 <div className="flex flex-wrap gap-1.5">
                   {DB_FIELDS.map(f => (
                     <span key={f.key} className="text-[10px] px-2 py-0.5 rounded-md font-semibold"
-                      style={{ background: f.required ? '#fef2f2' : '#f1f5f9', color: f.required ? '#dc2626' : '#64748b' }}>
+                      style={{ background: f.required ? '#ede9fe' : '#f1f5f9', color: f.required ? '#4f46e5' : '#64748b' }}>
                       {f.label}{f.required ? ' *' : ''}
                     </span>
                   ))}
@@ -379,13 +373,13 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                 Tip: you can map multiple columns to <span className="font-bold text-[#64748b]">Subjects</span> — they&apos;ll be merged into one list. Comma-separated values in a single cell also work.
               </p>
               <div className="space-y-2">
-                {headers.map(h => (
-                  <div key={h} className="flex items-center gap-3 rounded-2xl p-3 shadow-[0_6px_18px_rgba(15,23,42,0.05)]"
-                    style={{ background: '#ffffff', border: `1px solid ${mapping[h] ? '#fda4af' : '#cbd5e1'}` }}>
+                {headers.map((h, hIdx) => (
+                  <div key={`${h}-${hIdx}`} className="flex items-center gap-3 rounded-xl p-3"
+                    style={{ background: '#ffffff', border: `1px solid ${mapping[h] ? '#c7d2fe' : '#e2e8f0'}` }}>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-[#1e293b] truncate">{h}</p>
+                      <p className="text-xs font-bold text-[#1e293b] truncate">{h || <span className="italic text-[#94a3b8]">(empty header)</span>}</p>
                       <p className="text-[10px] text-[#94a3b8]">
-                        {rows[0]?.[headers.indexOf(h)] ? `e.g. "${rows[0][headers.indexOf(h)]}"` : 'empty'}
+                        {rows[0]?.[hIdx] ? `e.g. "${rows[0][hIdx]}"` : 'empty column'}
                       </p>
                     </div>
                     <ChevronRight size={12} className="text-[#cbd5e1] shrink-0" />
@@ -394,9 +388,9 @@ export function CSVImportModal({ onClose, onImported }: Props) {
                       onChange={e => setMapping(m => ({ ...m, [h]: e.target.value }))}
                       className="rounded-xl border px-3 py-2 text-xs font-black outline-none transition-all"
                       style={{
-                        background: mapping[h] ? '#fff1f2' : '#f8fafc',
-                        borderColor: mapping[h] ? '#f87171' : '#94a3b8',
-                        color: mapping[h] ? '#991b1b' : '#334155',
+                        background: mapping[h] ? '#eef2ff' : '#f8fafc',
+                        borderColor: mapping[h] ? '#818cf8' : '#cbd5e1',
+                        color: mapping[h] ? '#3730a3' : '#334155',
                         minWidth: 160,
                       }}>
                       <option value="">— Skip —</option>
@@ -409,74 +403,56 @@ export function CSVImportModal({ onClose, onImported }: Props) {
               </div>
 
               {/* Preview */}
-              {validRows.length > 0 && (
-                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
-                  <p className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-[#94a3b8]"
-                    style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                    Preview · first 3 rows
-                  </p>
-                  <div className="divide-y divide-[#f1f5f9]">
-                    {validRows.slice(0, 3).map((row, i) => (
-                      <div key={i} className="px-4 py-2.5 flex gap-4 text-xs">
-                        <span className="font-bold text-[#0f172a] w-28 shrink-0 truncate">{getMapped(row, 'name')}</span>
-                        {getMapped(row, 'grade') && <span className="text-[#64748b]">Gr. {getMapped(row, 'grade')}</span>}
-                        {getSubjectsPreview(row) && <span className="text-[#16a34a] truncate">📚 {getSubjectsPreview(row)}</span>}
-                        {getMapped(row, 'email') && <span className="text-[#94a3b8] truncate">{getMapped(row, 'email')}</span>}
-                      </div>
-                    ))}
+              {validRows.length > 0 && (() => {
+                const mappedCols = Object.entries(mapping).filter(([, v]) => v).map(([h, field]) => ({ header: h, field }))
+                return (
+                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #e2e8f0' }}>
+                    <p className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-[#64748b]"
+                      style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      Preview — first {Math.min(5, validRows.length)} of {validRows.length} rows
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            {mappedCols.map(({ header, field }) => (
+                              <th key={`${header}-${field}`} className="px-3 py-2 text-left font-black text-[#475569] whitespace-nowrap" style={{ borderRight: '1px solid #f1f5f9' }}>
+                                {DB_FIELDS.find(f => f.key === field)?.label ?? field}
+                                <span className="block text-[9px] font-normal text-[#94a3b8] mt-0.5">{header}</span>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {validRows.slice(0, 5).map((row, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                              {mappedCols.map(({ header, field }) => {
+                                const val = field === 'subjects' ? getSubjectsPreview(row) : getMapped(row, field)
+                                const display = Array.isArray(val) ? val.filter(Boolean).join(', ') : (val ?? '')
+                                return (
+                                  <td key={`${header}-${field}`} className="px-3 py-2 text-[#1e293b] max-w-40 truncate" style={{ borderRight: '1px solid #f1f5f9' }}>
+                                    {display || <span className="text-[#cbd5e1]">—</span>}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
-              {/* Duplicate strategy */}
-              <div className="rounded-xl p-4 space-y-2" style={{ background: '#fff', border: '1.5px solid #e2e8f0' }}>
-                <p className="text-xs font-black text-[#1e293b]">If a student name already exists…</p>
-                <div className="flex gap-2">
-                  {([
-                    { value: 'skip',   label: 'Skip existing',   desc: 'Leave existing record untouched' },
-                    { value: 'update', label: 'Update existing',  desc: 'Patch only mapped, non-blank columns' },
-                    { value: 'add',    label: 'Force add all',    desc: '⚠️ Inserts a new row regardless — use only for same-name different students' },
-                  ] as { value: DupStrategy; label: string; desc: string }[]).map(opt => (
-                    <button key={opt.value}
-                      onClick={() => setDupStrategy(opt.value)}
-                      className="flex-1 rounded-xl px-3 py-2.5 text-left transition-all"
-                      style={dupStrategy === opt.value
-                        ? { background: '#fef2f2', border: '2px solid #dc2626' }
-                        : { background: '#f8fafc', border: '2px solid #e2e8f0' }}>
-                      <p className="text-xs font-black" style={{ color: dupStrategy === opt.value ? '#dc2626' : '#1e293b' }}>{opt.label}</p>
-                      <p className="text-[10px] mt-0.5" style={{ color: '#94a3b8' }}>{opt.desc}</p>
-                    </button>
-                  ))}
-                </div>
-                {/* Live breakdown */}
-                {hasMappedName && (
-                  <div className="mt-2 pt-2 border-t border-[#f1f5f9]">
-                    {loadingExisting ? (
-                      <p className="text-[10px] text-[#94a3b8]">Checking for existing students…</p>
-                    ) : dupStrategy === 'add' ? (
-                      <p className="text-[10px] text-[#dc2626] font-semibold">All {validRows.length} rows will be inserted as new records.</p>
-                    ) : importBreakdown ? (
-                      <p className="text-[10px] text-[#475569]">
-                        <span className="font-bold text-[#16a34a]">{importBreakdown.newCount} new</span>
-                        {' '}student{importBreakdown.newCount !== 1 ? 's' : ''} will be added
-                        {importBreakdown.matchCount > 0 && (
-                          <> · <span className="font-bold text-[#dc2626]">{importBreakdown.matchCount} existing</span> will be {dupStrategy === 'update' ? 'updated (mapped non-blank fields only)' : 'skipped'}</>
-                        )}
-                      </p>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-
-              {error && <p className="text-xs text-[#dc2626] font-medium">{error}</p>}
+              {error && <p className="text-xs font-medium" style={{ color: '#dc2626' }}>{error}</p>}
             </div>
           )}
 
           {/* IMPORTING */}
           {step === 'importing' && (
             <div className="py-16 flex flex-col items-center gap-4">
-              <Loader2 size={32} className="animate-spin text-[#dc2626]" />
-              <p className="text-sm font-bold text-[#1e293b]">Importing {validRows.length} students...</p>
+              <Loader2 size={32} className="animate-spin text-[#4f46e5]" />
+              <p className="text-sm font-bold text-[#1e293b]">{importingLabel}</p>
             </div>
           )}
         </div>
@@ -485,28 +461,27 @@ export function CSVImportModal({ onClose, onImported }: Props) {
         {step === 'map' && (
           <div className="px-6 py-4 shrink-0"
             style={{ borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="text-xs text-[#94a3b8]">
-                <span className="font-bold text-[#1e293b]">{rows.length}</span> rows ·{' '}
-                <span className="font-bold text-[#dc2626]">{validRows.length}</span> with name ·{' '}
-                <span className="font-bold text-[#64748b]">{rows.length - validRows.length}</span> skipped
+                {loadingExisting ? 'Checking…' : importBreakdown && (
+                  <>
+                    {importBreakdown.newCount > 0 && <span><span className="font-bold text-[#16a34a]">{importBreakdown.newCount} new</span></span>}
+                    {importBreakdown.newCount > 0 && importBreakdown.matchCount > 0 && ' · '}
+                    {importBreakdown.matchCount > 0 && <span><span className="font-bold" style={{ color: '#4f46e5' }}>{importBreakdown.matchCount} existing</span> will be updated</span>}
+                  </>
+                )}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => { setStep('upload'); setError('') }}
                   className="px-4 py-2 rounded-lg text-xs font-bold text-[#64748b]" style={{ background: '#f1f5f9' }}>
                   Back
                 </button>
-                <button onClick={handleImport} disabled={!hasMappedName || validRows.length === 0}
+                <button
+                  onClick={handleImport}
+                  disabled={!hasMappedName || validRows.length === 0 || loadingExisting}
                   className="px-5 py-2 rounded-lg text-xs font-black text-white disabled:opacity-40 transition-all"
-                  style={{ background: '#dc2626' }}>
-                  {dupStrategy === 'add'
-                    ? `Add all ${validRows.length}`
-                    : importBreakdown
-                      ? [
-                          importBreakdown.newCount > 0 && `Add ${importBreakdown.newCount}`,
-                          importBreakdown.matchCount > 0 && (dupStrategy === 'update' ? `Update ${importBreakdown.matchCount}` : `Skip ${importBreakdown.matchCount}`),
-                        ].filter(Boolean).join(' · ') || `Import ${validRows.length}`
-                      : `Import ${validRows.length}`}
+                  style={{ background: '#4f46e5' }}>
+                  Import {validRows.length > 0 ? validRows.length : ''}
                 </button>
               </div>
             </div>
