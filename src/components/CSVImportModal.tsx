@@ -101,34 +101,59 @@ export function CSVImportModal({ onClose, onImported }: Props) {
     ingest(pasteText)
   }
 
+  // Support mapping multiple columns to the same field (e.g., 'subjects')
   const getMapped = (row: string[], field: string) => {
-    const header = Object.entries(mapping).find(([, v]) => v === field)?.[0]
-    if (!header) return null
-    const idx = headers.indexOf(header)
-    return idx >= 0 ? row[idx] || null : null
+    // Find all headers mapped to this field
+    const headersForField = Object.entries(mapping)
+      .filter(([, v]) => v === field)
+      .map(([k]) => k)
+    if (headersForField.length === 0) return null
+    // Return array of values for this field
+    return headersForField
+      .map(header => {
+        const idx = headers.indexOf(header)
+        return idx >= 0 ? row[idx] || null : null
+      })
   }
 
-  const validRows = rows.filter(r => getMapped(r, 'name'))
+  const validRows = rows.filter(r => {
+    const mapped = getMapped(r, 'name')
+    if (Array.isArray(mapped)) {
+      return mapped.some(Boolean)
+    }
+    return !!mapped
+  })
 
   const handleImport = async () => {
     setStep('importing')
     const records = validRows.map(row => {
       const rec: any = {}
-      DB_FIELDS.forEach(f => { 
+      DB_FIELDS.forEach(f => {
         const val = getMapped(row, f.key)
-        
-        // Dynamic handling for the array column
         if (f.key === 'subjects') {
-          rec[f.key] = val 
-            ? val.split(/[,;|]/).map(s => s.trim()).filter(Boolean) 
-            : []
+          // Merge all mapped columns, split by comma/semicolon/pipe, trim, and flatten
+          let allSubjects: string[] = []
+          if (Array.isArray(val)) {
+            val.forEach(v => {
+              if (v) {
+                allSubjects.push(...v.split(/[,;|]/).map(s => s.trim()).filter(Boolean))
+              }
+            })
+          } else if (val) {
+            allSubjects = val.split(/[,;|]/).map(s => s.trim()).filter(Boolean)
+          }
+          rec[f.key] = allSubjects
         } else {
-          rec[f.key] = val || null
+          // If multiple columns mapped, just take the first non-empty value
+          if (Array.isArray(val)) {
+            rec[f.key] = val.find(Boolean) || null
+          } else {
+            rec[f.key] = val || null
+          }
         }
       })
       return rec
     })
-    
     const { error } = await supabase.from(STUDENTS).insert(records.map(record => withCenterPayload(record)))
     if (error) { setError(error.message); setStep('map'); return }
     logEvent('students_imported', { count: records.length })
