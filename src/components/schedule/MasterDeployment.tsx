@@ -846,6 +846,7 @@ export default function MasterDeployment() {
         weeklySessions={weeklySessions}
         onConfirmWeek={() => setIsConfirmWeekOpen(true)}
         weekConfirmedAt={weekConfirmedAt}
+        onJumpToDate={(date) => setWeekStart(getWeekStart(date))}
       />
 
       {todayView && (

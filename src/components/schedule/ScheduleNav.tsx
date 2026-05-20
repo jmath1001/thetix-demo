@@ -2,6 +2,7 @@
 import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2, Check } from 'lucide-react';
 import { useState } from 'react';
 import { formatWeekRange } from './scheduleConstants';
+import { toISODate } from '@/lib/useScheduleData';
 
 interface ScheduleNavProps {
   todayView: boolean;
@@ -27,6 +28,7 @@ interface ScheduleNavProps {
   commandBarSlot?: React.ReactNode;
   onConfirmWeek?: () => void;
   weekConfirmedAt?: string | null;
+  onJumpToDate?: (date: Date) => void;
 }
 
 export function ScheduleNav({
@@ -53,6 +55,7 @@ export function ScheduleNav({
   commandBarSlot,
   onConfirmWeek,
   weekConfirmedAt,
+  onJumpToDate,
 }: ScheduleNavProps) {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
 
@@ -86,6 +89,24 @@ export function ScheduleNav({
                 <div className="text-xs font-bold leading-none" style={{ color: '#111827', fontFamily: 'ui-serif, Georgia, serif' }}>{formatWeekRange(weekStart)}</div>
                 {isCurrentWeek && <div className="text-[8px] font-bold uppercase tracking-widest mt-0.5" style={{ color: '#4f46e5' }}>This Week</div>}
               </div>
+              {onJumpToDate && (
+                <label
+                  className="w-6 h-6 md:w-7 md:h-7 rounded-lg flex items-center justify-center cursor-pointer shrink-0 relative overflow-hidden"
+                  style={{ background: 'white', border: '1px solid #a5b4fc', color: '#818cf8' }}
+                  title="Jump to week">
+                  <CalendarDays size={11} className="pointer-events-none relative z-10" />
+                  <input
+                    type="date"
+                    value={toISODate(weekStart)}
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      const d = new Date(e.target.value + 'T00:00:00');
+                      if (!isNaN(d.getTime())) onJumpToDate(d);
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </label>
+              )}
               <button onClick={goToNextWeek} className="w-6 h-6 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-all shrink-0"
                 style={{ background: 'white', border: '1px solid #a5b4fc', color: '#4f46e5' }}>
                 <ChevronRight size={12} />
