@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, X, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
 import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
@@ -196,6 +196,56 @@ export function WeekView({
     if (isOutside || !draggingTopic) return null;
     return topicMatchesTutor(tutor, draggingTopic) ? 'valid' : 'invalid';
   };
+
+  const todayTableScrollRef = useRef<HTMLDivElement | null>(null);
+  const setTodayScrollEl = useCallback((el: HTMLDivElement | null) => { todayTableScrollRef.current = el; }, []);
+
+  const scrollToNow = useCallback(() => {
+    const el = todayTableScrollRef.current;
+    if (!el || !sessionTimesByDay) return;
+    const now = getCentralTimeNow();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayDow = dayOfWeek(toISODate(now));
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let targetIndex = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const [h, m] = blocks[i].time.split(':').map(Number);
+      if (h * 60 + m > currentMinutes) { targetIndex = Math.max(0, i - 1); break; }
+      targetIndex = i;
+    }
+    el.scrollTo({ left: targetIndex * 220, behavior: 'smooth' });
+  }, [sessionTimesByDay]);
+
+  const currentTimeBlockTime = useMemo(() => {
+    const now = getCentralTimeNow();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const todayDow = dayOfWeek(toISODate(now));
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let result: string | null = null;
+    for (const block of blocks) {
+      const [h, m] = block.time.split(':').map(Number);
+      if (h * 60 + m <= currentMins) result = block.time;
+      else break;
+    }
+    return result;
+  }, [sessionTimesByDay]);
+
+  useEffect(() => {
+    if (!sessionTimesByDay) return;
+    const el = todayTableScrollRef.current;
+    if (!el) return;
+    const now = getCentralTimeNow();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayDow = dayOfWeek(toISODate(now));
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let targetIndex = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const [h, m] = blocks[i].time.split(':').map(Number);
+      if (h * 60 + m > currentMinutes) { targetIndex = Math.max(0, i - 1); break; }
+      targetIndex = i;
+    }
+    if (targetIndex > 0) el.scrollLeft = targetIndex * 220;
+  }, [sessionTimesByDay]);
 
   const handleSave = async (key: string, tutor: Tutor, date: string, block: any) => {
     const form = forms[key];
@@ -666,6 +716,13 @@ export function WeekView({
                   )}
                 </span>
               </div>
+              {isToday && (
+                <button onClick={scrollToNow}
+                  className="hidden md:flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 cursor-pointer transition-opacity hover:opacity-80 active:opacity-60"
+                  style={{ background: '#4338ca', color: 'white', border: 'none' }}>
+                  Current
+                </button>
+              )}
               <div className="h-px grow rounded-full"
                 style={{ background: 'linear-gradient(90deg, #cbd5e1, transparent)' }} />
             </div>
@@ -694,7 +751,7 @@ export function WeekView({
                 {/* Desktop table */}
                 <div className="hidden md:block rounded-xl"
                   style={{ background: 'white', border: '2px solid #94a3b8', boxShadow: '0 1px 8px rgba(0,0,0,0.06)', overflow: 'clip' }}>
-                  <div className="overflow-x-auto schedule-scroll">
+                  <div className="overflow-x-auto schedule-scroll" ref={isToday ? setTodayScrollEl : undefined}>
                     <table className="border-collapse" style={{ minWidth: filteredDaySessions.length * 220 + 180, width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                       <thead>
                         <tr style={{ background: '#1f2937', borderBottom: '1px solid #111827' }}>
@@ -703,13 +760,16 @@ export function WeekView({
                             Instructor
                             {termName && <div style={{ color: '#fbbf24', fontSize: 9, fontWeight: 700, marginTop: 2, textTransform: 'none', letterSpacing: 0 }}>{termName}</div>}
                           </th>
-                          {filteredDaySessions.map(block => (
-                            <th key={block.id} className="px-3 py-1.5 text-center"
-                              style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 220, position: 'sticky', top: 0, background: '#1f2937', zIndex: 3 }}>
-                              <div className="text-xs font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.9)' }}>{block.label}</div>
-                              <div className="text-[11px] font-semibold mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>{block.display}</div>
-                            </th>
-                          ))}
+                          {filteredDaySessions.map(block => {
+                            const isNowBlock = isToday && block.time === currentTimeBlockTime;
+                            return (
+                              <th key={block.id} className="px-3 py-1.5 text-center"
+                                style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 220, position: 'sticky', top: 0, background: isNowBlock ? '#3730a3' : '#1f2937', zIndex: 3 }}>
+                                <div className="text-xs font-black uppercase tracking-wider" style={{ color: isNowBlock ? '#c7d2fe' : 'rgba(255,255,255,0.9)' }}>{block.label}</div>
+                                <div className="text-[11px] font-semibold mt-0.5" style={{ color: isNowBlock ? '#818cf8' : 'rgba(255,255,255,0.45)' }}>{block.display}</div>
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>

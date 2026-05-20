@@ -371,9 +371,11 @@ export default function ContactCenter() {
 
   // Tutor schedule email state
   const [tutorSchedExpanded, setTutorSchedExpanded]   = useState(false);
+  const [tutorSchedMode, setTutorSchedMode]           = useState<'weekly' | 'daily'>('weekly');
   const [tutorSchedWeek, setTutorSchedWeek]           = useState(() => {
     const d = new Date(); const dow = d.getDay(); d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow)); return toISODate(d);
   });
+  const [tutorSchedDay, setTutorSchedDay]             = useState(() => toISODate(new Date()));
   const [tutorsWithEmail, setTutorsWithEmail]         = useState<{ id: string; name: string; email: string }[]>([]);
   const [tutorSchedSending, setTutorSchedSending]     = useState(false);
   const [tutorSchedResult, setTutorSchedResult]       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null; skipped?: boolean; reason?: string } | null>(null);
@@ -728,7 +730,7 @@ export default function ContactCenter() {
       const res = await fetch('/api/send-tutor-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tutorIds: tutorsWithEmail.map(t => t.id), mode: 'weekly', date: tutorSchedWeek }),
+        body: JSON.stringify({ tutorIds: tutorsWithEmail.map(t => t.id), mode: tutorSchedMode, date: tutorSchedMode === 'weekly' ? tutorSchedWeek : tutorSchedDay }),
       });
       const data = await res.json();
       if (!res.ok) setTutorSchedResult({ sent: 0, failed: tutorsWithEmail.length, errors: [data.error ?? 'Request failed'] });
@@ -1011,31 +1013,41 @@ export default function ContactCenter() {
 
   const openTutorSchedulePreview = async () => {
     const previewTutor = tutorsWithEmail[0];
-    const fromDate = tutorSchedWeek;
-    const toDate = addDaysIso(fromDate, 6);
-    const startFmt = new Date(`${fromDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const endFmt = new Date(`${toDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const periodLabel = `Week of ${startFmt}–${endFmt}`;
+    const isDaily = tutorSchedMode === 'daily';
+    const fromDate = isDaily ? tutorSchedDay : tutorSchedWeek;
+    const toDate = isDaily ? fromDate : addDaysIso(fromDate, 6);
+    const periodLabel = isDaily
+      ? fmtDate(fromDate)
+      : (() => {
+          const startFmt = new Date(`${fromDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const endFmt = new Date(`${toDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          return `Week of ${startFmt}–${endFmt}`;
+        })();
     const centerName = settings?.center_name ?? DEFAULT_SETTINGS.center_name;
+    const previewTitle = isDaily ? 'Tutor Daily Schedule Preview' : 'Tutor Weekly Schedule Preview';
+    const subjectLine = isDaily ? `Your schedule for ${periodLabel}` : `Your weekly schedule — ${periodLabel}`;
 
     // Dummy schedule used when real data is unavailable or empty
-    const buildDummySchedule = (): ScheduleEntry[] => [
-      { date: addDaysIso(fromDate, 1), time: '15:00', students: [{ name: 'Alex Johnson', topic: 'Algebra II' }, { name: 'Maya Patel', topic: 'Pre-Calc' }] },
-      { date: addDaysIso(fromDate, 1), time: '16:30', students: [{ name: 'Ethan Williams', topic: 'SAT Math' }] },
-      { date: addDaysIso(fromDate, 3), time: '14:00', students: [{ name: 'Sofia Chen', topic: 'Geometry' }, { name: 'Liam Brown', topic: 'Statistics' }] },
-      { date: addDaysIso(fromDate, 3), time: '17:00', students: [{ name: 'Noah Davis', topic: 'Calculus' }] },
-      { date: addDaysIso(fromDate, 5), time: '15:30', students: [{ name: 'Emma Wilson', topic: 'Pre-Calc' }, { name: 'Oliver Moore', topic: 'Algebra II' }] },
-    ];
+    const buildDummySchedule = (): ScheduleEntry[] => isDaily
+      ? [
+          { date: fromDate, time: '15:00', students: [{ name: 'Alex Johnson', topic: 'Algebra II' }, { name: 'Maya Patel', topic: 'Pre-Calc' }] },
+          { date: fromDate, time: '16:30', students: [{ name: 'Ethan Williams', topic: 'SAT Math' }] },
+        ]
+      : [
+          { date: addDaysIso(fromDate, 1), time: '15:00', students: [{ name: 'Alex Johnson', topic: 'Algebra II' }, { name: 'Maya Patel', topic: 'Pre-Calc' }] },
+          { date: addDaysIso(fromDate, 1), time: '16:30', students: [{ name: 'Ethan Williams', topic: 'SAT Math' }] },
+          { date: addDaysIso(fromDate, 3), time: '14:00', students: [{ name: 'Sofia Chen', topic: 'Geometry' }, { name: 'Liam Brown', topic: 'Statistics' }] },
+          { date: addDaysIso(fromDate, 3), time: '17:00', students: [{ name: 'Noah Davis', topic: 'Calculus' }] },
+          { date: addDaysIso(fromDate, 5), time: '15:30', students: [{ name: 'Emma Wilson', topic: 'Pre-Calc' }, { name: 'Oliver Moore', topic: 'Algebra II' }] },
+        ];
 
     if (!previewTutor) {
       const dummySchedule = buildDummySchedule();
-      const subject = `Your weekly schedule — ${periodLabel}`;
-      // Use a generic placeholder name for the tutor
       const html = buildScheduleHtml(centerName, 'Sample Tutor', dummySchedule, periodLabel);
       setPreviewModal({
-        title: 'Tutor Weekly Schedule Preview',
-        subject,
-        html: buildPreviewFrameHtml(subject, html),
+        title: previewTitle,
+        subject: subjectLine,
+        html: buildPreviewFrameHtml(subjectLine, html),
         note: 'Sample preview — add a tutor email to preview a real schedule.',
       });
       return;
@@ -1068,23 +1080,21 @@ export default function ContactCenter() {
         };
       });
 
-      // Fall back to dummy data if the tutor has no sessions this week
       const displaySchedule = schedule.length > 0 ? schedule : buildDummySchedule();
       const isDummy = schedule.length === 0;
 
-      const subject = `Your weekly schedule — ${periodLabel}`;
       const html = buildScheduleHtml(centerName, previewTutor.name ?? 'Tutor', displaySchedule, periodLabel);
       setPreviewModal({
-        title: 'Tutor Weekly Schedule Preview',
-        subject,
-        html: buildPreviewFrameHtml(subject, html),
+        title: previewTitle,
+        subject: subjectLine,
+        html: buildPreviewFrameHtml(subjectLine, html),
         note: isDummy
           ? `Sample preview for ${previewTutor.name ?? 'Tutor'} — no real sessions found for ${periodLabel}.`
           : `Previewing ${previewTutor.name ?? 'Tutor'} for ${periodLabel}.`,
       });
     } catch (error: any) {
       setPreviewModal({
-        title: 'Tutor Weekly Schedule Preview',
+        title: previewTitle,
         subject: 'Preview unavailable',
         html: buildPreviewFrameHtml('Preview unavailable', `<div style="padding:32px;font-family:ui-sans-serif,system-ui,sans-serif;color:#991b1b;background:#fff;">${error?.message ?? 'Failed to load preview.'}</div>`),
         note: error?.message ?? 'Failed to load preview.',
@@ -1868,20 +1878,46 @@ export default function ContactCenter() {
           <div className="space-y-4">
             <SectionHeader
               icon={<Calendar size={15} className="text-indigo-600" />}
-              title="Tutor Weekly Schedules"
-              description="Email each tutor a summary of their sessions for the selected week."
+              title="Tutor Schedules"
+              description="Email each tutor a summary of their sessions for the selected period."
             />
 
             <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5">
+              {/* Mode toggle */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setTutorSchedMode('weekly'); setTutorSchedResult(null); }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${tutorSchedMode === 'weekly' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >Weekly</button>
+                <button
+                  onClick={() => { setTutorSchedMode('daily'); setTutorSchedResult(null); }}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${tutorSchedMode === 'daily' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >Daily</button>
+              </div>
+
               <div className="flex flex-wrap items-end gap-4">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">Week starting (Monday)</label>
-                  <input
-                    type="date"
-                    value={tutorSchedWeek}
-                    onChange={e => { setTutorSchedWeek(e.target.value); setTutorSchedResult(null); }}
-                    className={`${baseInputCls} w-auto`}
-                  />
+                  {tutorSchedMode === 'weekly' ? (
+                    <>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">Week starting (Monday)</label>
+                      <input
+                        type="date"
+                        value={tutorSchedWeek}
+                        onChange={e => { setTutorSchedWeek(e.target.value); setTutorSchedResult(null); }}
+                        className={`${baseInputCls} w-auto`}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">Date</label>
+                      <input
+                        type="date"
+                        value={tutorSchedDay}
+                        onChange={e => { setTutorSchedDay(e.target.value); setTutorSchedResult(null); }}
+                        className={`${baseInputCls} w-auto`}
+                      />
+                    </>
+                  )}
                 </div>
                 <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-2.5 text-sm">
                   {tutorsWithEmail.length > 0 ? (

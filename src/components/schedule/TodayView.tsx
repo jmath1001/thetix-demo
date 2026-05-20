@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search, ChevronDown,  } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, type Tutor } from '@/lib/useScheduleData';
+import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
@@ -470,6 +470,54 @@ export function TodayView({
       })
     );
   }, [hasSlotFilter, daySessions, filteredTodayTutors, todaySessionByTutorTime, doesSlotMatchFilter]);
+
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const setTableScrollEl = useCallback((el: HTMLDivElement | null) => { tableScrollRef.current = el; }, []);
+
+  const scrollToCurrent = useCallback(() => {
+    const el = tableScrollRef.current;
+    if (!el || !sessionTimesByDay) return;
+    const now = getCentralTimeNow();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let targetIndex = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const [h, m] = blocks[i].time.split(':').map(Number);
+      if (h * 60 + m > currentMinutes) { targetIndex = Math.max(0, i - 1); break; }
+      targetIndex = i;
+    }
+    el.scrollTo({ left: targetIndex * 260, behavior: 'smooth' });
+  }, [sessionTimesByDay, todayDow]);
+
+  const currentTimeBlockTime = useMemo(() => {
+    if (!isToday) return null;
+    const now = getCentralTimeNow();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let result: string | null = null;
+    for (const block of blocks) {
+      const [h, m] = block.time.split(':').map(Number);
+      if (h * 60 + m <= currentMins) result = block.time;
+      else break;
+    }
+    return result;
+  }, [isToday, sessionTimesByDay, todayDow]);
+
+  useEffect(() => {
+    if (!isToday || !sessionTimesByDay) return;
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const now = getCentralTimeNow();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const blocks = getSessionsForDay(todayDow, sessionTimesByDay);
+    let targetIndex = 0;
+    for (let i = 0; i < blocks.length; i++) {
+      const [h, m] = blocks[i].time.split(':').map(Number);
+      if (h * 60 + m > currentMinutes) { targetIndex = Math.max(0, i - 1); break; }
+      targetIndex = i;
+    }
+    if (targetIndex > 0) el.scrollLeft = targetIndex * 260;
+  }, [isToday, sessionTimesByDay, todayDow]);
 
   const todayTutorIdSet = new Set(todayTutors.map(t => t.id));
   const visibleTodaySessions = sessions.filter(s => s.date === todayIso && todayTutorIdSet.has(s.tutorId));
@@ -1038,6 +1086,13 @@ export function TodayView({
             </p>
           </div>
           
+          {isToday && (
+            <button onClick={scrollToCurrent}
+              className="hidden md:flex items-center text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 cursor-pointer transition-opacity hover:opacity-80 active:opacity-60"
+              style={{ background: '#4338ca', color: 'white', border: 'none' }}>
+              Current
+            </button>
+          )}
           <PrintDailyButton
             todayIso={todayIso}
             dayLabel={dayLabel}
@@ -1191,7 +1246,7 @@ export function TodayView({
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
 
               {/* Desktop table */}
-              <div className="hidden md:block rounded-xl schedule-scroll" style={{ background: 'white', border: '2px solid #94a3b8', boxShadow: '0 1px 8px rgba(0,0,0,0.06)', flex: 1, minHeight: 0, overflow: 'auto' }}>
+              <div className="hidden md:block rounded-xl schedule-scroll" ref={isToday ? setTableScrollEl : undefined} style={{ background: 'white', border: '2px solid #94a3b8', boxShadow: '0 1px 8px rgba(0,0,0,0.06)', flex: 1, minHeight: 0, overflow: 'auto' }}>
                 <div style={{ minWidth: filteredDaySessions.length * 260 + 180, width: '100%' }}>
                   <table className="border-collapse w-full">
                     <thead>
@@ -1201,13 +1256,16 @@ export function TodayView({
                           Instructor
                           {termName && <div style={{ color: '#fbbf24', fontSize: 9, fontWeight: 700, marginTop: 2, textTransform: 'none', letterSpacing: 0 }}>{termName}</div>}
                         </th>
-                        {filteredDaySessions.map(block => (
-                          <th key={block.id} className="px-4 py-2.5 text-center"
-                            style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 260, position: 'sticky', top: 0, zIndex: 3, background: '#1f2937' }}>
-                            <div className="text-sm font-black uppercase tracking-wider" style={{ color: 'rgba(255,255,255,0.9)' }}>{block.label}</div>
-                            <div className="text-xs font-semibold mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>{block.display}</div>
-                          </th>
-                        ))}
+                        {filteredDaySessions.map(block => {
+                          const isCurrentBlock = block.time === currentTimeBlockTime;
+                          return (
+                            <th key={block.id} className="px-4 py-2.5 text-center"
+                              style={{ borderRight: '1px solid rgba(255,255,255,0.08)', minWidth: 260, position: 'sticky', top: 0, zIndex: 3, background: isCurrentBlock ? '#3730a3' : '#1f2937' }}>
+                              <div className="text-sm font-black uppercase tracking-wider" style={{ color: isCurrentBlock ? '#c7d2fe' : 'rgba(255,255,255,0.9)' }}>{block.label}</div>
+                              <div className="text-xs font-semibold mt-0.5" style={{ color: isCurrentBlock ? '#818cf8' : 'rgba(255,255,255,0.45)' }}>{block.display}</div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
