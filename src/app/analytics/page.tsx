@@ -6,7 +6,7 @@ import { DB, getCenterId } from '@/lib/db';
 import { toISODate, dayOfWeek, getCentralTimeNow, getWeekStart } from '@/lib/useScheduleData';
 
 type Event = { id: string; event_name: string; properties: Record<string, any>; created_at: string; };
-type SessionStudent = { status: string; date: string; };
+type SessionStudent = { status: string; date: string; isVirtual: boolean; };
 type OperationType = 'addition' | 'confirmation' | 'reschedule' | 'deletion' | 'other';
 type InsightRange = 'all' | '7d' | '30d';
 
@@ -243,21 +243,24 @@ export default function AnalyticsPage() {
   const [insightRange, setInsightRange] = useState<InsightRange>('30d');
 
   const [firstVisits, setFirstVisits] = useState<Event[]>([]);
+  const [studentDateExceptions, setStudentDateExceptions] = useState<any[]>([]);
   const fetchData = async () => {
     setLoading(true);
     const centerId = getCenterId();
-    const [evRes, sesRes, fvRes] = await Promise.all([
+    const [evRes, sesRes, fvRes, excRes] = await Promise.all([
       supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }).limit(1000),
-      supabase.from(DB.sessions).select(`id, session_date, ${DB.sessionStudents}(id, status)`).eq('center_id', centerId).order('session_date'),
+      supabase.from(DB.sessions).select(`id, session_date, ${DB.sessionStudents}(id, status, is_virtual)`).eq('center_id', centerId).order('session_date'),
       supabase.from(DB.events).select('*').eq('center_id', centerId).eq('event_name', 'first_visit').order('created_at', { ascending: false }).limit(1000),
+      supabase.from(DB.studentDateExceptions).select('id, exception_date, reason, created_at, student_id').eq('center_id', centerId).order('exception_date', { ascending: false }).limit(500),
     ]);
     setEvents(evRes.data ?? []);
     setSessionStudents(
       (sesRes.data ?? []).flatMap((s: any) =>
-        (s[DB.sessionStudents] ?? []).map((ss: any) => ({ status: ss.status, date: s.session_date }))
+        (s[DB.sessionStudents] ?? []).map((ss: any) => ({ status: ss.status, date: s.session_date, isVirtual: ss.is_virtual ?? false }))
       )
     );
     setFirstVisits(fvRes.data ?? []);
+    setStudentDateExceptions(excRes.data ?? []);
     setLastRefresh(new Date());
     setLoading(false);
   };
@@ -561,6 +564,27 @@ export default function AnalyticsPage() {
   }, [events]);
   const maxCenter = centerActivity[0]?.count ?? 1;
 
+  // ── Virtual vs In-Person ───────────────────────────────────────────────────
+  const virtualStats = useMemo(() => {
+    const virtual = sessionStudents.filter(s => s.isVirtual).length;
+    const inPerson = sessionStudents.filter(s => !s.isVirtual).length;
+    const total = sessionStudents.length;
+    return { virtual, inPerson, total, pct: total > 0 ? Math.round((virtual / total) * 100) : 0 };
+  }, [sessionStudents]);
+
+  // ── Student time off ───────────────────────────────────────────────────────
+  const studentTimeOffStats = useMemo(() => {
+    const total = studentDateExceptions.length;
+    const upcoming = studentDateExceptions.filter(e => e.exception_date >= today).slice(0, 10);
+    const reasons: Record<string, number> = {};
+    studentDateExceptions.forEach(e => {
+      const r = (e.reason as string | null)?.trim() || 'No reason given';
+      reasons[r] = (reasons[r] ?? 0) + 1;
+    });
+    const topReasons = Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    return { total, upcoming, topReasons, maxReason: topReasons[0]?.[1] ?? 1 };
+  }, [studentDateExceptions, today]);
+
   // ── Rate color ─────────────────────────────────────────────────────────────
   const rc = (v: number | null) => !v ? '#94a3b8' : v >= 80 ? '#16a34a' : v >= 60 ? '#f59e0b' : '#dc2626';
 
@@ -856,6 +880,72 @@ export default function AnalyticsPage() {
             </div>
           </Section>
         )}
+
+        {/* ── Virtual vs In-Person ── */}
+        {virtualStats.total > 0 && (
+          <Section title="Virtual vs In-Person" sub="Session attendance mode breakdown — all time">
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <KPI label="Total Sessions" value={virtualStats.total} color="#475569" icon={<Calendar size={13}/>}/>
+              <KPI label="In-Person" value={virtualStats.inPerson} color="#16a34a" icon={<Users size={13}/>}/>
+              <KPI label="Virtual" value={virtualStats.virtual} sub={`${virtualStats.pct}% of all`} color="#2563eb" icon={<Activity size={13}/>}/>
+            </div>
+            <div className="space-y-2">
+              <HBar label="In-Person" value={virtualStats.inPerson} max={virtualStats.total} count={virtualStats.inPerson} color="#16a34a"/>
+              <HBar label="Virtual" value={virtualStats.virtual} max={virtualStats.total} count={virtualStats.virtual} color="#2563eb"/>
+            </div>
+          </Section>
+        )}
+
+        {/* ── Student Time Off ── */}
+        <Section title="Student Time Off" sub="Date exceptions logged for students (vacations, illness, etc.)">
+          {studentTimeOffStats.total === 0 ? (
+            <p className="text-xs text-[#94a3b8] italic">No student date exceptions logged yet</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <KPI label="Total Exceptions" value={studentTimeOffStats.total} color="#7c3aed" icon={<AlertTriangle size={13}/>}/>
+                <KPI label="Upcoming" value={studentTimeOffStats.upcoming.length} sub="future dates" color="#f59e0b" icon={<Calendar size={13}/>}/>
+              </div>
+
+              {studentTimeOffStats.topReasons.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">By Reason</p>
+                  <div className="space-y-2">
+                    {studentTimeOffStats.topReasons.map(([reason, count]) => (
+                      <HBar key={reason} label={reason} value={count} max={studentTimeOffStats.maxReason} count={count} color="#7c3aed"/>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {studentTimeOffStats.upcoming.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Upcoming Exceptions</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
+                          <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Date</th>
+                          <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentTimeOffStats.upcoming.map(e => (
+                          <tr key={e.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                            <td className="px-3 py-2 font-semibold text-[#1e293b]">
+                              {new Date(e.exception_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </td>
+                            <td className="px-3 py-2 text-[#64748b]">{e.reason ?? <span className="italic text-[#cbd5e1]">None</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Section>
 
         {/* ── Feature usage ── */}
         <Section title="Feature Usage" sub="Which parts of the app get used most">
