@@ -745,6 +745,13 @@ export async function toggleStudentVirtual({ rowId, isVirtual }: {
   if (error) throw error
 }
 
+export async function toggleSeriesVirtual({ seriesId, isVirtual }: {
+  seriesId: string; isVirtual: boolean
+}) {
+  const { error } = await supabase.from(SS).update({ is_virtual: isVirtual }).eq('series_id', seriesId)
+  if (error) throw error
+}
+
 export async function moveStudentSession({
   rowId,
   studentId,

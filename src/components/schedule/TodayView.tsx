@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, Clock, Calendar as CalendarIcon, X, Loader2, Trash2, Search, ChevronDown, Monitor } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toggleStudentVirtual, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
+import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toggleStudentVirtual, toggleSeriesVirtual, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
@@ -1389,7 +1389,11 @@ export function TodayView({
                                                 const next = !cur;
                                                 setOptimisticVirtual(prev => ({ ...prev, [rowId]: next }));
                                                 try {
-                                                  await toggleStudentVirtual({ rowId, isVirtual: next });
+                                                  if (student.seriesId && window.confirm(`Apply to all recurring sessions in this series?`)) {
+                                                    await toggleSeriesVirtual({ seriesId: student.seriesId, isVirtual: next });
+                                                  } else {
+                                                    await toggleStudentVirtual({ rowId, isVirtual: next });
+                                                  }
                                                   refetch();
                                                 } catch {
                                                   setOptimisticVirtual(prev => ({ ...prev, [rowId]: cur }));
