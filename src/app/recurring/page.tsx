@@ -1,17 +1,17 @@
 'use client';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { DB, withCenter } from '@/lib/db';
+import { DB, withCenter, withCenterPayload } from '@/lib/db';
 import {
   fetchAllSeries, fetchSeriesSessions, cancelSeries,
   rescheduleSeries, markCompletedSeries, createConfirmationToken, bookStudent,
   type RecurringSeries, type Tutor, type Student, toISODate,
 } from '@/lib/useScheduleData';
 import { getSessionsForDay } from '@/components/constants';
-import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2, LayoutGrid, List, CheckSquare, Square, Trash2 } from 'lucide-react';
+import { Repeat, X, AlertTriangle, RefreshCw, Calendar, User, BookOpen, Edit3, Clock, Pencil, ChevronDown, ChevronUp, Search, Loader2, LayoutGrid, List, CheckSquare, Square, Trash2, CalendarOff, Trash } from 'lucide-react';
 import { logEvent } from '@/lib/analytics';
 
-type TermOption = { id: string; name: string; status: string; start_date: string; end_date: string };
+type TermOption = { id: string; name: string; status: string; start_date: string; end_date: string; session_times_by_day?: Record<string, string[]> | null };
 
 function Badge({ children, color = 'gray' }: { children: React.ReactNode; color?: 'green' | 'red' | 'blue' | 'yellow' | 'gray' | 'purple' | 'indigo' }) {
   const map: Record<string, string> = {
@@ -40,13 +40,34 @@ const ALL_TOPICS  = [...MATH_TOPICS, ...ENG_TOPICS, 'Other'];
 
 type SessionRow = {
   id: string; status: string; notes: string | null; topic: string | null; tutorId: string | null;
+  isVirtual: boolean;
   session: { id: string; session_date: string; time: string; tutor_id: string } | null;
 };
 type EditTab = 'schedule' | 'duration' | 'day';
 type SingleSessionEdit = {
   row: SessionRow; series: RecurringSeries;
   newDate: string; newTime: string; newTutorId: string; newTopic: string;
+  newNotes: string; newIsVirtual: boolean; applyToSeries: boolean;
   saving: boolean; error: string | null; confirmCancel: boolean;
+};
+
+type MarkOffState = {
+  row: SessionRow; series: RecurringSeries;
+  reason: string; saving: boolean; error: string | null;
+};
+
+type ExceptionEntry = { id: string; exception_date: string; reason: string | null };
+type VacationState = {
+  studentId: string;
+  studentName: string;
+  seriesIds: string[];   // all active series for this student
+  startDate: string;
+  endDate: string;
+  reason: string;
+  exceptions: ExceptionEntry[];
+  loadingExceptions: boolean;
+  saving: boolean;
+  error: string | null;
 };
 
 type CreateRecurringForm = {
@@ -74,7 +95,8 @@ function alignDateToIsoDow(startIso: string, targetDow: number) {
 }
 function normaliseRows(data: any[]): SessionRow[] {
   return data.map(r => ({
-    id: r.id, status: r.status, notes: r.notes, topic: r.topic ?? null,
+    id: r.id, status: r.status, notes: r.notes ?? null, topic: r.topic ?? null,
+    isVirtual: r.is_virtual ?? false,
     tutorId: (Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions])?.tutor_id ?? null,
     session: (Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions]) || null,
   }));
@@ -254,13 +276,14 @@ function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete, bulkSelect
   );
 }
 
-function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDelete, onEditSession, onCancelSession, refreshStamp, bulkSelectMode, selected, onToggleSelect }: {
+function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDelete, onEditSession, onCancelSession, onMarkOff, refreshStamp, bulkSelectMode, selected, onToggleSelect }: {
   s: RecurringSeries; tutors: Tutor[]; students: Student[]; today: string;
   onEdit: (s: RecurringSeries) => void;
   onCancelSeries: (id: string) => void;
   onDelete: (id: string) => void;
   onEditSession: (row: SessionRow, s: RecurringSeries) => void;
   onCancelSession: (row: SessionRow, s: RecurringSeries) => void;
+  onMarkOff: (row: SessionRow, s: RecurringSeries) => void;
   refreshStamp: number;
   bulkSelectMode?: boolean;
   selected?: boolean;
@@ -456,11 +479,14 @@ function SeriesCard({ s, tutors, students, today, onEdit, onCancelSeries, onDele
                             {isOverride && <Badge color="blue">Moved Instance</Badge>}
                           </div>
                           {canEdit && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => onEditSession(row, s)} className="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 bg-slate-100 hover:bg-slate-200 flex items-center gap-1">
-                                <Pencil size={9}/> Edit
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button onClick={() => onEditSession(row, s)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 flex items-center gap-1.5">
+                                <Pencil size={11}/> Edit
                               </button>
-                              <button onClick={() => onCancelSession(row, s)} className="p-1 rounded text-slate-300 hover:text-red-500"><X size={12}/></button>
+                              <button onClick={() => onMarkOff(row, s)} className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                                Off
+                              </button>
+                              <button onClick={() => onCancelSession(row, s)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50"><X size={13}/></button>
                             </div>
                           )}
                         </div>
@@ -528,7 +554,11 @@ export default function RecurringManager() {
   const [newDayOfWeek, setNewDayOfWeek] = useState(0);
   const [confirmStep, setConfirmStep] = useState(false);
   const [sessionsToRemove, setSessionsToRemove] = useState(0);
+  const [centerSessionTimesByDay, setCenterSessionTimesByDay] = useState<Record<string, string[]>>({});
   const [singleEdit, setSingleEdit] = useState<SingleSessionEdit | null>(null);
+  const [markOff, setMarkOff] = useState<MarkOffState | null>(null);
+  const [vacation, setVacation] = useState<VacationState | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'warn' } | null>(null);
   const [refreshStamp, setRefreshStamp] = useState(0);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showCreate, setShowCreate] = useState(false);
@@ -575,14 +605,16 @@ export default function RecurringManager() {
     setLoading(true); setError(null);
     try {
       await markCompletedSeries();
-      const [seriesData, tutorRes, studentRes, termsRes] = await Promise.all([
+      const [seriesData, tutorRes, studentRes, termsRes, csRes] = await Promise.all([
         fetchAllSeries(),
         withCenter(supabase.from(DB.tutors).select('*')).order('name'),
         withCenter(supabase.from(DB.students).select('*')).order('name'),
         fetch('/api/terms').then(r => r.json()).catch(() => ({ terms: [] })),
+        withCenter(supabase.from(DB.centerSettings).select('session_times_by_day').limit(1)).maybeSingle() as any,
       ]);
       setSeries(seriesData);
       setTerms((termsRes.terms ?? []) as TermOption[]);
+      if (csRes?.data?.session_times_by_day) setCenterSessionTimesByDay(csRes.data.session_times_by_day);
       setTutors((tutorRes.data ?? []).map((r: any) => ({
         id: r.id, name: r.name, subjects: r.subjects ?? [], cat: r.cat,
         availability: r.availability ?? [], availabilityBlocks: r.availability_blocks ?? [],
@@ -773,40 +805,93 @@ export default function RecurringManager() {
 
   const openSingleEdit = (row: SessionRow, s: RecurringSeries) => {
     const date = row.session?.session_date ?? '';
-    setSingleEdit({ row, series: s, newDate: date, newTime: row.session?.time ?? s.time, newTutorId: row.session?.tutor_id ?? s.tutorId, newTopic: row.topic ?? s.topic, saving: false, error: null, confirmCancel: false });
+    setSingleEdit({ row, series: s, newDate: date, newTime: row.session?.time ?? s.time, newTutorId: row.session?.tutor_id ?? s.tutorId, newTopic: row.topic ?? s.topic, newNotes: row.notes ?? '', newIsVirtual: row.isVirtual, applyToSeries: false, saving: false, error: null, confirmCancel: false });
   };
 
   const openSingleCancel = (row: SessionRow, s: RecurringSeries) => {
-    setSingleEdit({ row, series: s, newDate: row.session?.session_date ?? '', newTime: row.session?.time ?? s.time, newTutorId: row.session?.tutor_id ?? s.tutorId, newTopic: row.topic ?? s.topic, saving: false, error: null, confirmCancel: true });
+    setSingleEdit({ row, series: s, newDate: row.session?.session_date ?? '', newTime: row.session?.time ?? s.time, newTutorId: row.session?.tutor_id ?? s.tutorId, newTopic: row.topic ?? s.topic, newNotes: row.notes ?? '', newIsVirtual: row.isVirtual, applyToSeries: false, saving: false, error: null, confirmCancel: true });
   };
 
   const closeSingleEdit = () => setSingleEdit(null);
   const patchSingle = (patch: Partial<SingleSessionEdit>) => setSingleEdit(prev => prev ? { ...prev, ...patch } : prev);
-  const singleEditBlocks = singleEdit ? getSessionsForDay(dowFromIso(singleEdit.newDate)) : [];
+  const singleEditSessionTimes = useMemo(() => {
+    if (!singleEdit) return {};
+    const activeTerm = terms.find(t => t.status === 'active');
+    return activeTerm?.session_times_by_day ?? centerSessionTimesByDay ?? {};
+  }, [singleEdit, terms, centerSessionTimesByDay]);
+
+  const activeSessionTimes = useMemo(() => {
+    const activeTerm = terms.find(t => t.status === 'active');
+    const times = activeTerm?.session_times_by_day ?? centerSessionTimesByDay ?? {};
+    return Object.keys(times).length > 0 ? times : null;
+  }, [terms, centerSessionTimesByDay]);
+
+  const singleEditBlocks = singleEdit
+    ? getSessionsForDay(dowFromIso(singleEdit.newDate), Object.keys(singleEditSessionTimes).length > 0 ? singleEditSessionTimes : null)
+    : [];
   const newEndPreview = editingSeries ? endDateFromWeeks(editingSeries.startDate, newTotalWeeks) : '';
-  const availableBlocks = editingSeries ? getSessionsForDay(editTab === 'day' ? newDayOfWeek : editingSeries.dayOfWeek) : [];
+  const availableBlocks = editingSeries ? getSessionsForDay(editTab === 'day' ? newDayOfWeek : editingSeries.dayOfWeek, activeSessionTimes) : [];
+
+  const showToast = (message: string, type: 'info' | 'success' | 'warn' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4500);
+  };
 
   const handleSingleSave = async () => {
     if (!singleEdit) return;
     patchSingle({ saving: true, error: null });
-    const { row, series: s, newDate, newTime, newTutorId: nTutor, newTopic } = singleEdit;
+    const { row, series: s, newDate, newTime, newTutorId: nTutor, newTopic, newNotes, newIsVirtual, applyToSeries } = singleEdit;
+    const dateChanged  = newDate !== (row.session?.session_date ?? '');
+    const timeChanged  = newTime !== (row.session?.time ?? s.time);
+    const tutorChanged = nTutor  !== (row.session?.tutor_id ?? s.tutorId);
     try {
-      const { error: re } = await supabase.from(DB.sessionStudents).update({ status: 'cancelled' }).eq('id', row.id);
-      if (re) throw re;
-      const { data: ex } = await (supabase.from(DB.sessions).select(`id, ${DB.sessionStudents}(id)`).eq('session_date', newDate).eq('tutor_id', nTutor).eq('time', newTime).maybeSingle() as any);
-      let newSessionId: string;
-      if (ex) {
-        if ((ex[DB.sessionStudents]?.length ?? 0) >= 3) throw new Error(`That slot is already full on ${newDate}`);
-        newSessionId = ex.id;
+      if (dateChanged || timeChanged || tutorChanged) {
+        // Reschedule: cancel old row, create in new slot
+        const { error: re } = await supabase.from(DB.sessionStudents).update({ status: 'cancelled' }).eq('id', row.id);
+        if (re) throw re;
+        const { data: ex } = await (supabase.from(DB.sessions).select(`id, ${DB.sessionStudents}(id)`).eq('session_date', newDate).eq('tutor_id', nTutor).eq('time', newTime).maybeSingle() as any);
+        let newSessionId: string;
+        if (ex) {
+          if ((ex[DB.sessionStudents]?.length ?? 0) >= 3) throw new Error(`That slot is already full on ${newDate}`);
+          newSessionId = ex.id;
+        } else {
+          const { data: cr, error: ce } = await supabase.from(DB.sessions).insert({ session_date: newDate, tutor_id: nTutor, time: newTime }).select('id').single();
+          if (ce) throw ce; newSessionId = cr.id;
+        }
+        const student = students.find(st => st.id === s.studentId);
+        const { error: ie } = await supabase.from(DB.sessionStudents).insert({ session_id: newSessionId, student_id: s.studentId, name: student?.name ?? s.studentName, topic: newTopic, notes: newNotes || null, is_virtual: newIsVirtual, status: 'scheduled', series_id: s.id, confirmation_token: createConfirmationToken() });
+        if (ie) throw ie;
       } else {
-        const { data: cr, error: ce } = await supabase.from(DB.sessions).insert({ session_date: newDate, tutor_id: nTutor, time: newTime }).select('id').single();
-        if (ce) throw ce; newSessionId = cr.id;
+        // In-place update of topic, notes, is_virtual on current row
+        const { error: ue } = await supabase.from(DB.sessionStudents).update({ topic: newTopic, notes: newNotes || null, is_virtual: newIsVirtual }).eq('id', row.id);
+        if (ue) throw ue;
       }
-      const student = students.find(st => st.id === s.studentId);
-      const { error: ie } = await supabase.from(DB.sessionStudents).insert({ session_id: newSessionId, student_id: s.studentId, name: student?.name ?? s.studentName, topic: newTopic, status: 'scheduled', series_id: s.id, confirmation_token: createConfirmationToken() });
-      if (ie) throw ie;
+
+      // Apply notes/is_virtual to all future sessions in series if requested
+      if (applyToSeries) {
+        const today2 = toISODate(new Date());
+        const { data: futureRows, error: fe } = await (withCenter(
+          supabase.from(DB.sessionStudents)
+            .select(`id, ${DB.sessions}!inner(session_date)`)
+            .eq('series_id', s.id)
+            .neq('status', 'cancelled')
+        ) as any);
+        if (fe) throw fe;
+        const idsToUpdate = (futureRows ?? [])
+          .filter((r: any) => {
+            const sess = Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions];
+            return (sess?.session_date ?? '') > (dateChanged ? newDate : (row.session?.session_date ?? today2));
+          })
+          .map((r: any) => r.id);
+        if (idsToUpdate.length > 0) {
+          const { error: be } = await supabase.from(DB.sessionStudents).update({ notes: newNotes || null, is_virtual: newIsVirtual }).in('id', idsToUpdate);
+          if (be) throw be;
+        }
+      }
+
       closeSingleEdit();
-      logEvent('recurring_session_edited', { seriesId: s.id, date: newDate });
+      logEvent('recurring_session_edited', { seriesId: s.id, date: newDate, applyToSeries });
+      if (applyToSeries) showToast('Session updated and applied to all future sessions in series.');
       await load();
     } catch (e: any) { patchSingle({ saving: false, error: e.message }); }
   };
@@ -821,6 +906,116 @@ export default function RecurringManager() {
       logEvent('recurring_session_cancelled', { seriesId: singleEdit.series.id, date: singleEdit.row.session?.session_date });
       await load();
     } catch (e: any) { patchSingle({ saving: false, error: e.message }); }
+  };
+
+  const openVacation = async (s: RecurringSeries) => {
+    const tod = toISODate(new Date());
+    const allSeriesIds = series.filter(sr => sr.studentId === s.studentId && sr.status === 'active').map(sr => sr.id);
+    setVacation({ studentId: s.studentId, studentName: s.studentName, seriesIds: allSeriesIds, startDate: tod, endDate: tod, reason: '', exceptions: [], loadingExceptions: true, saving: false, error: null });
+    const { data } = await (withCenter(
+      supabase.from(DB.studentDateExceptions)
+        .select('id, exception_date, reason')
+        .eq('student_id', s.studentId)
+    ) as any).order('exception_date');
+    setVacation(prev => prev ? { ...prev, exceptions: (data ?? []) as ExceptionEntry[], loadingExceptions: false } : prev);
+  };
+
+  const handleAddVacation = async () => {
+    if (!vacation) return;
+    setVacation(prev => prev ? { ...prev, saving: true, error: null } : prev);
+    const { studentId, studentName, seriesIds, startDate, endDate, reason } = vacation;
+    if (endDate < startDate) {
+      setVacation(prev => prev ? { ...prev, saving: false, error: 'End date must be on or after start date.' } : prev);
+      return;
+    }
+    try {
+      let totalMarked = 0;
+      for (const seriesId of seriesIds) {
+        const { data: rows, error: fe } = await (withCenter(
+          supabase.from(DB.sessionStudents)
+            .select(`id, ${DB.sessions}!inner(session_date)`)
+            .eq('series_id', seriesId)
+            .neq('status', 'cancelled')
+        ) as any);
+        if (fe) throw fe;
+        const inRange = (rows ?? []).filter((r: any) => {
+          const sess = Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions];
+          const d = sess?.session_date ?? '';
+          return d >= startDate && d <= endDate;
+        });
+        for (const row of inRange) {
+          const sess = Array.isArray(row[DB.sessions]) ? row[DB.sessions][0] : row[DB.sessions];
+          const exDate = sess?.session_date ?? '';
+          const { error: exErr } = await supabase.from(DB.studentDateExceptions).insert(
+            withCenterPayload({ student_id: studentId, series_id: seriesId, exception_date: exDate, reason: reason.trim() || null })
+          );
+          if (exErr && exErr.code !== '23505') throw exErr;
+          const { error: delErr } = await supabase.from(DB.sessionStudents).delete().eq('id', row.id);
+          if (delErr) throw delErr;
+          totalMarked++;
+        }
+      }
+      if (totalMarked === 0) {
+        setVacation(prev => prev ? { ...prev, saving: false, error: 'No scheduled sessions found in that date range.' } : prev);
+        return;
+      }
+      const { data: newEx } = await (withCenter(
+        supabase.from(DB.studentDateExceptions)
+          .select('id, exception_date, reason')
+          .eq('student_id', studentId)
+      ) as any).order('exception_date');
+      setVacation(prev => prev ? { ...prev, saving: false, exceptions: (newEx ?? []) as ExceptionEntry[], startDate: toISODate(new Date()), endDate: toISODate(new Date()), reason: '' } : prev);
+      showToast(`${studentName} marked off for ${totalMarked} session${totalMarked !== 1 ? 's' : ''}.`, 'info');
+      setRefreshStamp(v => v + 1);
+    } catch (e: any) {
+      setVacation(prev => prev ? { ...prev, saving: false, error: e.message } : prev);
+    }
+  };
+
+  const handleDeleteException = async (exceptId: string) => {
+    if (!vacation) return;
+    const { error } = await supabase.from(DB.studentDateExceptions).delete().eq('id', exceptId);
+    if (error) {
+      setVacation(prev => prev ? { ...prev, error: error.message } : prev);
+      return;
+    }
+    setVacation(prev => prev ? { ...prev, exceptions: prev.exceptions.filter(e => e.id !== exceptId) } : prev);
+    setRefreshStamp(v => v + 1);
+    showToast('Absence removed.', 'info');
+  };
+
+  const openMarkOff = (row: SessionRow, s: RecurringSeries) => {
+    setMarkOff({ row, series: s, reason: '', saving: false, error: null });
+  };
+
+  const handleMarkOff = async () => {
+    if (!markOff) return;
+    setMarkOff(prev => prev ? { ...prev, saving: true, error: null } : prev);
+    const { row, series: s, reason } = markOff;
+    const exceptionDate = row.session?.session_date ?? '';
+    try {
+      // Record the student date exception
+      const { error: exErr } = await supabase.from(DB.studentDateExceptions).insert(
+        withCenterPayload({
+          student_id: s.studentId,
+          series_id: s.id,
+          exception_date: exceptionDate,
+          reason: reason.trim() || null,
+        })
+      );
+      if (exErr && exErr.code !== '23505') throw exErr; // 23505 = duplicate, already off — OK
+
+      // Delete the session student row — frees the slot for other students
+      const { error: cancelErr } = await supabase.from(DB.sessionStudents).delete().eq('id', row.id);
+      if (cancelErr) throw cancelErr;
+
+      setMarkOff(null);
+      logEvent('recurring_session_student_off', { seriesId: s.id, date: exceptionDate });
+      showToast(`${s.studentName} marked off for ${exceptionDate}${reason.trim() ? ` (${reason.trim()})` : ''}.`, 'info');
+      await load();
+    } catch (e: any) {
+      setMarkOff(prev => prev ? { ...prev, saving: false, error: e.message } : prev);
+    }
   };
 
   const selectedTerm = terms.find(t => t.id === selectedTermId);
@@ -1026,7 +1221,7 @@ export default function RecurringManager() {
               {filtered.map(s => (
                 <SeriesCard key={s.id} s={s} tutors={tutors} students={students} today={today}
                   onEdit={openEdit} onCancelSeries={handleCancelSeries} onDelete={handleDelete}
-                  onEditSession={openSingleEdit} onCancelSession={openSingleCancel} refreshStamp={refreshStamp}
+                  onEditSession={openSingleEdit} onCancelSession={openSingleCancel} onMarkOff={openMarkOff} refreshStamp={refreshStamp}
                   bulkSelectMode={bulkSelectMode} selected={bulkSelected.has(s.id)} onToggleSelect={toggleBulkSelect} />
               ))}
             </div>
@@ -1175,7 +1370,7 @@ export default function RecurringManager() {
                 <X size={15}/>
               </button>
             </div>
-            <div className="flex border-b border-[#f1f5f9]">
+            <div className="flex border-b border-[#f1f5f9] shrink-0">
               {([
                 { key: 'schedule', label: 'Tutor & Time', icon: <User size={11}/> },
                 { key: 'duration', label: 'Duration', icon: <Clock size={11}/> },
@@ -1188,7 +1383,7 @@ export default function RecurringManager() {
                 </button>
               ))}
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
               {confirmStep ? (
                 <div className="space-y-4">
                   <div className="px-4 py-4 rounded-xl" style={{ background: '#eef2ff', border: '1px solid #c7d2fe' }}>
@@ -1214,14 +1409,35 @@ export default function RecurringManager() {
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Tutor</label>
                         <select value={newTutorId} onChange={e => setNewTutorId(e.target.value)} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #c7d2fe' }}>
-                          {tutors.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          {(() => {
+                            const dow = editingSeries.dayOfWeek;
+                            const avail = tutors.filter(t => t.availabilityBlocks?.some((b: string) => b.startsWith(`${dow}-`)));
+                            const unavail = tutors.filter(t => !t.availabilityBlocks?.some((b: string) => b.startsWith(`${dow}-`)));
+                            return [
+                              ...avail.map(t => <option key={t.id} value={t.id}>{t.name}</option>),
+                              unavail.length > 0 && <option key="__sep" disabled value="">── not available ──</option>,
+                              ...unavail.map(t => <option key={t.id} value={t.id}>{t.name} (not available)</option>),
+                            ];
+                          })()}
                         </select>
                       </div>
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Time Slot</label>
-                        <select value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #c7d2fe' }}>
-                          {availableBlocks.map(b => <option key={b.time} value={b.time}>{b.label} ({b.display})</option>)}
-                        </select>
+                        {availableBlocks.length === 0 ? (
+                          <div className="w-full px-3 py-2.5 rounded-xl text-sm text-[#94a3b8]" style={{ border: '2px solid #c7d2fe', background: '#f8fafc' }}>No slots configured for this day</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {availableBlocks.map(b => (
+                              <button key={b.time} type="button" onClick={() => setNewTime(b.time)}
+                                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
+                                style={newTime === b.time
+                                  ? { background: '#4f46e5', color: 'white', border: '2px solid #3730a3' }
+                                  : { background: '#f8fafc', color: '#0f172a', border: '2px solid #c7d2fe' }}>
+                                {b.display}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -1266,9 +1482,21 @@ export default function RecurringManager() {
                       </div>
                       <div>
                         <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Time on {DAY_NAMES[newDayOfWeek]}</label>
-                        <select value={newTime} onChange={e => setNewTime(e.target.value)} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #c7d2fe' }}>
-                          {availableBlocks.map(b => <option key={b.time} value={b.time}>{b.label} ({b.display})</option>)}
-                        </select>
+                        {availableBlocks.length === 0 ? (
+                          <div className="w-full px-3 py-2.5 rounded-xl text-sm text-[#94a3b8]" style={{ border: '2px solid #c7d2fe', background: '#f8fafc' }}>No slots configured for this day</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {availableBlocks.map(b => (
+                              <button key={b.time} type="button" onClick={() => setNewTime(b.time)}
+                                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
+                                style={newTime === b.time
+                                  ? { background: '#4f46e5', color: 'white', border: '2px solid #3730a3' }
+                                  : { background: '#f8fafc', color: '#0f172a', border: '2px solid #c7d2fe' }}>
+                                {b.display}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
@@ -1297,9 +1525,9 @@ export default function RecurringManager() {
       {singleEdit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
           onClick={e => { if (e.target === e.currentTarget) closeSingleEdit(); }}>
-          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #e2e8f0' }}
+          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ border: '1px solid #e2e8f0', maxHeight: '90vh' }}
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ background: '#1e293b' }}>
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ background: '#1e293b' }}>
               <div>
                 <p className="text-sm font-black text-white">{singleEdit.confirmCancel ? 'Cancel Session?' : 'Edit Session'}</p>
                 <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>{singleEdit.series.studentName} · {singleEdit.row.session?.session_date}</p>
@@ -1308,7 +1536,7 @@ export default function RecurringManager() {
                 <X size={15}/>
               </button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 72px)' }}>
               {singleEdit.confirmCancel ? (
                 <div className="space-y-4">
                   <div className="px-4 py-4 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
@@ -1330,14 +1558,38 @@ export default function RecurringManager() {
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Time Slot</label>
-                    <select value={singleEdit.newTime} onChange={e => patchSingle({ newTime: e.target.value })} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #e2e8f0' }}>
-                      {singleEditBlocks.map(b => <option key={b.time} value={b.time}>{b.label} ({b.display})</option>)}
-                    </select>
+                    {singleEditBlocks.length === 0 ? (
+                      <div className="w-full px-3 py-2.5 rounded-xl text-sm text-[#94a3b8]" style={{ border: '2px solid #e2e8f0', background: '#f8fafc' }}>
+                        No slots configured for this day
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {singleEditBlocks.map(b => (
+                          <button key={b.time} type="button"
+                            onClick={() => patchSingle({ newTime: b.time })}
+                            className="flex-1 min-w-0 px-3 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
+                            style={singleEdit.newTime === b.time
+                              ? { background: '#1e293b', color: 'white', border: '2px solid #1e293b' }
+                              : { background: '#f8fafc', color: '#0f172a', border: '2px solid #e2e8f0' }}>
+                            {b.display}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Tutor</label>
                     <select value={singleEdit.newTutorId} onChange={e => patchSingle({ newTutorId: e.target.value })} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #e2e8f0' }}>
-                      {tutors.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      {(() => {
+                        const dow = dowFromIso(singleEdit.newDate);
+                        const available = tutors.filter(t => t.availabilityBlocks?.some((b: string) => b.startsWith(`${dow}-`)));
+                        const unavailable = tutors.filter(t => !t.availabilityBlocks?.some((b: string) => b.startsWith(`${dow}-`)));
+                        return [
+                          ...available.map(t => <option key={t.id} value={t.id}>{t.name}</option>),
+                          unavailable.length > 0 && <option key="__sep" disabled value="">── not available ──</option>,
+                          ...unavailable.map(t => <option key={t.id} value={t.id}>{t.name} (not available)</option>),
+                        ];
+                      })()}
                     </select>
                   </div>
                   <div>
@@ -1346,6 +1598,49 @@ export default function RecurringManager() {
                       {ALL_TOPICS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Notes</label>
+                    <textarea
+                      value={singleEdit.newNotes}
+                      onChange={e => patchSingle({ newNotes: e.target.value })}
+                      rows={2}
+                      placeholder="Optional session note…"
+                      className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a] resize-y"
+                      style={{ border: '2px solid #e2e8f0' }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-xl" style={{ background: '#f8fafc', border: '2px solid #e2e8f0' }}>
+                    <div>
+                      <p className="text-[11px] font-bold text-[#0f172a]">Virtual session</p>
+                      <p className="text-[10px] text-[#94a3b8]">Student attends remotely</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => patchSingle({ newIsVirtual: !singleEdit.newIsVirtual })}
+                      className="relative w-10 h-5 rounded-full transition-colors shrink-0"
+                      style={{ background: singleEdit.newIsVirtual ? '#4f46e5' : '#cbd5e1' }}
+                    >
+                      <span
+                        className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"
+                        style={{ left: singleEdit.newIsVirtual ? '1.25rem' : '0.125rem' }}
+                      />
+                    </button>
+                  </div>
+                  {/* Apply to series prompt — only when notes or virtual differ from original */}
+                  {(singleEdit.newNotes !== (singleEdit.row.notes ?? '') || singleEdit.newIsVirtual !== singleEdit.row.isVirtual) && (
+                    <label className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer" style={{ background: '#eef2ff', border: '1px solid #c7d2fe' }}>
+                      <input
+                        type="checkbox"
+                        checked={singleEdit.applyToSeries}
+                        onChange={e => patchSingle({ applyToSeries: e.target.checked })}
+                        className="mt-0.5 accent-indigo-600"
+                      />
+                      <div>
+                        <p className="text-[11px] font-bold text-indigo-700">Apply notes &amp; virtual flag to all future sessions in this series</p>
+                        <p className="text-[10px] text-indigo-400 mt-0.5">All upcoming sessions in the series will be updated to match.</p>
+                      </div>
+                    </label>
+                  )}
                   {singleEdit.error && (
                     <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}>
                       <AlertTriangle size={12}/> {singleEdit.error}
@@ -1362,6 +1657,74 @@ export default function RecurringManager() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Manage Absences modal removed — manage absences from the Students page */}
+
+      {/* Mark Off modal */}
+      {markOff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setMarkOff(null); }}>
+          <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl" style={{ border: '1px solid #fed7aa' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ background: '#7c2d12' }}>
+              <div>
+                <p className="text-sm font-black text-white">Mark Student Off</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.6)' }}>{markOff.series.studentName} · {markOff.row.session?.session_date}</p>
+              </div>
+              <button onClick={() => setMarkOff(null)} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
+                <X size={15}/>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="px-4 py-3 rounded-xl text-xs" style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#92400e' }}>
+                <p className="font-bold mb-0.5">This session will be cancelled for {markOff.series.studentName}.</p>
+                <p>The date will be recorded as a planned absence. The rest of the series is unaffected.</p>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest mb-1.5 text-[#64748b]">Reason (optional)</label>
+                <input
+                  type="text"
+                  value={markOff.reason}
+                  onChange={e => setMarkOff(prev => prev ? { ...prev, reason: e.target.value } : prev)}
+                  placeholder="e.g. vacation, sick day, school event…"
+                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none text-[#0f172a]"
+                  style={{ border: '2px solid #e2e8f0' }}
+                />
+              </div>
+              {markOff.error && (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}>
+                  <AlertTriangle size={12}/> {markOff.error}
+                </div>
+              )}
+              <div className="flex gap-3">
+                <button onClick={() => setMarkOff(null)} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-[#64748b]" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>Keep Session</button>
+                <button onClick={handleMarkOff} disabled={markOff.saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: markOff.saving ? '#94a3b8' : '#c2410c' }}>
+                  {markOff.saving ? 'Saving…' : 'Confirm Off'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl text-sm font-semibold pointer-events-none"
+          style={{
+            zIndex: 60,
+            background: toast.type === 'info' ? '#1e293b' : toast.type === 'warn' ? '#92400e' : '#166534',
+            color: 'white',
+            minWidth: 260,
+            maxWidth: 420,
+          }}
+        >
+          <span className="flex-1">{toast.message}</span>
+          <button className="shrink-0 pointer-events-auto opacity-70 hover:opacity-100" onClick={() => setToast(null)}>
+            <X size={14}/>
+          </button>
         </div>
       )}
     </div>

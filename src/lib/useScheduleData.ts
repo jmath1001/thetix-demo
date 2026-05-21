@@ -64,6 +64,7 @@ export type SessionStudent = {
   notes: string | null
   confirmationStatus: string | null
   seriesId: string | null
+  isVirtual: boolean
 }
 
 export type Session = {
@@ -224,7 +225,7 @@ export function useScheduleData(weekStart: Date, options?: { termId?: string | n
           withCenter(supabase.from(STUDENTS).select('*')).order('name'),
           (withCenter(supabase
             .from(SESSIONS)
-            .select(`id, session_date, tutor_id, time, ${SS} ( id, student_id, name, topic, status, notes, confirmation_status, series_id )`)
+            .select(`id, session_date, tutor_id, time, ${SS} ( id, student_id, name, topic, status, notes, confirmation_status, series_id, is_virtual )`)
             .gte('session_date', from)
             .lte('session_date', to)
             .order('session_date'))
@@ -419,6 +420,7 @@ console.log('[debug] students[0]:', students[0])
             notes:              ss.notes ?? null,
             confirmationStatus: ss.confirmation_status ?? null,
             seriesId:           ss.series_id ?? null,
+            isVirtual:          ss.is_virtual ?? false,
           })),
         }))
 
@@ -736,6 +738,13 @@ export async function updateSessionTopic({ rowId, topic }: {
   if (error) throw error
 }
 
+export async function toggleStudentVirtual({ rowId, isVirtual }: {
+  rowId: string; isVirtual: boolean
+}) {
+  const { error } = await supabase.from(SS).update({ is_virtual: isVirtual }).eq('id', rowId)
+  if (error) throw error
+}
+
 export async function moveStudentSession({
   rowId,
   studentId,
@@ -846,7 +855,7 @@ export async function fetchSeriesSessions(seriesId: string) {
   const { data, error } = await (withCenter(
     supabase
       .from(SS)
-      .select(`id, status, notes, ${SESSIONS} ( id, session_date, time, tutor_id )`)
+      .select(`id, status, notes, topic, is_virtual, ${SESSIONS} ( id, session_date, time, tutor_id )`)
       .eq('series_id', seriesId)
   ) as any)
   if (error) throw error
@@ -871,8 +880,11 @@ export async function cancelSeries(seriesId: string): Promise<void> {
     .map((r: any) => r.id)
 
   if (futureRowIds.length > 0) {
-    const { error: deleteErr } = await withCenter(supabase.from(SS).delete()).in('id', futureRowIds)
-    if (deleteErr) throw deleteErr
+    // Mark as cancelled rather than deleting so history still shows cancelled instances
+    const { error: cancelErr } = await withCenter(
+      supabase.from(SS).update({ status: 'cancelled' })
+    ).in('id', futureRowIds)
+    if (cancelErr) throw cancelErr
   }
 
   const { error: updateErr } = await withCenter(supabase.from(RECURRING)

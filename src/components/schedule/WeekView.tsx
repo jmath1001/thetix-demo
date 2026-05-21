@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { PlusCircle, Check, X, Loader2, Trash2, Search, ChevronDown } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
+import { PlusCircle, Check, X, Loader2, Trash2, Search, ChevronDown, Monitor } from 'lucide-react';
+import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toggleStudentVirtual, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
@@ -136,6 +136,7 @@ export function WeekView({
   const [slotFilterQuery, setSlotFilterQuery] = useState('');
   // Optimistic status overrides keyed by session-student rowId so the checkbox flips instantly.
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
+  const [optimisticVirtual, setOptimisticVirtual] = useState<Record<string, boolean>>({});
 
   const normalizedSlotFilter = slotFilterQuery.trim().toLowerCase();
   const hasSlotFilter = normalizedSlotFilter.length > 0;
@@ -897,6 +898,28 @@ export function WeekView({
                                                     ? { background: '#16a34a', border: '1.5px solid #16a34a' }
                                                     : { background: 'white', border: '1.5px solid #d1d5db' }}>
                                                   {(optimisticStatuses[student.rowId || student.id] ?? student.status) === 'present' && <Check size={9} strokeWidth={3} color="white" />}
+                                                </button>
+                                                {/* Virtual toggle */}
+                                                <button
+                                                  title={(optimisticVirtual[student.rowId] ?? student.isVirtual) ? 'Mark in-person' : 'Mark virtual'}
+                                                  onClick={async e => {
+                                                    e.stopPropagation();
+                                                    const rowId = student.rowId;
+                                                    const cur = optimisticVirtual[rowId] ?? student.isVirtual;
+                                                    const next = !cur;
+                                                    setOptimisticVirtual(prev => ({ ...prev, [rowId]: next }));
+                                                    try {
+                                                      await toggleStudentVirtual({ rowId, isVirtual: next });
+                                                      refetch();
+                                                    } catch {
+                                                      setOptimisticVirtual(prev => ({ ...prev, [rowId]: cur }));
+                                                    }
+                                                  }}
+                                                  className="shrink-0 w-4 h-4 rounded-md flex items-center justify-center transition-all"
+                                                  style={(optimisticVirtual[student.rowId] ?? student.isVirtual)
+                                                    ? { background: '#dbeafe', border: '1.5px solid #3b82f6', color: '#1d4ed8' }
+                                                    : { background: 'transparent', border: '1.5px solid #d1d5db', color: '#9ca3af' }}>
+                                                  <Monitor size={9} strokeWidth={2} />
                                                 </button>
                                                 <button
                                                   title={removingId === (student.rowId || student.id) ? 'Tap again to confirm' : 'Remove student'}

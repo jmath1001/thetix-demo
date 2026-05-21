@@ -13,6 +13,8 @@ const statusStyle: Record<string, { bg: string; color: string; label: string }> 
   'no-show': { bg: '#fee2e2', color: '#b91c1c', label: 'No-show' },
   scheduled: { bg: '#f3f4f6', color: '#6b7280', label: 'Scheduled' },
   confirmed: { bg: '#dbeafe', color: '#1d4ed8', label: 'Confirmed' },
+  cancelled: { bg: '#f3f4f6', color: '#9ca3af', label: 'Cancelled' },
+  off:       { bg: '#fff7ed', color: '#c2410c', label: 'Off / Absent' },
   unknown:   { bg: '#f3f4f6', color: '#9ca3af', label: 'Not marked' },
 };
 
@@ -24,7 +26,7 @@ function formatTime(t: string) {
 
 type SessionEntry = {
   ssId: string;
-  sessionId: string;
+  sessionId: string | null;
   date: string;
   time: string;
   tutorName: string;
@@ -33,6 +35,7 @@ type SessionEntry = {
   notes: string | null;
   seriesId: string | null;
   isPast: boolean;
+  readOnly?: boolean; // true for off/absence entries — no status picker
 };
 
 type SessionGroup =
@@ -96,6 +99,7 @@ export default function StudentHistoryPage() {
   const [students, setStudents] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [tutors, setTutors] = useState<any[]>([]);
+  const [exceptions, setExceptions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -107,17 +111,19 @@ export default function StudentHistoryPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const [studentsRes, tutorsRes, sessionsRes] = await Promise.all([
+    const [studentsRes, tutorsRes, sessionsRes, exceptionsRes] = await Promise.all([
       supabase.from(DB.students).select('*').order('name'),
       supabase.from(DB.tutors).select('id, name').order('name'),
       supabase.from(DB.sessions).select(`
         id, session_date, time, tutor_id,
         ${DB.sessionStudents} ( id, student_id, name, topic, status, notes, series_id )
       `).order('session_date', { ascending: false }),
+      supabase.from(DB.studentDateExceptions).select('id, student_id, series_id, exception_date, reason').order('exception_date', { ascending: false }),
     ]);
     setStudents(studentsRes.data ?? []);
     setTutors(tutorsRes.data ?? []);
     setSessions(sessionsRes.data ?? []);
+    setExceptions(exceptionsRes.data ?? []);
     setLoading(false);
   }, []);
 
@@ -126,7 +132,7 @@ export default function StudentHistoryPage() {
   const today = toISODate(getCentralTimeNow());
 
   const getStudentSessions = (studentId: string): SessionEntry[] => {
-    return sessions
+    const sessionEntries = sessions
       .flatMap(s => {
         const entry = (s[DB.sessionStudents] ?? []).find((ss: any) => ss.student_id === studentId);
         if (!entry) return [];
@@ -142,7 +148,26 @@ export default function StudentHistoryPage() {
           seriesId: entry.series_id ?? null,
           isPast: s.session_date < today,
         }];
-      })
+      });
+
+    // Include planned absences from student date exceptions
+    const exceptionEntries: SessionEntry[] = exceptions
+      .filter(e => e.student_id === studentId)
+      .map(e => ({
+        ssId: `exc:${e.id}`,
+        sessionId: null,
+        date: e.exception_date,
+        time: '',
+        tutorName: '',
+        topic: 'Planned Absence',
+        status: 'off',
+        notes: e.reason ?? null,
+        seriesId: e.series_id ?? null,
+        isPast: e.exception_date < today,
+        readOnly: true,
+      }));
+
+    return [...sessionEntries, ...exceptionEntries]
       .sort((a, b) => b.date.localeCompare(a.date));
   };
 
@@ -183,28 +208,36 @@ export default function StudentHistoryPage() {
 
   function SessionRow({ s }: { s: SessionEntry }) {
     const displayStatus = s.isPast && s.status === 'scheduled' ? 'unknown' : s.status;
+    const sc = statusStyle[displayStatus] ?? statusStyle.unknown;
+    const isCancelledOrOff = s.status === 'cancelled' || s.status === 'off';
     return (
-      <div className="px-4 py-3 flex items-start gap-3">
+      <div className="px-4 py-3 flex items-start gap-3" style={isCancelledOrOff ? { opacity: 0.75 } : {}}>
         <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0"
-          style={{ background: s.isPast ? '#f0ece8' : '#ede9fe' }}>
+          style={{ background: s.status === 'off' ? '#fff7ed' : s.status === 'cancelled' ? '#f3f4f6' : s.isPast ? '#f0ece8' : '#ede9fe' }}>
           <span className="text-[8px] font-black uppercase leading-none"
-            style={{ color: s.isPast ? '#a8a29e' : '#6d28d9' }}>
+            style={{ color: s.status === 'off' ? '#c2410c' : s.status === 'cancelled' ? '#9ca3af' : s.isPast ? '#a8a29e' : '#6d28d9' }}>
             {new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
           </span>
           <span className="text-sm font-black leading-none"
-            style={{ color: s.isPast ? '#1c1917' : '#6d28d9' }}>
+            style={{ color: s.status === 'off' ? '#c2410c' : s.status === 'cancelled' ? '#9ca3af' : s.isPast ? '#1c1917' : '#6d28d9' }}>
             {new Date(s.date + 'T00:00:00').getDate()}
           </span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-[#1c1917]">{s.topic}</p>
-            <StatusPicker ssId={s.ssId} current={displayStatus}
-              onUpdated={newStatus => setStatusOverrides(prev => ({ ...prev, [s.ssId]: newStatus }))} />
+            <p className="text-sm font-bold text-[#1c1917]" style={s.status === 'cancelled' ? { textDecoration: 'line-through', color: '#9ca3af' } : {}}>{s.topic}</p>
+            {s.readOnly || s.status === 'cancelled' || s.status === 'off' ? (
+              <span className="text-[9px] font-black px-2 py-0.5 rounded-lg" style={{ background: sc.bg, color: sc.color }}>
+                {sc.label}
+              </span>
+            ) : (
+              <StatusPicker ssId={s.ssId} current={displayStatus}
+                onUpdated={newStatus => setStatusOverrides(prev => ({ ...prev, [s.ssId]: newStatus }))} />
+            )}
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span className="text-[10px] text-[#a8a29e] flex items-center gap-1"><User size={9} /> {s.tutorName}</span>
-            <span className="text-[10px] text-[#a8a29e] flex items-center gap-1"><Clock size={9} /> {formatTime(s.time)}</span>
+            {s.tutorName && <span className="text-[10px] text-[#a8a29e] flex items-center gap-1"><User size={9} /> {s.tutorName}</span>}
+            {s.time && <span className="text-[10px] text-[#a8a29e] flex items-center gap-1"><Clock size={9} /> {formatTime(s.time)}</span>}
           </div>
           {s.notes && <p className="text-[10px] mt-1 italic text-[#a8a29e]">📝 {s.notes}</p>}
         </div>
@@ -263,15 +296,28 @@ export default function StudentHistoryPage() {
                   ? allSessions.filter(s => s.isPast)
                   : allSessions;
               const groups = buildGroups(filteredSessions);
-              const upcomingCount = allSessions.filter(s => !s.isPast).length;
-              const pastCount = allSessions.filter(s => s.isPast).length;
+              const cancelledCount = allSessions.filter(s => s.status === 'cancelled').length;
+              const offCount = allSessions.filter(s => s.status === 'off').length;
+              const upcomingCount = allSessions.filter(s => !s.isPast && s.status !== 'cancelled').length;
+              const pastActiveCount = allSessions.filter(s => s.isPast && s.status !== 'cancelled' && s.status !== 'off').length;
               const presentCount = allSessions.filter(s => s.isPast && (s.status === 'present' || s.status === 'confirmed')).length;
               const colorIdx = student.name.charCodeAt(0) % colors.length;
               const isOpen = expanded === student.id;
 
               return (
                 <div key={student.id} className={`bg-white rounded-2xl border-2 transition-all overflow-hidden ${isOpen ? 'border-[#c4b5fd]' : 'border-[#f0ece8] hover:border-[#e7e3dd]'}`}>
-                  <button className="w-full p-4 flex items-center gap-3 text-left" onClick={() => setExpanded(isOpen ? null : student.id)}>
+                  <button className="w-full p-4 flex items-center gap-3 text-left" onClick={() => {
+                      const opening = !isOpen;
+                      setExpanded(opening ? student.id : null);
+                      if (opening) {
+                        const seriesIds = [...new Set(allSessions.filter(s => s.seriesId).map(s => s.seriesId!))];
+                        setExpandedSeries(prev => {
+                          const next = new Set(prev);
+                          seriesIds.forEach(id => next.add(`${student.id}::${id}`));
+                          return next;
+                        });
+                      }
+                    }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0"
                       style={{ background: colors[colorIdx], color: textColors[colorIdx] }}>
                       {student.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -281,10 +327,12 @@ export default function StudentHistoryPage() {
                         <p className="font-black text-[#1c1917] text-sm">{student.name}</p>
                         {student.grade && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-[#ede9fe] text-[#6d28d9]">Gr. {student.grade}</span>}
                       </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-[10px] text-[#a8a29e]">{allSessions.length} total sessions</span>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-[10px] text-[#a8a29e]">{allSessions.length} records</span>
                         {upcomingCount > 0 && <span className="text-[10px] font-bold text-[#6d28d9]">{upcomingCount} upcoming</span>}
-                        {pastCount > 0 && <span className="text-[10px] text-[#a8a29e]">{presentCount}/{pastCount} attended</span>}
+                        {pastActiveCount > 0 && <span className="text-[10px] text-[#a8a29e]">{presentCount}/{pastActiveCount} attended</span>}
+                        {cancelledCount > 0 && <span className="text-[10px] font-semibold rounded px-1" style={{ background: '#f3f4f6', color: '#9ca3af' }}>{cancelledCount} cancelled</span>}
+                        {offCount > 0 && <span className="text-[10px] font-semibold rounded px-1" style={{ background: '#fff7ed', color: '#c2410c' }}>{offCount} off</span>}
                       </div>
                     </div>
                     {isOpen ? <ChevronUp size={14} className="text-[#a8a29e] shrink-0" /> : <ChevronDown size={14} className="text-[#a8a29e] shrink-0" />}
@@ -305,8 +353,10 @@ export default function StudentHistoryPage() {
                             // Recurring series group
                             const seriesKey = `${student.id}::${g.seriesId}`;
                             const seriesOpen = expandedSeries.has(seriesKey);
+                            const cancelledInSeries = g.sessions.filter(s => s.status === 'cancelled').length;
+                            const offInSeries = g.sessions.filter(s => s.status === 'off').length;
+                            const pastInSeries = g.sessions.filter(s => s.isPast && s.status !== 'cancelled' && s.status !== 'off').length;
                             const attendedInSeries = g.sessions.filter(s => s.isPast && (s.status === 'present' || s.status === 'confirmed')).length;
-                            const pastInSeries = g.sessions.filter(s => s.isPast).length;
                             return (
                               <div key={g.seriesId}>
                                 <button
@@ -319,12 +369,12 @@ export default function StudentHistoryPage() {
                                   <div className="w-6 h-6 rounded-lg bg-[#ede9fe] flex items-center justify-center shrink-0">
                                     <RefreshCw size={10} className="text-[#6d28d9]" />
                                   </div>
-                                  <div className="flex-1 min-w-0">
+                                  <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                                     <span className="text-xs font-black text-[#6d28d9]">{g.topic}</span>
-                                    <span className="text-[10px] text-[#a8a29e] ml-2">
-                                      {g.sessions.length} sessions
-                                      {pastInSeries > 0 && ` · ${attendedInSeries}/${pastInSeries} attended`}
-                                    </span>
+                                    <span className="text-[10px] text-[#a8a29e]">{g.sessions.length} sessions</span>
+                                    {pastInSeries > 0 && <span className="text-[10px] text-[#a8a29e]">{attendedInSeries}/{pastInSeries} attended</span>}
+                                    {cancelledInSeries > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#f3f4f6', color: '#9ca3af' }}>{cancelledInSeries} cancelled</span>}
+                                    {offInSeries > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff7ed', color: '#c2410c' }}>{offInSeries} off</span>}
                                   </div>
                                   {seriesOpen
                                     ? <ChevronUp size={12} className="text-[#a8a29e] shrink-0" />

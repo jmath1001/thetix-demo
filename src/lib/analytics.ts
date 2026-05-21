@@ -39,6 +39,7 @@ export type EventName =
   | 'recurring_series_edited'
   | 'recurring_session_edited'
   | 'recurring_session_cancelled'
+  | 'recurring_session_student_off'
   | 'student_edited'
   | 'week_cleared_non_recurring'
   | 'auto_book_used'

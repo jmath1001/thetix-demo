@@ -48,6 +48,8 @@ type TimelineItem =
       count: number
       present: number
       noShow: number
+      cancelled: number
+      off: number
       unmarked: number
       notesCount: number
       sortDate: string
@@ -76,13 +78,14 @@ export default function StudentHistoryPage() {
       setError(null)
 
       try {
-        const [{ data: studentRow, error: studentErr }, { data: rows, error: rowsErr }, { data: tutorRows, error: tutorErr }] = await Promise.all([
+        const [{ data: studentRow, error: studentErr }, { data: rows, error: rowsErr }, { data: tutorRows, error: tutorErr }, { data: exRows }] = await Promise.all([
           withCenter(supabase.from(STUDENTS).select('*').eq('id', studentId)).single(),
           (withCenter(supabase
             .from(SS)
             .select(`id, topic, status, notes, series_id, session_id, ${SESSIONS} ( id, session_date, time, tutor_id )`)
             .eq('student_id', studentId)) as any),
           withCenter(supabase.from(TUTORS).select('id, name')),
+          (withCenter(supabase.from(DB.studentDateExceptions).select('id, series_id, exception_date, reason').eq('student_id', studentId)) as any),
         ])
 
         if (studentErr) throw studentErr
@@ -112,9 +115,22 @@ export default function StudentHistoryPage() {
           .filter(Boolean)
           .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time))
 
+        const exceptionRows: HistoryRow[] = (exRows ?? []).map((e: any) => ({
+          rowId: `exc:${e.id}`,
+          date: e.exception_date,
+          time: '',
+          blockLabel: '',
+          tutorId: '',
+          tutorName: '',
+          topic: 'Planned Absence',
+          status: 'off',
+          notes: e.reason ?? null,
+          seriesId: e.series_id ?? null,
+        }))
+
         if (!cancelled) {
           setStudent(studentRow)
-          setHistory(mapped as any[])
+          setHistory([...mapped as any[], ...exceptionRows].sort((a: any, b: any) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time)))
         }
       } catch (err: any) {
         if (!cancelled) setError(err?.message ?? 'Failed to load student history')
@@ -128,13 +144,16 @@ export default function StudentHistoryPage() {
   }, [studentId])
 
   const today = toISODate(getCentralTimeNow())
+  const cancelledCount = useMemo(() => history.filter(s => s.status === 'cancelled').length, [history])
+  const offCount = useMemo(() => history.filter(s => s.status === 'off').length, [history])
   const past = useMemo(() => history.filter(s => s.date < today), [history, today])
-  const upcoming = useMemo(() => history.filter(s => s.date >= today), [history, today])
-  const presentCount = useMemo(() => past.filter(s => s.status === 'present' || s.status === 'confirmed').length, [past])
-  const noShowCount = useMemo(() => past.filter(s => s.status === 'no-show').length, [past])
-  const unmarkedCount = useMemo(() => past.filter(s => s.status !== 'present' && s.status !== 'confirmed' && s.status !== 'no-show').length, [past])
-  const attendanceRate = past.length > 0 ? presentCount / past.length : null
-  const noShowRate = past.length > 0 ? noShowCount / past.length : null
+  const upcoming = useMemo(() => history.filter(s => s.date >= today && s.status !== 'cancelled'), [history, today])
+  const pastActive = useMemo(() => past.filter(s => s.status !== 'cancelled' && s.status !== 'off'), [past])
+  const presentCount = useMemo(() => pastActive.filter(s => s.status === 'present' || s.status === 'confirmed').length, [pastActive])
+  const noShowCount = useMemo(() => pastActive.filter(s => s.status === 'no-show').length, [pastActive])
+  const unmarkedCount = useMemo(() => pastActive.filter(s => s.status !== 'present' && s.status !== 'confirmed' && s.status !== 'no-show').length, [pastActive])
+  const attendanceRate = pastActive.length > 0 ? presentCount / pastActive.length : null
+  const noShowRate = pastActive.length > 0 ? noShowCount / pastActive.length : null
 
   const groupedTimeline = useMemo(() => {
     const source = timelineTab === 'upcoming' ? upcoming : timelineTab === 'past' ? past : history
@@ -165,7 +184,9 @@ export default function StudentHistoryPage() {
       const focus = timelineTab === 'upcoming' ? first : last
       const present = rows.filter(r => r.status === 'present' || r.status === 'confirmed').length
       const noShow = rows.filter(r => r.status === 'no-show').length
-      const unmarked = rows.length - present - noShow
+      const cancelled = rows.filter(r => r.status === 'cancelled').length
+      const off = rows.filter(r => r.status === 'off').length
+      const unmarked = rows.length - present - noShow - cancelled - off
 
       return {
         kind: 'series',
@@ -181,6 +202,8 @@ export default function StudentHistoryPage() {
         count: rows.length,
         present,
         noShow,
+        cancelled,
+        off,
         unmarked,
         notesCount: rows.filter(r => !!r.notes).length,
         sortDate: `${focus.date}T${focus.time}`,
@@ -197,6 +220,8 @@ export default function StudentHistoryPage() {
   const statusBadge = (row: any) => {
     if (row.status === 'present' || row.status === 'confirmed') return { text: '✓ Present', bg: '#dcfce7', color: '#166534', shadow: '#16a34a20' }
     if (row.status === 'no-show') return { text: '✕ No-show', bg: '#fee2e2', color: '#991b1b', shadow: '#dc262620' }
+    if (row.status === 'cancelled') return { text: '⊘ Cancelled', bg: '#f3f4f6', color: '#9ca3af', shadow: '#9ca3af20' }
+    if (row.status === 'off') return { text: '✈ Off', bg: '#fff7ed', color: '#c2410c', shadow: '#c2410c20' }
     if (row.date < today) return { text: '? Unmarked', bg: '#f1f5f9', color: '#334155', shadow: '#64748b20' }
     return { text: '→ Upcoming', bg: '#dbeafe', color: '#1e40af', shadow: '#3b82f620' }
   }
@@ -279,11 +304,11 @@ export default function StudentHistoryPage() {
 
           <div className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
-              { label: 'Total Sessions', value: history.length, sub: `${upcoming.length} upcoming`, color: '#3b82f6' },
-              { label: 'Past Sessions', value: past.length, sub: `${presentCount} present`, color: '#10b981' },
-              { label: 'Attendance Rate', value: attendanceRate === null ? '—' : `${Math.round(attendanceRate * 100)}%`, sub: `${presentCount}/${past.length || 0}`, color: '#8b5cf6' },
-              { label: 'No-show Rate', value: noShowRate === null ? '—' : `${Math.round(noShowRate * 100)}%`, sub: `${noShowCount}/${past.length || 0}`, color: '#ef4444' },
-              { label: 'Unmarked Past', value: unmarkedCount, sub: 'Needs review', color: '#f59e0b' },
+              { label: 'Active Sessions', value: history.length - cancelledCount - offCount, sub: `${upcoming.length} upcoming`, color: '#3b82f6' },
+              { label: 'Attendance Rate', value: attendanceRate === null ? '—' : `${Math.round(attendanceRate * 100)}%`, sub: `${presentCount}/${pastActive.length} attended`, color: '#10b981' },
+              { label: 'No-show Rate', value: noShowRate === null ? '—' : `${Math.round(noShowRate * 100)}%`, sub: `${noShowCount}/${pastActive.length || 0}`, color: '#ef4444' },
+              { label: 'Cancelled', value: cancelledCount, sub: 'session records', color: '#9ca3af' },
+              { label: 'Absences / Off', value: offCount, sub: 'planned off days', color: '#f97316' },
             ].map(card => (
               <div key={card.label} className="rounded-xl p-3.5 border-l-4 transition-all hover:shadow-md" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeftColor: card.color, border: '1px solid #e2e8f0', borderLeftWidth: '4px' }}>
                 <p className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: card.color }}>{card.label}</p>
@@ -371,23 +396,25 @@ export default function StudentHistoryPage() {
                       </div>
                     ) : (
                       <div className="flex items-start gap-3.5">
-                        <div className="w-9 shrink-0 text-center rounded-lg p-1.5" style={{ background: '#f1f5f9' }}>
-                          <p className="text-[8px] font-black uppercase text-[#94a3b8] leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
-                          <p className="text-base font-black text-[#0f172a] leading-tight">{d.getDate()}</p>
+                        <div className="w-9 shrink-0 text-center rounded-lg p-1.5" style={{ background: row.status === 'off' ? '#fff7ed' : row.status === 'cancelled' ? '#f3f4f6' : '#f1f5f9' }}>
+                          <p className="text-[8px] font-black uppercase leading-none" style={{ color: row.status === 'off' ? '#c2410c' : row.status === 'cancelled' ? '#9ca3af' : '#94a3b8' }}>{d.toLocaleDateString('en-US', { month: 'short' })}</p>
+                          <p className="text-base font-black leading-tight" style={{ color: row.status === 'off' ? '#c2410c' : row.status === 'cancelled' ? '#9ca3af' : '#0f172a' }}>{d.getDate()}</p>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-bold text-[#0f172a] truncate">{row.topic}</p>
-                          <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName} · {row.blockLabel}</p>
+                          <p className="text-[13px] font-bold truncate" style={{ color: row.status === 'cancelled' ? '#9ca3af' : '#0f172a', textDecoration: row.status === 'cancelled' ? 'line-through' : 'none' }}>{row.topic}</p>
+                          <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName}{row.tutorName && row.blockLabel ? ' · ' : ''}{row.blockLabel}</p>
                           {row.notes && <p className="text-[10px] mt-1 text-[#475569] truncate italic">"{row.notes}"</p>}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color, boxShadow: `0 2px 4px ${badge.shadow}` }}>{badge.text}</span>
                           <span className="text-[9px] text-[#94a3b8]">{row.time}</span>
-                          <button
-                            onClick={() => { setEditingRowId(row.rowId); setEditDraft({ status: row.status, topic: row.topic, notes: row.notes ?? '' }) }}
-                            className="text-[9px] font-semibold text-[#94a3b8] hover:text-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity">
-                            Edit
-                          </button>
+                          {row.status !== 'cancelled' && row.status !== 'off' && (
+                            <button
+                              onClick={() => { setEditingRowId(row.rowId); setEditDraft({ status: row.status, topic: row.topic, notes: row.notes ?? '' }) }}
+                              className="text-[9px] font-semibold text-[#94a3b8] hover:text-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity">
+                              Edit
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -431,7 +458,11 @@ export default function StudentHistoryPage() {
                       {timelineTab === 'upcoming' ? (
                         <span className="text-[9px] text-[#3b82f6] font-semibold">{item.count} pending</span>
                       ) : (
-                        <span className="text-[9px] text-[#64748b] font-semibold">P {item.present} · NS {item.noShow}{timelineTab === 'all' && item.unmarked > 0 ? ` · ${item.unmarked} upcoming` : ''}</span>
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-[9px] text-[#64748b] font-semibold">{item.present} present · {item.noShow} no-show{item.unmarked > 0 ? ` · ${item.unmarked} upcoming` : ''}</span>
+                          {item.cancelled > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#f3f4f6', color: '#9ca3af' }}>{item.cancelled} cancelled</span>}
+                          {item.off > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff7ed', color: '#c2410c' }}>{item.off} off</span>}
+                        </div>
                       )}
                       {seriesExpanded ? <ChevronUp size={12} className="text-[#a78bfa]" /> : <ChevronDown size={12} className="text-[#a78bfa]" />}
                     </div>
@@ -442,8 +473,9 @@ export default function StudentHistoryPage() {
                         const badge = statusBadge(row)
                         const d = new Date(row.date + 'T00:00:00')
                         const isEditing = editingRowId === row.rowId
+                        const isReadOnly = row.status === 'cancelled' || row.status === 'off'
                         return (
-                          <div key={row.rowId} className="group pl-14 pr-5 py-3 transition-colors" style={{ borderLeft: `2px solid ${badge.color}20` }}>
+                          <div key={row.rowId} className="group pl-14 pr-5 py-3 transition-colors" style={{ borderLeft: `2px solid ${badge.color}20`, opacity: isReadOnly ? 0.75 : 1 }}>
                             {isEditing ? (
                               <div className="space-y-2.5">
                                 <div className="flex items-center justify-between">
@@ -490,18 +522,20 @@ export default function StudentHistoryPage() {
                                   <p className="text-base font-black text-[#0f172a] leading-tight">{d.getDate()}</p>
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-[13px] font-bold text-[#0f172a] truncate">{row.topic}</p>
-                                  <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName} · {row.blockLabel}</p>
+                                  <p className="text-[13px] font-bold truncate" style={{ color: row.status === 'cancelled' ? '#9ca3af' : '#0f172a', textDecoration: row.status === 'cancelled' ? 'line-through' : 'none' }}>{row.topic}</p>
+                                  <p className="text-[10px] text-[#64748b] mt-0.5">{row.tutorName}{row.tutorName && row.blockLabel ? ' · ' : ''}{row.blockLabel}</p>
                                   {row.notes && <p className="text-[10px] mt-1 text-[#475569] truncate italic">&quot;{row.notes}&quot;</p>}
                                 </div>
                                 <div className="flex flex-col items-end gap-1.5 shrink-0">
                                   <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: badge.bg, color: badge.color, boxShadow: `0 2px 4px ${badge.shadow}` }}>{badge.text}</span>
                                   <span className="text-[9px] text-[#94a3b8]">{row.time}</span>
-                                  <button
-                                    onClick={() => { setEditingRowId(row.rowId); setEditDraft({ status: row.status, topic: row.topic, notes: row.notes ?? '' }) }}
-                                    className="text-[9px] font-semibold text-[#94a3b8] hover:text-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity">
-                                    Edit
-                                  </button>
+                                  {!isReadOnly && (
+                                    <button
+                                      onClick={() => { setEditingRowId(row.rowId); setEditDraft({ status: row.status, topic: row.topic, notes: row.notes ?? '' }) }}
+                                      className="text-[9px] font-semibold text-[#94a3b8] hover:text-[#3b82f6] opacity-0 group-hover:opacity-100 transition-opacity">
+                                      Edit
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             )}

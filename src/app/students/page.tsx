@@ -5,7 +5,7 @@ import {
   Plus, Trash2, GraduationCap, Loader2, Save, X,
   Upload, ChevronDown, ChevronUp, Search, Filter,
   MoreHorizontal, Mail, Phone, AlertTriangle, Check,
-  ArrowUpDown, BookOpen, Clock, Activity
+  ArrowUpDown, BookOpen, Clock, Activity, CalendarOff
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { BookingForm, BookingToast } from '@/components/BookingForm'
@@ -22,6 +22,20 @@ const TUTORS   = DB.tutors
 const STUDENTS = DB.students
 const SESSIONS = DB.sessions
 const SS       = DB.sessionStudents
+
+type ExceptionEntry = { id: string; series_id: string | null; exception_date: string; reason: string | null };
+type VacationState = {
+  studentId: string;
+  studentName: string;
+  seriesIds: string[];
+  startDate: string;
+  endDate: string;
+  reason: string;
+  exceptions: ExceptionEntry[];
+  loadingExceptions: boolean;
+  saving: boolean;
+  error: string | null;
+};
 
 const EMPTY_FORM = {
   name: '', grade: '', school_name: '', email: '', phone: '',
@@ -528,6 +542,7 @@ export default function StudentAdminPage() {
   const [newStudent, setNewStudent] = useState(EMPTY_FORM)
   const [creating, setCreating] = useState(false)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [vacation, setVacation] = useState<VacationState | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bookingToast, setBookingToast] = useState<any>(null)
 
@@ -736,6 +751,113 @@ export default function StudentAdminPage() {
     }
   }
 
+  const openVacation = async (student: any) => {
+    const tod = toISODate(getCentralTimeNow());
+    setVacation({ studentId: student.id, studentName: student.name, seriesIds: [], startDate: tod, endDate: tod, reason: '', exceptions: [], loadingExceptions: true, saving: false, error: null });
+    const [seriesRes, exRes] = await Promise.all([
+      withCenter(supabase.from(DB.recurringSeries).select('id').eq('student_id', student.id).eq('status', 'active') as any),
+      (withCenter(supabase.from(DB.studentDateExceptions).select('id, series_id, exception_date, reason').eq('student_id', student.id) as any) as any).order('exception_date'),
+    ]);
+    const seriesIds = ((seriesRes as any).data ?? []).map((r: any) => r.id);
+    setVacation(prev => prev ? { ...prev, seriesIds, exceptions: ((exRes as any).data ?? []) as ExceptionEntry[], loadingExceptions: false } : prev);
+  };
+
+  const handleAddVacation = async () => {
+    if (!vacation) return;
+    setVacation(prev => prev ? { ...prev, saving: true, error: null } : prev);
+    const { studentId, studentName, seriesIds, startDate, endDate, reason } = vacation;
+    if (endDate < startDate) {
+      setVacation(prev => prev ? { ...prev, saving: false, error: 'End date must be on or after start date.' } : prev);
+      return;
+    }
+    try {
+      let totalMarked = 0;
+      for (const seriesId of seriesIds) {
+        const { data: rows, error: fe } = await (withCenter(
+          supabase.from(DB.sessionStudents)
+            .select(`id, ${DB.sessions}!inner(session_date)`)
+            .eq('series_id', seriesId)
+            .neq('status', 'cancelled')
+        ) as any);
+        if (fe) throw fe;
+        const inRange = (rows ?? []).filter((r: any) => {
+          const sess = Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions];
+          const d = sess?.session_date ?? '';
+          return d >= startDate && d <= endDate;
+        });
+        for (const row of inRange) {
+          const sess = Array.isArray(row[DB.sessions]) ? row[DB.sessions][0] : row[DB.sessions];
+          const exDate = sess?.session_date ?? '';
+          const { error: exErr } = await supabase.from(DB.studentDateExceptions).insert(
+            withCenterPayload({ student_id: studentId, series_id: seriesId, exception_date: exDate, reason: reason.trim() || null })
+          );
+          if (exErr && (exErr as any).code !== '23505') throw exErr;
+          const { error: delErr } = await supabase.from(DB.sessionStudents).delete().eq('id', row.id);
+          if (delErr) throw delErr;
+          totalMarked++;
+        }
+      }
+      if (totalMarked === 0) {
+        setVacation(prev => prev ? { ...prev, saving: false, error: seriesIds.length === 0 ? 'No active recurring series found for this student.' : 'No scheduled sessions found in that date range.' } : prev);
+        return;
+      }
+      const { data: newEx } = await (withCenter(supabase.from(DB.studentDateExceptions).select('id, series_id, exception_date, reason').eq('student_id', studentId) as any) as any).order('exception_date');
+      setVacation(prev => prev ? { ...prev, saving: false, exceptions: (newEx ?? []) as ExceptionEntry[], startDate: toISODate(getCentralTimeNow()), endDate: toISODate(getCentralTimeNow()), reason: '' } : prev);
+      fetchData();
+    } catch (e: any) {
+      setVacation(prev => prev ? { ...prev, saving: false, error: e.message } : prev);
+    }
+  };
+
+  const handleDeleteException = async (ex: ExceptionEntry) => {
+    if (!vacation) return;
+    // Delete the exception record
+    const { error } = await supabase.from(DB.studentDateExceptions).delete().eq('id', ex.id);
+    if (error) { setVacation(prev => prev ? { ...prev, error: error.message } : prev); return; }
+
+    // Restore the session student row if we have a series to look up
+    if (ex.series_id) {
+      try {
+        const { data: sr } = await (withCenter(
+          supabase.from(DB.recurringSeries).select('tutor_id, time, topic, student_id').eq('id', ex.series_id).limit(1).maybeSingle() as any
+        ) as any);
+        if (sr) {
+          // Find or create the session slot
+          const { data: sess } = await (supabase.from(DB.sessions)
+            .select('id')
+            .eq('session_date', ex.exception_date)
+            .eq('tutor_id', sr.tutor_id)
+            .eq('time', sr.time)
+            .maybeSingle() as any);
+          let sessionId: string;
+          if (sess) {
+            sessionId = sess.id;
+          } else {
+            const { data: newSess, error: se } = await supabase.from(DB.sessions)
+              .insert(withCenterPayload({ session_date: ex.exception_date, tutor_id: sr.tutor_id, time: sr.time }))
+              .select('id').single();
+            if (se) throw se;
+            sessionId = newSess.id;
+          }
+          const studentRow = students.find(s => s.id === vacation.studentId);
+          await supabase.from(DB.sessionStudents).insert(
+            withCenterPayload({
+              session_id: sessionId,
+              student_id: vacation.studentId,
+              name: studentRow?.name ?? vacation.studentName,
+              topic: sr.topic,
+              status: 'scheduled',
+              series_id: ex.series_id,
+            })
+          );
+        }
+      } catch {}
+    }
+
+    setVacation(prev => prev ? { ...prev, exceptions: prev.exceptions.filter(e => e.id !== ex.id) } : prev);
+    fetchData();
+  };
+
   const activeStudent = students.find(s => s.id === activeStudentId) ?? null
 
   const SortIcon = ({ col }: { col: typeof sortCol }) => (
@@ -922,6 +1044,11 @@ export default function StudentAdminPage() {
                           className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
                           History
                         </Link>
+                        <button onClick={() => openVacation(student)}
+                          className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700 flex items-center gap-1"
+                          title="Manage absences">
+                          <CalendarOff size={10}/> Absences
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -976,6 +1103,97 @@ export default function StudentAdminPage() {
 
       {showImport && <CSVImportModal onClose={() => setShowImport(false)} onImported={fetchData} />}
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
+
+      {vacation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget && !vacation.saving) setVacation(null); }}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl flex flex-col" style={{ border: '1px solid #fed7aa', maxHeight: '90vh' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ background: '#431407' }}>
+              <div>
+                <p className="text-sm font-black text-white flex items-center gap-2"><CalendarOff size={14}/> Manage Absences</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.6)' }}>{vacation.studentName}{vacation.seriesIds.length > 0 ? ` · ${vacation.seriesIds.length} active series` : ' · no active series'}</p>
+              </div>
+              <button onClick={() => setVacation(null)} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
+                <X size={15}/>
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-5 space-y-5">
+              <div className="rounded-xl p-4 space-y-3" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                <p className="text-[11px] font-black uppercase tracking-widest text-orange-700">Schedule Absence</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1 text-[#64748b]">From</label>
+                    <input type="date" value={vacation.startDate}
+                      onChange={e => setVacation(prev => prev ? { ...prev, startDate: e.target.value } : prev)}
+                      className="w-full px-3 py-2 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #fed7aa', background: 'white' }}/>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest mb-1 text-[#64748b]">To</label>
+                    <input type="date" value={vacation.endDate}
+                      onChange={e => setVacation(prev => prev ? { ...prev, endDate: e.target.value } : prev)}
+                      className="w-full px-3 py-2 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #fed7aa', background: 'white' }}/>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest mb-1 text-[#64748b]">Reason (optional)</label>
+                  <input type="text" value={vacation.reason}
+                    onChange={e => setVacation(prev => prev ? { ...prev, reason: e.target.value } : prev)}
+                    placeholder="e.g. Spring break, vacation, school trip…"
+                    className="w-full px-3 py-2 rounded-xl text-sm outline-none text-[#0f172a]" style={{ border: '2px solid #fed7aa', background: 'white' }}/>
+                </div>
+                {vacation.error && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}>
+                    <AlertTriangle size={11}/> {vacation.error}
+                  </div>
+                )}
+                <button onClick={handleAddVacation} disabled={vacation.saving || vacation.seriesIds.length === 0}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                  style={{ background: (vacation.saving || vacation.seriesIds.length === 0) ? '#94a3b8' : '#c2410c' }}>
+                  {vacation.saving ? <><Loader2 size={13} className="animate-spin"/> Saving…</> : <><CalendarOff size={13}/> Mark Off Sessions in Range</>}
+                </button>
+                <p className="text-[10px] text-orange-600 leading-relaxed">Sessions in this date range will be removed and recorded as planned absences. The rest of the series continues.</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-[#64748b]">
+                  Scheduled Absences {vacation.loadingExceptions ? '…' : `(${vacation.exceptions.length})`}
+                </p>
+                {vacation.loadingExceptions ? (
+                  <div className="flex items-center gap-2 py-3 text-xs text-slate-400"><Loader2 size={12} className="animate-spin"/> Loading…</div>
+                ) : vacation.exceptions.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-2">No scheduled absences yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {vacation.exceptions.map(ex => {
+                      const d = new Date(ex.exception_date + 'T00:00:00');
+                      return (
+                        <div key={ex.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white" style={{ border: '1px solid #e2e8f0' }}>
+                          <div className="text-center shrink-0 w-9">
+                            <p className="text-[8px] font-bold uppercase text-slate-400 leading-none">{d.toLocaleDateString('en-US', { month: 'short' })}</p>
+                            <p className="text-sm font-black text-orange-600 leading-tight">{d.getDate()}</p>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-700">{d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                            {ex.reason && <p className="text-[10px] text-slate-400 truncate">{ex.reason}</p>}
+                          </div>
+                          <button onClick={() => handleDeleteException(ex)}
+                            className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            title="Remove this absence record">
+                            <Trash2 size={12}/>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="shrink-0 px-5 py-3 border-t border-slate-100">
+              <button onClick={() => setVacation(null)} className="w-full py-2.5 rounded-xl text-sm font-bold text-[#64748b]" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   )
