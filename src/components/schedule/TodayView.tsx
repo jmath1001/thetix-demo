@@ -557,7 +557,10 @@ export function TodayView({
   };
 
   const patchForm = (key: string, patch: Partial<InlineForm>) =>
-    setForms(p => ({ ...p, [key]: { ...p[key], ...patch } }));
+    setForms(p => {
+      if (!p[key]) return p;
+      return { ...p, [key]: { ...p[key], ...patch } };
+    });
 
   const clampWeeks = (value: number) => Math.max(2, Math.min(24, Number.isFinite(value) ? Math.floor(value) : 2));
 

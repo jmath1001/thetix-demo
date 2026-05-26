@@ -373,6 +373,7 @@ function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
     setStartDate('');
     setEndDate('');
     setNote('');
+    logEvent('tutor_time_off_added', { tutorId: tutor.id, tutorName: tutor.name, days: datesToInsert.length, note: note.trim() || null });
     await onRefetch();
     setSaving(false);
   };
@@ -387,6 +388,7 @@ function TimeOffPanel({ tutor, timeOffList, onRefetch }: {
       return;
     }
 
+    logEvent('tutor_time_off_removed', { tutorId: tutor.id, tutorName: tutor.name, days: ids.length });
     await onRefetch();
     setSaving(false);
   };
@@ -701,10 +703,25 @@ function TutorDetailPanel({
         </div>
 
         <div className="mt-3 grid gap-2.5 lg:grid-cols-2">
-          <div className="rounded border border-slate-100 bg-slate-50 px-3.5 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conflicts</p>
-            <p className="mt-1 text-sm font-black text-slate-900">{conflictCount} session{conflictCount === 1 ? '' : 's'} need movement</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">{conflictCount > 0 ? 'See details tab list below.' : 'No blocked-date conflicts right now.'}</p>
+          <div className={`rounded border px-3.5 py-3 ${conflictCount > 0 ? 'border-red-300 bg-red-50' : 'border-slate-100 bg-slate-50'}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${conflictCount > 0 ? 'text-red-500' : 'text-slate-400'}`}>Conflicts</p>
+            <p className={`mt-1 text-sm font-black ${conflictCount > 0 ? 'text-red-700' : 'text-slate-900'}`}>
+              {conflictCount > 0 ? `${conflictCount} session${conflictCount === 1 ? '' : 's'} need rearranging` : 'No conflicts'}
+            </p>
+            {conflictCount > 0 ? (
+              <div className="mt-1.5 space-y-0.5">
+                {conflictSessions.slice(0, 4).map(session => (
+                  <p key={session.id} className="text-[11px] font-medium text-red-600">
+                    {formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}
+                  </p>
+                ))}
+                {conflictSessions.length > 4 && (
+                  <p className="text-[11px] text-red-400">+{conflictSessions.length - 4} more</p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-0.5 text-[11px] text-slate-500">No blocked-date conflicts right now.</p>
+            )}
           </div>
           <div className="rounded-lg border border-slate-200 bg-[#f1f5f9] px-3.5 py-3">
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Time off</p>
@@ -816,22 +833,7 @@ function TutorDetailPanel({
                   })}
                 />
 
-                {/* Conflicts — compact, view-mode only */}
-                {!isEditing && conflictSessions.length > 0 && (
-                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-700 mb-1.5">
-                      {conflictCount} conflict{conflictCount !== 1 ? 's' : ''} · time-off overlaps booked sessions
-                    </p>
-                    <div className="space-y-1">
-                      {conflictSessions.slice(0, 3).map(session => (
-                        <p key={session.id} className="text-[11px] text-red-700">
-                          {formatDateLabel(session.date)} · {formatSessionTimeLabel(session.time)}
-                        </p>
-                      ))}
-                      {conflictSessions.length > 3 && <p className="text-[11px] text-red-600">+{conflictSessions.length - 3} more</p>}
-                    </div>
-                  </div>
-                )}
+
               </div>
             </div>
           </div>
