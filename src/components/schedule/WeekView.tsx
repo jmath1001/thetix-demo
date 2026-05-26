@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PlusCircle, Check, X, Loader2, Trash2, Search, ChevronDown, Monitor } from 'lucide-react';
-import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toggleStudentVirtual, toggleSeriesVirtual, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
+import { createInlineStudent, updateAttendance, removeStudentFromSession, updateSessionTopic, toggleStudentVirtual, toggleSeriesVirtual, deleteSeries, toISODate, dayOfWeek, getCentralTimeNow, type Tutor } from '@/lib/useScheduleData';
 import { getSessionsForDay, type SessionTimesByDay } from '@/components/constants';
 import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
@@ -134,6 +134,7 @@ export function WeekView({
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [draggingTopic, setDraggingTopic] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [seriesPromptId, setSeriesPromptId] = useState<string | null>(null);
   const [topicEditRowId, setTopicEditRowId] = useState<string | null>(null);
   const [topicEditValue, setTopicEditValue] = useState('');
   const [topicDropdownRowId, setTopicDropdownRowId] = useState<string | null>(null);
@@ -957,6 +958,7 @@ export function WeekView({
                                                     const sid = student.rowId || student.id;
                                                     if (removingId !== sid) { setRemovingId(sid); return; }
                                                     setRemovingId(null);
+                                                    if (student.seriesId) { setSeriesPromptId(sid); return; }
                                                     await removeStudentFromSession({ sessionId: session.id, studentId: student.id });
                                                     logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id });
                                                     refetch();
@@ -968,6 +970,20 @@ export function WeekView({
                                                     : { background: 'transparent', color: '#6b7280' }}>
                                                   <Trash2 size={9} strokeWidth={2} />
                                                 </button>
+                                                {seriesPromptId === (student.rowId || student.id) && (
+                                                  <span className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id }); refetch(); }}
+                                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
+                                                      just this
+                                                    </button>
+                                                    <button
+                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_series', seriesId: student.seriesId }); refetch(); } }}
+                                                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600 hover:bg-red-200">
+                                                      all future
+                                                    </button>
+                                                  </span>
+                                                )}
                                               </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 mt-0.5" onClick={e => e.stopPropagation()}>
@@ -1149,6 +1165,7 @@ export function WeekView({
                                                   const sid = student.rowId || student.id;
                                                   if (removingId !== sid) { setRemovingId(sid); return; }
                                                   setRemovingId(null);
+                                                  if (student.seriesId) { setSeriesPromptId(sid); return; }
                                                   await removeStudentFromSession({ sessionId: session.id, studentId: student.id });
                                                   logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id });
                                                   refetch();
@@ -1160,6 +1177,20 @@ export function WeekView({
                                                   : { background: 'transparent', color: '#6b7280' }}>
                                                 <Trash2 size={7} strokeWidth={2} />
                                               </button>
+                                              {seriesPromptId === (student.rowId || student.id) && (
+                                                <span className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                  <button
+                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id }); refetch(); }}
+                                                    className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
+                                                    just this
+                                                  </button>
+                                                  <button
+                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_mobile_series', seriesId: student.seriesId }); refetch(); } }}
+                                                    className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600 hover:bg-red-200">
+                                                    all future
+                                                  </button>
+                                                </span>
+                                              )}
                                               <div className="flex-1 min-w-0"
                                                 style={{ cursor: bulkRemoveMode ? 'pointer' : 'default' }}>
                                                 <div className="flex items-center gap-1">
