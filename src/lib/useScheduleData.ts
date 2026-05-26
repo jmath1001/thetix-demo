@@ -899,6 +899,51 @@ export async function cancelSeries(seriesId: string): Promise<void> {
   if (updateErr) throw updateErr
 }
 
+export async function deleteSeries(seriesId: string): Promise<void> {
+  const today = toISODate(new Date())
+
+  // Find all session_students rows for this series with a future session date
+  const { data: ssRows, error: fetchErr } = await (withCenter(
+    supabase
+      .from(SS)
+      .select(`id, ${SESSIONS}!inner ( id, session_date )`)
+      .eq('series_id', seriesId)
+  ) as any)
+  if (fetchErr) throw fetchErr
+
+  const futureSSIds: string[] = []
+  const futureSessionIds: string[] = []
+  for (const r of (ssRows ?? [])) {
+    const sess = Array.isArray(r[SESSIONS]) ? r[SESSIONS][0] : r[SESSIONS]
+    if (sess?.session_date >= today) {
+      futureSSIds.push(r.id)
+      if (sess.id && !futureSessionIds.includes(sess.id)) futureSessionIds.push(sess.id)
+    }
+  }
+
+  // Delete future session_students rows
+  if (futureSSIds.length > 0) {
+    const { error } = await withCenter(supabase.from(SS).delete()).in('id', futureSSIds)
+    if (error) throw error
+  }
+
+  // Delete any sessions that now have no students remaining
+  if (futureSessionIds.length > 0) {
+    const { data: remaining } = await withCenter(
+      supabase.from(SS).select('session_id').in('session_id', futureSessionIds)
+    )
+    const sessionIdsWithStudents = new Set((remaining ?? []).map((r: any) => r.session_id))
+    const orphanedSessionIds = futureSessionIds.filter(id => !sessionIdsWithStudents.has(id))
+    if (orphanedSessionIds.length > 0) {
+      await withCenter(supabase.from(SESSIONS).delete()).in('id', orphanedSessionIds)
+    }
+  }
+
+  // Delete the recurring series row itself
+  const { error: deleteErr } = await withCenter(supabase.from(RECURRING).delete()).eq('id', seriesId)
+  if (deleteErr) throw deleteErr
+}
+
 function jsDayToIso(jsDay: number): number { return jsDay === 0 ? 7 : jsDay }
 
 function nextOccurrenceOfDay(fromDateStr: string, targetIsoDow: number): string {

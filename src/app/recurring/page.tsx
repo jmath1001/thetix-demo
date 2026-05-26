@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { DB, withCenter, withCenterPayload } from '@/lib/db';
 import {
-  fetchAllSeries, fetchSeriesSessions, cancelSeries,
+  fetchAllSeries, fetchSeriesSessions, cancelSeries, deleteSeries,
   rescheduleSeries, markCompletedSeries, createConfirmationToken, bookStudent,
   type RecurringSeries, type Tutor, type Student, toISODate,
 } from '@/lib/useScheduleData';
@@ -197,7 +197,7 @@ function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete, bulkSelect
         paddingBottom: 3,
       }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setConfirm(null); }}
+      onMouseLeave={() => setHovered(false)}
       onClick={() => bulkSelectMode && onToggleSelect?.(s.id)}
     >
       {/* Bulk checkbox */}
@@ -265,10 +265,17 @@ function SeriesGridCard({ s, today, onEdit, onCancelSeries, onDelete, bulkSelect
             className="px-1.5 text-[9px] font-bold text-slate-500 hover:bg-slate-50 transition-colors">
             keep
           </button>
+          {isActive && (
+            <button
+              onClick={e => { e.stopPropagation(); setConfirm(null); onCancelSeries(s.id); }}
+              className="px-1.5 text-[9px] font-bold text-white bg-amber-500 hover:bg-amber-600 transition-colors">
+              cancel
+            </button>
+          )}
           <button
-            onClick={e => { e.stopPropagation(); setConfirm(null); confirm === 'cancel' ? onCancelSeries(s.id) : onDelete(s.id); }}
+            onClick={e => { e.stopPropagation(); setConfirm(null); onDelete(s.id); }}
             className="px-1.5 text-[9px] font-bold text-white bg-red-500 hover:bg-red-600 transition-colors rounded-r-sm">
-            yes
+            delete
           </button>
         </div>
       )}
@@ -654,7 +661,7 @@ export default function RecurringManager() {
 
   const handleDelete = async (id: string) => {
     try {
-      await withCenter(supabase.from(DB.recurringSeries).delete()).eq('id', id);
+      await deleteSeries(id);
       logEvent('recurring_series_deleted', { seriesId: id });
       await load();
     }

@@ -2202,22 +2202,24 @@ export default function ContactCenter() {
                     {blastRecipients.map(r => (
                       <li
                         key={r.studentId}
-                        className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        className="flex cursor-pointer items-start gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
                         onClick={() => {
                           setStudentSchedConfirm(false);
                           setStudentSchedSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; });
                         }}
                       >
-                        <Checkbox
+                        <div className="mt-0.5"><Checkbox
                           checked={studentSchedSelected.has(r.studentId)}
                           onChange={() => {
                             setStudentSchedConfirm(false);
                             setStudentSchedSelected(prev => { const n = new Set(prev); n.has(r.studentId) ? n.delete(r.studentId) : n.add(r.studentId); return n; });
                           }}
-                        />
+                        /></div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-semibold text-slate-800">{r.studentName}</p>
-                          <p className="truncate text-[10px] text-slate-400"><EmailList student={{ studentEmail: r.studentEmail, momEmail: r.momEmail, dadEmail: r.dadEmail, notifyStudent: r.notifyStudent, notifyMom: r.notifyMom, notifyDad: r.notifyDad } as any} /></p>
+                          <div className="mt-0.5 text-[11px] text-slate-400">
+                            <EmailList student={{ studentEmail: r.studentEmail, momEmail: r.momEmail, dadEmail: r.dadEmail, notifyStudent: r.notifyStudent, notifyMom: r.notifyMom, notifyDad: r.notifyDad } as any} />
+                          </div>
                         </div>
                       </li>
                     ))}
@@ -2374,19 +2376,21 @@ function StatusBadge({ color, label, icon }: { color: 'green' | 'amber' | 'gray'
 
 function EmailList({ student }: { student: { studentEmail: string | null; momEmail: string | null; dadEmail: string | null; notifyStudent: boolean; notifyMom: boolean; notifyDad: boolean } }) {
   const entries = [
-    student.studentEmail ? { addr: student.studentEmail, notify: student.notifyStudent } : null,
-    student.momEmail     ? { addr: student.momEmail,     notify: student.notifyMom }     : null,
-    student.dadEmail     ? { addr: student.dadEmail,     notify: student.notifyDad }     : null,
-  ].filter(Boolean) as { addr: string; notify: boolean }[];
+    student.studentEmail ? { label: 'Student', addr: student.studentEmail, notify: student.notifyStudent } : null,
+    student.momEmail     ? { label: 'Mom',     addr: student.momEmail,     notify: student.notifyMom }     : null,
+    student.dadEmail     ? { label: 'Dad',     addr: student.dadEmail,     notify: student.notifyDad }     : null,
+  ].filter(Boolean) as { label: string; addr: string; notify: boolean }[];
 
   return (
-    <>
+    <span className="flex flex-col gap-0.5">
       {entries.map((x, i) => (
-        <span key={i} style={x.notify ? {} : { textDecoration: 'line-through', opacity: 0.5 }}>
-          {i > 0 ? ', ' : ''}{x.addr}
+        <span key={i} className={x.notify ? '' : 'opacity-50'}>
+          <span className="font-semibold text-slate-500">{x.label}:</span>{' '}
+          <span style={x.notify ? {} : { textDecoration: 'line-through' }}>{x.addr}</span>
+          {!x.notify && <span className="ml-1 text-[10px] font-semibold text-amber-500">opted out</span>}
         </span>
       ))}
-    </>
+    </span>
   );
 }
 
