@@ -186,52 +186,63 @@ function getOperationType(eventName: string): OperationType {
   return OPERATION_FROM_EVENT[eventName] ?? 'other';
 }
 
-// ── Tiny horizontal bar ────────────────────────────────────────────────────────
-function HBar({ value, max, color, label, count }: { value: number; max: number; color: string; label: string; count: number }) {
+// â”€â”€ Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function Bar({ value, max, color, label, count }: { value: number; max: number; color: string; label: string; count: number }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[11px] text-[#475569] w-40 shrink-0 truncate">{label}</span>
-      <div className="flex-1 h-2 rounded-full bg-[#f1f5f9] overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+      <span className="w-48 shrink-0 truncate text-xs font-semibold" style={{ color: '#374151' }}>{label}</span>
+      <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: '#e5e7eb' }}>
+        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: color }} />
       </div>
-      <span className="text-[11px] font-black w-8 text-right shrink-0" style={{ color }}>{count}</span>
+      <span className="w-10 text-right shrink-0 text-sm font-black" style={{ color }}>{count}</span>
     </div>
   );
 }
 
-// ── KPI card ──────────────────────────────────────────────────────────────────
-function KPI({ label, value, sub, color, icon, trend }: { label: string; value: string | number; sub?: string; color: string; icon: React.ReactNode; trend?: 'up' | 'down' | null }) {
+// â”€â”€ KPI card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function KPI({ label, value, sub, color, icon }: { label: string; value: string | number; sub?: string; color: string; icon: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl p-5" style={{ border: '1.5px solid #f1f5f9' }}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}18`, color }}>
-          {icon}
+    <div className="rounded-2xl p-5" style={{ background: 'white', border: '2px solid #e5e7eb' }}>
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-3" style={{ background: color }}>
+        <span style={{ color: 'white' }}>{icon}</span>
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest mb-1" style={{ color: '#9ca3af' }}>{label}</p>
+      <p className="text-4xl font-black leading-none mb-1" style={{ color: '#111827' }}>{value}</p>
+      {sub && <p className="text-xs" style={{ color: '#9ca3af' }}>{sub}</p>}
+    </div>
+  );
+}
+
+// â”€â”€ Collapsible section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function Collapsible({ title, sub, badge, badgeColor = '#dc2626', children, defaultOpen = true }: {
+  title: string; sub?: string; badge?: number | string; badgeColor?: string;
+  children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'white', border: '2px solid #e2e8f0' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-6 py-4 text-left"
+        style={{ background: '#1e293b' }}>
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-sm font-black text-white">{title}</span>
+          {badge !== undefined && Number(badge) > 0 && (
+            <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full shrink-0" style={{ background: badgeColor, color: 'white' }}>
+              {badge}
+            </span>
+          )}
+          {sub && <span className="text-[11px] text-slate-400 hidden md:block">{sub}</span>}
         </div>
-        {trend === 'up' && <TrendingUp size={13} style={{ color: '#16a34a' }} />}
-        {trend === 'down' && <TrendingDown size={13} style={{ color: '#dc2626' }} />}
-      </div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-1">{label}</p>
-      <p className="text-3xl font-black leading-none" style={{ color }}>{value}</p>
-      {sub && <p className="text-[11px] text-[#94a3b8] mt-1.5">{sub}</p>}
+        {open ? <ChevronUp size={15} color="#64748b" /> : <ChevronDown size={15} color="#64748b" />}
+      </button>
+      {open && <div className="p-6">{children}</div>}
     </div>
   );
 }
 
-// ── Section wrapper ───────────────────────────────────────────────────────────
-function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1.5px solid #f1f5f9' }}>
-      <div className="px-6 py-4" style={{ borderBottom: '1px solid #f8fafc' }}>
-        <p className="text-sm font-black text-[#0f172a]">{title}</p>
-        {sub && <p className="text-[10px] text-[#94a3b8] mt-0.5">{sub}</p>}
-      </div>
-      <div className="p-6">{children}</div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function AnalyticsPage() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -280,38 +291,6 @@ export default function AnalyticsPage() {
     }
     return visits;
   }, [firstVisits]);
-        {/* ── First Visits ── */}
-        <Section title="First Visits" sub="Unique devices/browsers that accessed this center">
-          {uniqueFirstVisits.length === 0 ? (
-            <p className="text-xs text-[#94a3b8] italic">No first visits yet</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">When</th>
-                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Device ID</th>
-                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">User Agent</th>
-                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Platform</th>
-                    <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Screen</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {uniqueFirstVisits.map(v => (
-                    <tr key={v.properties?.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                      <td className="px-3 py-2">{timeAgo(v.created_at)}</td>
-                      <td className="px-3 py-2 font-mono text-[10px] text-[#64748b]">{v.properties?.id}</td>
-                      <td className="px-3 py-2 truncate max-w-[200px]" title={v.properties?.userAgent}>{v.properties?.userAgent}</td>
-                      <td className="px-3 py-2">{v.properties?.platform}</td>
-                      <td className="px-3 py-2">{v.properties?.screen}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="text-[10px] text-[#cbd5e1] mt-2">Total unique devices: {uniqueFirstVisits.length}</p>
-            </div>
-          )}
-        </Section>
 
   useEffect(() => { fetchData(); }, []);
 
@@ -340,7 +319,7 @@ export default function AnalyticsPage() {
   const today = toISODate(getCentralTimeNow());
   const currentWeek = toISODate(getWeekStart(getCentralTimeNow()));
 
-  // ── Core derived data ──────────────────────────────────────────────────────
+  // â”€â”€ Core derived data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const { totalEvents, last7, bookings, attendanceMarks, uniqueDays } = useMemo(() => {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
@@ -356,7 +335,7 @@ export default function AnalyticsPage() {
     };
   }, [events]);
 
-  // ── Booking source breakdown ───────────────────────────────────────────────
+  // â”€â”€ Booking source breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const bookingSources = useMemo(() => {
     const counts: Record<string, number> = {};
     events.filter(e => e.event_name === 'session_booked').forEach(e => {
@@ -377,7 +356,7 @@ export default function AnalyticsPage() {
     return events.filter(event => new Date(event.created_at) >= cutoff);
   }, [events, insightRange]);
 
-  // ── Auto Book + search bar insights ───────────────────────────────────────
+  // â”€â”€ Auto Book + search bar insights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const autoBookInsights = useMemo(() => {
     const autoBookEvents = insightEvents.filter(e => e.event_name === 'auto_book_used');
     const actionCounts: Record<string, number> = {};
@@ -418,7 +397,7 @@ export default function AnalyticsPage() {
     };
   }, [insightEvents]);
 
-  // ── Attendance source breakdown ────────────────────────────────────────────
+  // â”€â”€ Attendance source breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const attendanceSources = useMemo(() => {
     const counts: Record<string, number> = {};
     events.filter(e => e.event_name === 'attendance_marked').forEach(e => {
@@ -430,7 +409,7 @@ export default function AnalyticsPage() {
 
   const maxAttSource = attendanceSources[0]?.[1] ?? 1;
 
-  // ── Operations by type ─────────────────────────────────────────────────────
+  // â”€â”€ Operations by type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const operationBreakdown = useMemo(() => {
     const counts: Record<OperationType, number> = {
       addition: 0,
@@ -459,7 +438,7 @@ export default function AnalyticsPage() {
     ? Math.max(...operationBreakdown.map(o => o.count), 1)
     : 1;
 
-  // ── Weekly ops table ───────────────────────────────────────────────────────
+  // â”€â”€ Weekly ops table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const weeklyData = useMemo(() => {
     const past = sessionStudents.filter(s => s.date < today);
     const weeks: Record<string, { present: number; noShow: number; total: number; bookings: number; events: number; attendanceMarks: number }> = {};
@@ -490,7 +469,7 @@ export default function AnalyticsPage() {
       }));
   }, [sessionStudents, events, today, weekRange, currentWeek]);
 
-  // ── Feature usage (top 15) ─────────────────────────────────────────────────
+  // â”€â”€ Feature usage (top 15) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const featureUsage = useMemo(() => {
     const counts: Record<string, number> = {};
     events.forEach(e => { counts[e.event_name] = (counts[e.event_name] ?? 0) + 1; });
@@ -502,7 +481,7 @@ export default function AnalyticsPage() {
 
   const maxFeature = featureUsage[0]?.count ?? 1;
 
-  // ── Daily activity (last 14 days) ──────────────────────────────────────────
+  // â”€â”€ Daily activity (last 14 days) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const dailyActivity = useMemo(() => {
     const days: Record<string, number> = {};
     for (let i = 13; i >= 0; i--) {
@@ -522,7 +501,7 @@ export default function AnalyticsPage() {
 
   const maxDaily = Math.max(...dailyActivity.map(d => d.count), 1);
 
-  // ── Student & Tutor Management ─────────────────────────────────────────────
+  // â”€â”€ Student & Tutor Management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const mgmtActivity = useMemo(() => {
     const studentEvents = ['student_created', 'student_edited', 'student_deleted', 'students_bulk_deleted', 'students_imported'];
     const tutorEvents   = ['tutor_created', 'tutor_edited', 'tutor_deleted', 'tutors_bulk_deleted'];
@@ -536,22 +515,24 @@ export default function AnalyticsPage() {
   }, [events]);
   const maxMgmt = mgmtActivity[0]?.[1] ?? 1;
 
-  // ── Communications breakdown ───────────────────────────────────────────────
+  // â”€â”€ Communications breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const commsBreakdown = useMemo(() => {
     const categories = [
-      { key: 'reminder_sent', label: 'Reminder emails', color: '#dc2626' },
-      { key: 'blast_sent',    label: 'Email blasts',    color: '#7c3aed' },
-      { key: 'tutor_schedules_sent', label: 'Tutor schedules', color: '#2563eb' },
-      { key: 'template_saved', label: 'Template saves', color: '#94a3b8' },
+      { key: 'reminder_sent',          label: 'Reminders',           color: '#dc2626' },
+      { key: 'blast_sent',             label: 'Email Blasts',        color: '#7c3aed' },
+      { key: 'tutor_schedules_sent',   label: 'Tutor Schedules',     color: '#2563eb' },
+      { key: 'student_schedules_sent', label: 'Student Schedules',   color: '#059669' },
+      { key: 'enrollment_form_sent',   label: 'Enrollment Forms',    color: '#d97706' },
     ];
     return categories.map(c => ({
       ...c,
       count: events.filter(e => e.event_name === c.key).length,
     })).filter(c => c.count > 0);
   }, [events]);
-  const maxComms = commsBreakdown[0]?.count ?? 1;
+  const maxComms = Math.max(...commsBreakdown.map(c => c.count), 1);
+  const totalEmailsSent = commsBreakdown.reduce((sum, c) => sum + c.count, 0);
 
-  // ── Center config activity ─────────────────────────────────────────────────
+  // â”€â”€ Center config activity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const centerActivity = useMemo(() => {
     const cats = [
       { key: 'term_created',        label: 'Terms created',   color: '#16a34a' },
@@ -567,7 +548,7 @@ export default function AnalyticsPage() {
   }, [events]);
   const maxCenter = centerActivity[0]?.count ?? 1;
 
-  // ── Virtual vs In-Person ───────────────────────────────────────────────────
+  // â”€â”€ Virtual vs In-Person â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const virtualStats = useMemo(() => {
     const virtual = sessionStudents.filter(s => s.isVirtual).length;
     const inPerson = sessionStudents.filter(s => !s.isVirtual).length;
@@ -575,7 +556,7 @@ export default function AnalyticsPage() {
     return { virtual, inPerson, total, pct: total > 0 ? Math.round((virtual / total) * 100) : 0 };
   }, [sessionStudents]);
 
-  // ── Student time off ───────────────────────────────────────────────────────
+  // â”€â”€ Student time off â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const studentTimeOffStats = useMemo(() => {
     const total = studentDateExceptions.length;
     const upcoming = studentDateExceptions.filter(e => e.exception_date >= today).slice(0, 10);
@@ -588,491 +569,245 @@ export default function AnalyticsPage() {
     return { total, upcoming, topReasons, maxReason: topReasons[0]?.[1] ?? 1 };
   }, [studentDateExceptions, today]);
 
-  // ── Rate color ─────────────────────────────────────────────────────────────
+  // â”€â”€ Rate color â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rc = (v: number | null) => !v ? '#94a3b8' : v >= 80 ? '#16a34a' : v >= 60 ? '#f59e0b' : '#dc2626';
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#f1f5f9' }}>
       <div className="flex flex-col items-center gap-3">
-        <Loader2 size={22} className="animate-spin text-[#dc2626]" />
-        <p className="text-xs font-semibold text-[#94a3b8] uppercase tracking-widest">Loading analytics…</p>
+        <Loader2 size={22} className="animate-spin" style={{ color: '#dc2626' }} />
+        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: '#9ca3af' }}>Loading analyticsâ€¦</p>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen pb-20" style={{ background: '#f8fafc', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+    <div className="min-h-screen pb-20" style={{ background: '#f1f5f9' }}>
 
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-white border-b border-[#f1f5f9]">
+      {/* â”€â”€ Header â”€â”€ */}
+      <div className="sticky top-0 z-40" style={{ background: 'white', borderBottom: '2px solid #e5e7eb' }}>
         <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#dc2626] flex items-center justify-center">
-              <BarChart2 size={14} className="text-white" />
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#dc2626' }}>
+              <BarChart2 size={15} color="white" />
             </div>
             <div>
-              <h1 className="text-sm font-black text-[#0f172a] leading-none">Analytics</h1>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-[#dc2626]">Pilot Dashboard</p>
+              <h1 className="text-sm font-black leading-none" style={{ color: '#0f172a' }}>Analytics</h1>
+              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#dc2626' }}>Pilot Dashboard</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <p className="text-[10px] text-[#94a3b8]">Updated {timeAgo(lastRefresh.toISOString())}</p>
+            <span className="text-[11px]" style={{ color: '#9ca3af' }}>Updated {timeAgo(lastRefresh.toISOString())}</span>
             <button onClick={fetchData}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-[#64748b]"
-              style={{ background: '#f1f5f9' }}>
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold"
+              style={{ background: '#f1f5f9', color: '#374151', border: '1.5px solid #e5e7eb' }}>
               <RefreshCw size={11} /> Refresh
             </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 pt-6 space-y-5">
+      <div className="max-w-5xl mx-auto px-6 pt-6 space-y-4">
 
-        {/* ── KPIs ── */}
+        {/* â”€â”€ KPIs â”€â”€ */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KPI label="Total Actions" value={totalEvents} sub="all time" color="#dc2626" icon={<Activity size={13}/>}/>
-          <KPI label="Last 7 Days" value={last7} sub={`across ${uniqueDays} active days`} color="#2563eb" icon={<TrendingUp size={13}/>}/>
-          <KPI label="Bookings Logged" value={bookings} sub="via any method" color="#16a34a" icon={<Calendar size={13}/>}/>
-          <KPI label="Attendance Marks" value={attendanceMarks} sub="present / no-show / reset" color="#d97706" icon={<CheckCircle2 size={13}/>}/>
+          <KPI label="Total Actions" value={totalEvents} sub="all time" color="#dc2626" icon={<Activity size={15}/>}/>
+          <KPI label="Bookings Made" value={bookings} sub="any method" color="#16a34a" icon={<Calendar size={15}/>}/>
+          <KPI label="Emails Sent" value={totalEmailsSent} sub="all types" color="#7c3aed" icon={<CheckCircle2 size={15}/>}/>
+          <KPI label="Attendance Marks" value={attendanceMarks} sub="present Â· no-show" color="#d97706" icon={<Users size={15}/>}/>
         </div>
 
-        {/* ── Daily activity sparkline ── */}
-        <Section title="Daily Activity" sub="Last 14 days — events per day">
-          <div className="flex items-end gap-1 h-20">
-            {dailyActivity.map(d => {
-              const pct = Math.max(4, Math.round((d.count / maxDaily) * 100));
-              return (
-                <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group relative">
-                  <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#0f172a] text-white text-[9px] font-bold px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
-                    {d.label}<br/>{d.count} events
-                  </div>
-                  <div className="w-full rounded-t-sm transition-all"
-                    style={{ height: `${pct}%`, background: d.isToday ? '#dc2626' : d.count > 0 ? '#fca5a5' : '#f1f5f9', minHeight: 3 }}/>
-                  <span className="text-[7px] text-[#cbd5e1] hidden md:block">
-                    {new Date(d.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'narrow' })}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-
-        {/* ── Booking sources — THE KEY QUESTION ── */}
-        <Section title="How Are Bookings Being Made?" sub="This tells you which booking method they prefer">
-          {bookingSources.length === 0
-            ? <p className="text-xs text-[#94a3b8] italic">No booking events yet</p>
-            : (
-              <div className="space-y-3">
-                {bookingSources.map(([src, count]) => (
-                  <HBar key={src}
-                    label={SOURCE_LABELS[src] ?? src}
-                    value={count} max={maxBookingSource} count={count}
-                    color={SOURCE_COLORS[src] ?? '#94a3b8'}/>
-                ))}
-                <p className="text-[10px] text-[#94a3b8] pt-2 border-t border-[#f8fafc]">
-                  If "Quick Add" dominates → inline form is working. If "Full Booking Form" dominates → they prefer the detailed flow.
-                </p>
-              </div>
-            )}
-        </Section>
-
-        <Section title="Auto Book + Search Insights" sub="Tracks Auto Book actions and command-bar search behavior">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <p className="text-[10px] text-[#94a3b8]">Range applied to this section only</p>
-            <div className="flex gap-1">
-              {([
-                { key: '7d', label: '7d' },
-                { key: '30d', label: '30d' },
-                { key: 'all', label: 'All' },
-              ] as { key: InsightRange; label: string }[]).map(option => (
-                <button key={option.key} onClick={() => setInsightRange(option.key)}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
-                  style={insightRange === option.key
-                    ? { background: '#1d4ed8', color: 'white' }
-                    : { background: '#f8fafc', color: '#94a3b8' }}>
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <KPI label="Auto Book Uses" value={autoBookInsights.autoBookTotal} color="#1d4ed8" icon={<Users size={13}/>}/>
-            <KPI label="Search Inputs" value={autoBookInsights.commandSearchInputs} color="#0ea5e9" icon={<Activity size={13}/>}/>
-            <KPI label="Search Submits" value={autoBookInsights.commandSearchSubmits} color="#7c3aed" icon={<CheckCircle2 size={13}/>}/>
-            <KPI label="Unique Queries" value={autoBookInsights.uniqueSubmittedQueries} color="#16a34a" icon={<BarChart2 size={13}/>}/>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-5">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Auto Book Actions</p>
-              {autoBookInsights.topActions.length === 0 ? (
-                <p className="text-xs text-[#94a3b8] italic">No Auto Book events yet</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {autoBookInsights.topActions.map(([action, count]) => (
-                    <HBar
-                      key={action}
-                      label={AUTO_BOOK_ACTION_LABELS[action] ?? action}
-                      value={count}
-                      max={autoBookInsights.maxActionCount}
-                      count={count}
-                      color={AUTO_BOOK_ACTION_COLORS[action] ?? '#94a3b8'}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Top Search Queries</p>
-              {autoBookInsights.topQueries.length === 0 ? (
-                <p className="text-xs text-[#94a3b8] italic">No command searches submitted yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {autoBookInsights.topQueries.map(([query, count]) => (
-                    <div key={query} className="flex items-center justify-between gap-3 rounded-lg border border-[#f1f5f9] bg-[#fafafa] px-3 py-2">
-                      <span className="text-xs font-semibold text-[#1e293b] truncate">{query}</span>
-                      <span className="text-[10px] font-black text-[#64748b] shrink-0">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <p className="text-[10px] text-[#94a3b8] mt-3">
-                Latest submitted query:{' '}
-                <span className="font-semibold text-[#475569]">{autoBookInsights.lastSubmittedQuery ?? 'None yet'}</span>
-              </p>
-            </div>
-          </div>
-        </Section>
-
-        {/* ── Where attendance is being marked ── */}
-        <Section title="Where Is Attendance Being Marked?" sub="Helps you see which UI surface is actually used for marking">
-          {attendanceSources.length === 0
-            ? <p className="text-xs text-[#94a3b8] italic">No attendance events yet</p>
-            : (
-              <div className="space-y-3">
-                {attendanceSources.map(([src, count]) => (
-                  <HBar key={src}
-                    label={src.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    value={count} max={maxAttSource} count={count}
-                    color={ATTEND_COLORS[src] ?? '#94a3b8'}/>
-                ))}
-              </div>
-            )}
-        </Section>
-
-        <Section title="Operations By Type" sub="Separated by additions, confirmations, reschedules, and deletions">
-          {operationBreakdown.length === 0
-            ? <p className="text-xs text-[#94a3b8] italic">No operation events yet</p>
-            : (
-              <div className="space-y-3">
-                {operationBreakdown.map(op => (
-                  <HBar
-                    key={op.type}
-                    label={op.label}
-                    value={op.count}
-                    max={maxOperationType}
-                    count={op.count}
-                    color={op.color}
-                  />
-                ))}
-              </div>
-            )}
-        </Section>
-
-        {/* ── Weekly ops table ── */}
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1.5px solid #f1f5f9' }}>
-          <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #f8fafc' }}>
-            <div>
-              <p className="text-sm font-black text-[#0f172a]">Week-by-Week</p>
-              <p className="text-[10px] text-[#94a3b8] mt-0.5">App usage + attendance outcomes</p>
-            </div>
-            <div className="flex gap-1">
-              {([4, 8, 12] as const).map(w => (
-                <button key={w} onClick={() => setWeekRange(w)}
-                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
-                  style={weekRange === w ? { background: '#dc2626', color: 'white' } : { background: '#f8fafc', color: '#94a3b8' }}>
-                  {w}w
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                  {['Week', 'App Events', 'Bookings', 'Att. Marks', 'Sessions', 'Attendance %', 'No-show %'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-[#94a3b8]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {weeklyData.length === 0 ? (
-                  <tr><td colSpan={7} className="px-5 py-8 text-center text-xs text-[#94a3b8] italic">No data yet</td></tr>
-                ) : weeklyData.map((wk, i) => (
-                  <tr key={wk.week} style={{ borderBottom: '1px solid #f8fafc', background: wk.isCurrent ? '#fffbf9' : i % 2 === 0 ? 'white' : '#fafafa' }}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#1e293b]">{wk.label}</span>
-                        {wk.isCurrent && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full text-white bg-[#dc2626]">NOW</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold text-[#475569]">{wk.events || <span className="text-[#e2e8f0]">—</span>}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold" style={{ color: wk.bookings > 0 ? '#16a34a' : '#e2e8f0' }}>{wk.bookings || '—'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold" style={{ color: wk.attendanceMarks > 0 ? '#d97706' : '#e2e8f0' }}>{wk.attendanceMarks || '—'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold text-[#475569]">{wk.total || <span className="text-[#e2e8f0]">—</span>}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {wk.attendanceRate !== null
-                        ? <span className="text-xs font-black" style={{ color: rc(wk.attendanceRate) }}>{wk.attendanceRate}%</span>
-                        : <span className="text-[#e2e8f0] text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      {wk.noShowRate !== null
-                        ? <span className="text-xs font-black" style={{ color: wk.noShowRate > 20 ? '#dc2626' : '#94a3b8' }}>{wk.noShowRate}%</span>
-                        : <span className="text-[#e2e8f0] text-xs">—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* ── Student & Tutor Management ── */}
-        <Section title="Student & Tutor Management" sub="Creates, edits, and deletes for students and tutors">
-          {mgmtActivity.length === 0
-            ? <p className="text-xs text-[#94a3b8] italic">No management events yet</p>
-            : (
-              <div className="space-y-2.5">
-                {mgmtActivity.map(([name, count]) => (
-                  <HBar key={name} label={FRIENDLY[name] ?? name} value={count} max={maxMgmt} count={count}
-                    color={name.includes('deleted') ? '#dc2626' : name.includes('created') ? '#16a34a' : '#2563eb'}/>
-                ))}
-              </div>
-            )}
-        </Section>
-
-        {/* ── Communications ── */}
-        {commsBreakdown.length > 0 && (
-          <Section title="Communications" sub="Reminders, blasts, and tutor schedule sends">
-            <div className="space-y-2.5">
-              {commsBreakdown.map(c => (
-                <HBar key={c.key} label={c.label} value={c.count} max={maxComms} count={c.count} color={c.color}/>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* ── Center Config Activity ── */}
-        {centerActivity.length > 0 && (
-          <Section title="Center Config Activity" sub="Term and settings changes">
-            <div className="space-y-2.5">
-              {centerActivity.map(c => (
-                <HBar key={c.key} label={c.label} value={c.count} max={maxCenter} count={c.count} color={c.color}/>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* ── Virtual vs In-Person ── */}
-        {virtualStats.total > 0 && (
-          <Section title="Virtual vs In-Person" sub="Session attendance mode breakdown — all time">
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <KPI label="Total Sessions" value={virtualStats.total} color="#475569" icon={<Calendar size={13}/>}/>
-              <KPI label="In-Person" value={virtualStats.inPerson} color="#16a34a" icon={<Users size={13}/>}/>
-              <KPI label="Virtual" value={virtualStats.virtual} sub={`${virtualStats.pct}% of all`} color="#2563eb" icon={<Activity size={13}/>}/>
-            </div>
-            <div className="space-y-2">
-              <HBar label="In-Person" value={virtualStats.inPerson} max={virtualStats.total} count={virtualStats.inPerson} color="#16a34a"/>
-              <HBar label="Virtual" value={virtualStats.virtual} max={virtualStats.total} count={virtualStats.virtual} color="#2563eb"/>
-            </div>
-          </Section>
-        )}
-
-        {/* ── Student Time Off ── */}
-        <Section title="Student Time Off" sub="Date exceptions logged for students (vacations, illness, etc.)">
-          {studentTimeOffStats.total === 0 ? (
-            <p className="text-xs text-[#94a3b8] italic">No student date exceptions logged yet</p>
+        {/* â”€â”€ Bookings â”€â”€ */}
+        <Collapsible title="Bookings" badge={bookings} badgeColor="#16a34a" defaultOpen={true}>
+          {bookings === 0 ? (
+            <p className="text-sm italic" style={{ color: '#9ca3af' }}>No bookings recorded yet.</p>
           ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <KPI label="Total Exceptions" value={studentTimeOffStats.total} color="#7c3aed" icon={<AlertTriangle size={13}/>}/>
-                <KPI label="Upcoming" value={studentTimeOffStats.upcoming.length} sub="future dates" color="#f59e0b" icon={<Calendar size={13}/>}/>
+            <div className="space-y-8">
+              {/* Source breakdown */}
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-4" style={{ color: '#6b7280' }}>Booking Source</p>
+                {bookingSources.length === 0 ? (
+                  <p className="text-xs italic" style={{ color: '#9ca3af' }}>No source data</p>
+                ) : (
+                  <div className="space-y-3">
+                    {bookingSources.map(([src, count]) => (
+                      <Bar key={src} label={SOURCE_LABELS[src] ?? src} value={count} max={maxBookingSource} count={count} color={SOURCE_COLORS[src] ?? '#94a3b8'}/>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {studentTimeOffStats.topReasons.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">By Reason</p>
-                  <div className="space-y-2">
-                    {studentTimeOffStats.topReasons.map(([reason, count]) => (
-                      <HBar key={reason} label={reason} value={count} max={studentTimeOffStats.maxReason} count={count} color="#7c3aed"/>
+              {/* Week-by-week */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#6b7280' }}>Week by Week</p>
+                  <div className="flex gap-1">
+                    {([4, 8, 12] as const).map(w => (
+                      <button key={w} onClick={() => setWeekRange(w)}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
+                        style={weekRange === w ? { background: '#1e293b', color: 'white' } : { background: '#e5e7eb', color: '#6b7280' }}>
+                        {w}w
+                      </button>
                     ))}
                   </div>
                 </div>
-              )}
-
-              {studentTimeOffStats.upcoming.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[#94a3b8] mb-2">Upcoming Exceptions</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                          <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Date</th>
-                          <th className="px-3 py-2 text-left font-black uppercase tracking-widest text-[#94a3b8]">Reason</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {studentTimeOffStats.upcoming.map(e => (
-                          <tr key={e.id} style={{ borderBottom: '1px solid #f8fafc' }}>
-                            <td className="px-3 py-2 font-semibold text-[#1e293b]">
-                              {new Date(e.exception_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                            </td>
-                            <td className="px-3 py-2 text-[#64748b]">{e.reason ?? <span className="italic text-[#cbd5e1]">None</span>}</td>
-                          </tr>
+                <div className="rounded-xl overflow-hidden" style={{ border: '2px solid #e5e7eb' }}>
+                  <table className="w-full">
+                    <thead>
+                      <tr style={{ background: '#1e293b' }}>
+                        {['Week', 'Bookings', 'Sessions', 'Attendance %', 'No-Show %'].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>{h}</th>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weeklyData.length === 0 ? (
+                        <tr><td colSpan={5} className="px-5 py-8 text-center text-xs italic" style={{ color: '#9ca3af' }}>No data yet</td></tr>
+                      ) : weeklyData.map((wk, i) => (
+                        <tr key={wk.week} style={{ borderBottom: '1px solid #f1f5f9', background: wk.isCurrent ? '#fef9f9' : i % 2 === 0 ? 'white' : '#fafafa' }}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold" style={{ color: '#1e293b' }}>{wk.label}</span>
+                              {wk.isCurrent && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ background: '#dc2626' }}>NOW</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-black" style={{ color: wk.bookings > 0 ? '#16a34a' : '#d1d5db' }}>{wk.bookings || 'â€”'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-semibold" style={{ color: wk.total > 0 ? '#374151' : '#d1d5db' }}>{wk.total || 'â€”'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {wk.attendanceRate !== null
+                              ? <span className="text-sm font-black" style={{ color: rc(wk.attendanceRate) }}>{wk.attendanceRate}%</span>
+                              : <span style={{ color: '#d1d5db' }}>â€”</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            {wk.noShowRate !== null
+                              ? <span className="text-sm font-black" style={{ color: wk.noShowRate > 20 ? '#dc2626' : '#64748b' }}>{wk.noShowRate}%</span>
+                              : <span style={{ color: '#d1d5db' }}>â€”</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              )}
+              </div>
             </div>
           )}
-        </Section>
+        </Collapsible>
 
-        {/* ── Feature usage ── */}
-        <Section title="Feature Usage" sub="Which parts of the app get used most">
-          {featureUsage.length === 0
-            ? <p className="text-xs text-[#94a3b8] italic">No events yet</p>
-            : (
-              <div className="space-y-2.5">
-                {featureUsage.map(f => (
-                  <HBar key={f.name} label={f.label} value={f.count} max={maxFeature} count={f.count} color="#dc2626"/>
-                ))}
-              </div>
-            )}
-        </Section>
+        {/* â”€â”€ Notifications â”€â”€ */}
+        <Collapsible title="Notifications Sent" badge={totalEmailsSent} badgeColor="#7c3aed" defaultOpen={true}>
+          {totalEmailsSent === 0 ? (
+            <p className="text-sm italic" style={{ color: '#9ca3af' }}>No emails sent yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {commsBreakdown.map(c => (
+                <Bar key={c.key} label={c.label} value={c.count} max={maxComms} count={c.count} color={c.color}/>
+              ))}
+            </div>
+          )}
+        </Collapsible>
 
-        {/* ── Event feed ── */}
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1.5px solid #f1f5f9' }}>
-          <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #f8fafc' }}>
-            <div>
-              <p className="text-sm font-black text-[#0f172a]">Event Feed</p>
-              <p className="text-[10px] text-[#94a3b8] mt-0.5">Raw log of all actions</p>
+        {/* â”€â”€ Operations Breakdown â”€â”€ */}
+        <Collapsible title="Operation Types" defaultOpen={false} sub="Additions Â· Deletions Â· Confirmations Â· Reschedules">
+          {operationBreakdown.length === 0 ? (
+            <p className="text-sm italic" style={{ color: '#9ca3af' }}>No events yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {operationBreakdown.map(op => (
+                <Bar key={op.type} label={op.label} value={op.count} max={maxOperationType} count={op.count} color={op.color}/>
+              ))}
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#16a34a] animate-pulse"/>
-              <span className="text-[10px] text-[#94a3b8]">Live</span>
-            </div>
-          </div>
-          <div>
-            {events.length === 0 && (
-              <div className="px-6 py-8 text-center text-xs text-[#94a3b8] italic">No events yet</div>
-            )}
-            {(showAllEvents ? events : events.slice(0, 25)).map((e, i) => {
-              const label = FRIENDLY[e.event_name] ?? e.event_name;
-              const props = e.properties && Object.keys(e.properties).length > 0;
-              const src = e.properties?.source;
-              const opType = getOperationType(e.event_name);
-              return (
-                <div key={e.id} className="flex items-start gap-3 px-6 py-3"
-                  style={{ borderBottom: '1px solid #f8fafc', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
-                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-[#dc2626]"/>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-[#1e293b]">{label}</span>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
-                        style={{ background: `${OPERATION_COLORS[opType]}18`, color: OPERATION_COLORS[opType] }}>
-                        {OPERATION_LABELS[opType]}
-                      </span>
-                      {src && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: `${SOURCE_COLORS[src] ?? '#94a3b8'}18`, color: SOURCE_COLORS[src] ?? '#94a3b8' }}>
-                          {SOURCE_LABELS[src] ?? src}
-                        </span>
-                      )}
+          )}
+        </Collapsible>
+
+        {/* â”€â”€ Event Log â”€â”€ */}
+        <Collapsible title="Event Log" badge={events.length} badgeColor="#475569" defaultOpen={false}>
+          {events.length === 0 ? (
+            <p className="text-sm italic text-center py-4" style={{ color: '#9ca3af' }}>No events yet.</p>
+          ) : (
+            <>
+              <div className="rounded-xl overflow-hidden" style={{ border: '2px solid #e5e7eb' }}>
+                {(showAllEvents ? events : events.slice(0, 25)).map((e, i) => {
+                  const label = FRIENDLY[e.event_name] ?? e.event_name;
+                  const hasProps = e.properties && Object.keys(e.properties).length > 0;
+                  const src = e.properties?.source;
+                  const opType = getOperationType(e.event_name);
+                  return (
+                    <div key={e.id} className="flex items-start gap-3 px-4 py-3"
+                      style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                      <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: OPERATION_COLORS[opType] }}/>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold" style={{ color: '#1e293b' }}>{label}</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
+                            style={{ background: `${OPERATION_COLORS[opType]}22`, color: OPERATION_COLORS[opType] }}>
+                            {OPERATION_LABELS[opType]}
+                          </span>
+                          {src && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: `${SOURCE_COLORS[src] ?? '#94a3b8'}22`, color: SOURCE_COLORS[src] ?? '#94a3b8' }}>
+                              {SOURCE_LABELS[src] ?? src}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px]" style={{ color: '#94a3b8' }}>{new Date(e.created_at).toLocaleString()}</span>
+                          {hasProps && (
+                            <span className="text-[10px] italic truncate max-w-xs" style={{ color: '#94a3b8' }}>
+                              {Object.entries(e.properties).filter(([k]) => k !== 'source').map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    {props && (
-                      <p className="text-[10px] text-[#94a3b8] mt-0.5 truncate">
-                        {Object.entries(e.properties)
-                          .filter(([k]) => k !== 'source')
-                          .map(([k, v]) => `${k}: ${v}`)
-                          .join(' · ')}
-                      </p>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-[#cbd5e1] shrink-0 mt-0.5">{timeAgo(e.created_at)}</span>
-                </div>
-              );
-            })}
-          </div>
-          {events.length > 25 && (
-            <div className="px-6 py-3 border-t border-[#f8fafc]">
-              <button onClick={() => setShowAllEvents(s => !s)}
-                className="flex items-center gap-1.5 text-xs font-bold text-[#64748b]">
-                {showAllEvents ? <><ChevronUp size={12}/> Show less</> : <><ChevronDown size={12}/> Show all {events.length} events</>}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ── Danger zone ── */}
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1.5px solid #fecaca' }}>
-          <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #fef2f2' }}>
-            <div>
-              <p className="text-sm font-black text-[#dc2626]">Danger Zone</p>
-              <p className="text-[10px] text-[#94a3b8] mt-0.5">Clear all bookings — use before demo or fresh pilot start</p>
-            </div>
-          </div>
-          <div className="px-6 py-5 space-y-3">
-            {clearResult && (
-              <div className="px-4 py-2.5 rounded-xl text-xs font-semibold"
-                style={{ background: clearResult.startsWith('Error') ? '#fef2f2' : '#f0fdf4', color: clearResult.startsWith('Error') ? '#dc2626' : '#16a34a', border: `1px solid ${clearResult.startsWith('Error') ? '#fecaca' : '#bbf7d0'}` }}>
-                {clearResult}
+                  );
+                })}
               </div>
+              {events.length > 25 && (
+                <button onClick={() => setShowAllEvents(v => !v)}
+                  className="w-full py-2 text-xs font-bold rounded-lg mt-2"
+                  style={{ background: '#f1f5f9', color: '#374151', border: '1.5px solid #e5e7eb' }}>
+                  {showAllEvents ? 'Show less' : `Show all ${events.length} events`}
+                </button>
+              )}
+            </>
+          )}
+        </Collapsible>
+
+        {/* ── Danger Zone ── */}
+        <div className="rounded-2xl overflow-hidden" style={{ border: '2px solid #fca5a5' }}>
+          <div className="px-5 py-4" style={{ background: '#fff5f5' }}>
+            <p className="text-xs font-black uppercase tracking-widest mb-1" style={{ color: '#dc2626' }}>Danger Zone</p>
+            <p className="text-xs mb-3" style={{ color: '#6b7280' }}>Permanently clear all bookings and session records for this center. Cannot be undone.</p>
+            {clearResult && (
+              <div className="mb-3 text-xs font-semibold" style={{ color: clearResult.startsWith('Error') ? '#dc2626' : '#16a34a' }}>{clearResult}</div>
             )}
             {!clearConfirm ? (
-              <button onClick={() => { setClearConfirm(true); setClearResult(null); }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all"
-                style={{ background: '#fef2f2', border: '1.5px solid #fecaca', color: '#dc2626' }}>
+              <button onClick={() => setClearConfirm(true)}
+                className="px-4 py-2 rounded-lg text-xs font-black"
+                style={{ background: '#fca5a5', color: '#7f1d1d', border: '1.5px solid #fca5a5' }}>
                 Clear All Bookings
               </button>
             ) : (
-              <div className="space-y-3">
-                <div className="px-4 py-3 rounded-xl" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
-                  <p className="text-xs font-black text-[#dc2626] mb-1">Are you sure?</p>
-                  <p className="text-[11px] text-[#64748b]">This deletes all session bookings and session records. Tutor availability, students, and settings are untouched. This cannot be undone.</p>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setClearConfirm(false)}
-                    className="flex-1 py-2.5 rounded-xl text-xs font-bold"
-                    style={{ background: '#f1f5f9', color: '#64748b' }}>
-                    Cancel
-                  </button>
-                  <button onClick={clearBookings} disabled={clearing}
-                    className="flex-1 py-2.5 rounded-xl text-xs font-black text-white disabled:opacity-50 transition-all"
-                    style={{ background: '#dc2626' }}>
-                    {clearing ? 'Clearing…' : 'Yes, Clear Everything'}
-                  </button>
-                </div>
+              <div className="flex items-center gap-2">
+                <button onClick={clearBookings} disabled={clearing}
+                  className="px-4 py-2 rounded-lg text-xs font-black text-white"
+                  style={{ background: '#dc2626', opacity: clearing ? 0.6 : 1 }}>
+                  {clearing ? 'Clearing…' : 'Yes, delete everything'}
+                </button>
+                <button onClick={() => setClearConfirm(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-bold"
+                  style={{ background: '#f1f5f9', color: '#374151', border: '1.5px solid #e5e7eb' }}>
+                  Cancel
+                </button>
               </div>
             )}
           </div>
         </div>
 
-        <p className="text-[10px] text-[#cbd5e1] text-center pb-4">
-          Attendance rates are only accurate if attendance is consistently marked · Booking source tracking requires logEvent source field in all booking handlers
-        </p>
       </div>
     </div>
   );

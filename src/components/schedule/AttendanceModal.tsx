@@ -129,6 +129,7 @@ function ModalContent({
         source: 'attendance_modal',
         sessionId: s.id,
         studentId: student.id,
+        studentName: student.name,
       });
       refetch();
       setSelectedSession(null);

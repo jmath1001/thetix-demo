@@ -960,7 +960,7 @@ export function WeekView({
                                                     setRemovingId(null);
                                                     if (student.seriesId) { setSeriesPromptId(sid); return; }
                                                     await removeStudentFromSession({ sessionId: session.id, studentId: student.id });
-                                                    logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id });
+                                                    logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id, studentName: student.name });
                                                     refetch();
                                                   }}
                                                   onBlur={() => setRemovingId(null)}
@@ -973,12 +973,12 @@ export function WeekView({
                                                 {seriesPromptId === (student.rowId || student.id) && (
                                                   <span className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                                     <button
-                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id }); refetch(); }}
+                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid', sessionId: session.id, studentId: student.id, studentName: student.name }); refetch(); }}
                                                       className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
                                                       just this
                                                     </button>
                                                     <button
-                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_series', seriesId: student.seriesId }); refetch(); } }}
+                                                      onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_series', seriesId: student.seriesId, studentName: student.name }); refetch(); } }}
                                                       className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600 hover:bg-red-200">
                                                       all future
                                                     </button>
@@ -1167,7 +1167,7 @@ export function WeekView({
                                                   setRemovingId(null);
                                                   if (student.seriesId) { setSeriesPromptId(sid); return; }
                                                   await removeStudentFromSession({ sessionId: session.id, studentId: student.id });
-                                                  logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id });
+                                                  logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id, studentName: student.name });
                                                   refetch();
                                                 }}
                                                 onBlur={() => setRemovingId(null)}
@@ -1180,12 +1180,12 @@ export function WeekView({
                                               {seriesPromptId === (student.rowId || student.id) && (
                                                 <span className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                                   <button
-                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id }); refetch(); }}
+                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); await removeStudentFromSession({ sessionId: session.id, studentId: student.id }); logEvent('student_removed', { source: 'week_grid_mobile', sessionId: session.id, studentId: student.id, studentName: student.name }); refetch(); }}
                                                     className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">
                                                     just this
                                                   </button>
                                                   <button
-                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_mobile_series', seriesId: student.seriesId }); refetch(); } }}
+                                                    onClick={async e => { e.stopPropagation(); setSeriesPromptId(null); if (student.seriesId) { await deleteSeries(student.seriesId); logEvent('student_removed', { source: 'week_grid_mobile_series', seriesId: student.seriesId, studentName: student.name }); refetch(); } }}
                                                     className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600 hover:bg-red-200">
                                                     all future
                                                   </button>

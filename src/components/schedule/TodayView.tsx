@@ -1486,7 +1486,7 @@ export function TodayView({
                                                 if (removingId !== sid) { setRemovingId(sid); return; }
                                                 setRemovingId(null);
                                                 await removeStudentFromSession({ sessionId: session.id, studentId: student.id });
-                                                logEvent('student_removed', { source: 'today_grid', sessionId: session.id, studentId: student.id });
+                                                logEvent('student_removed', { source: 'today_grid', sessionId: session.id, studentId: student.id, studentName: student.name });
                                                 refetch();
                                               }}
                                               onBlur={() => setRemovingId(null)}
