@@ -9,6 +9,8 @@ import { MAX_CAPACITY } from '@/components/constants';
 import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConstants';
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
+import { supabase } from '@/lib/supabaseClient';
+import { DB, withCenter } from '@/lib/db';
 
 interface InlineForm {
   query: string;
@@ -40,18 +42,22 @@ const emptyForm = (tutor: Tutor): InlineForm => ({
 
 const WEEKVIEW_SCROLL_STORAGE_KEY = 'schedule:weekviewTodayScrollLeft';
 
-const addSubjectToCenter = async (subject: string) => {
+const addSubjectToCenter = async (subject: string, tutorId: string, tutorSubjects: string[]) => {
   try {
     const existing = await fetch('/api/center-subjects').then(r => r.json()).catch(() => ({ subjects: [] }));
     const current: string[] = Array.isArray(existing?.subjects) ? existing.subjects : [];
-    if (current.some(s => s.toLowerCase() === subject.toLowerCase())) return;
-    await fetch('/api/center-subjects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subjects: [...current, subject] }),
-    });
+    if (!current.some(s => s.toLowerCase() === subject.toLowerCase())) {
+      await fetch('/api/center-subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjects: [...current, subject] }),
+      });
+    }
+    if (!tutorSubjects.some(s => s.toLowerCase() === subject.toLowerCase())) {
+      await withCenter(supabase.from(DB.tutors).update({ subjects: [...tutorSubjects, subject] })).eq('id', tutorId);
+    }
   } catch (err) {
-    console.error('Failed to save subject to center:', err);
+    console.error('Failed to save subject:', err);
   }
 };
 
@@ -474,7 +480,7 @@ export function WeekView({
             className="w-full text-left px-3 py-1.5 text-[10px] font-bold rounded-lg"
             style={{ color: form.topicSaved ? '#059669' : '#2563eb', background: form.topicSaved ? '#ecfdf5' : '#eff6ff', border: `1px solid ${form.topicSaved ? '#6ee7b7' : '#bfdbfe'}` }}
             onClick={() => {
-              void addSubjectToCenter(form.topic.trim());
+              void addSubjectToCenter(form.topic.trim(), tutor.id, tutor.subjects ?? []);
               patchForm(key, { topicSaved: true });
               setTimeout(() => patchForm(key, { topicSaved: false }), 2000);
             }}

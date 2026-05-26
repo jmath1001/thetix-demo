@@ -9,6 +9,8 @@ import { ACTIVE_DAYS, DAY_NAMES, getTutorPaletteByIndex } from './scheduleConsta
 import { isTutorAvailable } from './scheduleUtils';
 import { logEvent } from '@/lib/analytics';
 import { PrintDailyButton } from '@/components/schedule/PrintDailyButton';
+import { supabase } from '@/lib/supabaseClient';
+import { DB, withCenter } from '@/lib/db';
 
 // ─── Inline form state ───────────────────────────────────────────────────────
 interface InlineForm {
@@ -39,18 +41,22 @@ const emptyForm = (tutor: Tutor): InlineForm => ({
   topicSaved: false,
 });
 
-const addSubjectToCenter = async (subject: string) => {
+const addSubjectToCenter = async (subject: string, tutorId: string, tutorSubjects: string[]) => {
   try {
     const existing = await fetch('/api/center-subjects').then(r => r.json()).catch(() => ({ subjects: [] }))
     const current: string[] = Array.isArray(existing?.subjects) ? existing.subjects : []
-    if (current.some(s => s.toLowerCase() === subject.toLowerCase())) return
-    await fetch('/api/center-subjects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subjects: [...current, subject] }),
-    })
+    if (!current.some(s => s.toLowerCase() === subject.toLowerCase())) {
+      await fetch('/api/center-subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjects: [...current, subject] }),
+      })
+    }
+    if (!tutorSubjects.some(s => s.toLowerCase() === subject.toLowerCase())) {
+      await withCenter(supabase.from(DB.tutors).update({ subjects: [...tutorSubjects, subject] })).eq('id', tutorId)
+    }
   } catch (err) {
-    console.error('Failed to save subject to center:', err)
+    console.error('Failed to save subject:', err)
   }
 };
 
@@ -861,7 +867,7 @@ export function TodayView({
             className="w-full text-left px-3 py-1.5 text-[10px] font-bold rounded-lg"
             style={{ color: form.topicSaved ? '#059669' : '#2563eb', background: form.topicSaved ? '#ecfdf5' : '#eff6ff', border: `1px solid ${form.topicSaved ? '#6ee7b7' : '#bfdbfe'}` }}
             onClick={() => {
-              void addSubjectToCenter(form.topic.trim());
+              void addSubjectToCenter(form.topic.trim(), tutor.id, tutor.subjects ?? []);
               patchForm(key, { topicSaved: true });
               setTimeout(() => patchForm(key, { topicSaved: false }), 2000);
             }}
@@ -1751,7 +1757,7 @@ export function TodayView({
                             className="w-full text-left px-4 py-2.5 text-xs font-bold rounded-xl"
                             style={{ color: form.topicSaved ? '#059669' : '#2563eb', background: form.topicSaved ? '#ecfdf5' : '#eff6ff', border: `1px solid ${form.topicSaved ? '#6ee7b7' : '#bfdbfe'}` }}
                             onClick={() => {
-                              void addSubjectToCenter(form.topic.trim());
+                              void addSubjectToCenter(form.topic.trim(), tutor.id, tutor.subjects ?? []);
                               patchForm(openKey, { topicSaved: true });
                               setTimeout(() => patchForm(openKey, { topicSaved: false }), 2000);
                             }}
