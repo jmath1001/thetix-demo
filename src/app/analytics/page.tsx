@@ -735,6 +735,9 @@ export default function AnalyticsPage() {
                   const hasProps = e.properties && Object.keys(e.properties).length > 0;
                   const src = e.properties?.source;
                   const opType = getOperationType(e.event_name);
+                  if (e.event_name.toLowerCase().includes('delete')) {
+    console.log('DELETE EVENT:', e.event_name, e.properties);
+  }
                   return (
                     <div key={e.id} className="flex items-start gap-3 px-4 py-3"
                       style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
@@ -756,9 +759,12 @@ export default function AnalyticsPage() {
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[10px]" style={{ color: '#94a3b8' }}>{new Date(e.created_at).toLocaleString()}</span>
                           {hasProps && (
-                            <span className="text-[10px] italic truncate max-w-xs" style={{ color: '#94a3b8' }}>
-                              {Object.entries(e.properties).filter(([k]) => k !== 'source').map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                            </span>
+                            <span className="text-[10px] italic" style={{ color: '#94a3b8' }}>
+  {Object.entries(e.properties)
+    .filter(([k]) => k !== 'source' && k !== 'series_id')
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' · ')}
+</span>
                           )}
                         </div>
                       </div>
