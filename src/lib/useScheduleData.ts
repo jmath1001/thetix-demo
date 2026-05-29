@@ -731,6 +731,13 @@ export async function updateSessionNotes({ rowId, notes }: {
   if (error) throw error
 }
 
+export async function updateSeriesNotes({ seriesId, notes }: {
+  seriesId: string; notes: string | null
+}) {
+  const { error } = await supabase.from(SS).update({ notes }).eq('series_id', seriesId)
+  if (error) throw error
+}
+
 export async function updateSessionTopic({ rowId, topic }: {
   rowId: string; topic: string
 }) {
