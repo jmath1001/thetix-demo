@@ -97,7 +97,7 @@ function StudentSlideOver({
   onUpdateStudent: (updated: any) => void
   onBookingSuccess: (d: any) => void
 }) {
-  const [tab, setTab] = useState<'info' | 'sessions'>('info')
+  const [tab, setTab] = useState<'info' | 'sessions' | 'absences'>('info')
   const [showBooking, setShowBooking] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [draft, setDraft] = useState(student)
@@ -105,6 +105,83 @@ function StudentSlideOver({
   const [editing, setEditing] = useState(false)
   const [enrollCat, setEnrollCat] = useState('math')
   const [sendingForm, setSendingForm] = useState(false)
+
+  // Absences tab state
+  type ExcEntry = { id: string; exception_date: string; reason: string | null }
+  const [absExceptions, setAbsExceptions] = useState<ExcEntry[]>([])
+  const [absLoading, setAbsLoading] = useState(false)
+  const [absStartDate, setAbsStartDate] = useState(toISODate(getCentralTimeNow()))
+  const [absEndDate, setAbsEndDate] = useState(toISODate(getCentralTimeNow()))
+  const [absReason, setAbsReason] = useState('')
+  const [absSaving, setAbsSaving] = useState(false)
+  const [absError, setAbsError] = useState<string | null>(null)
+
+  const loadAbsences = useCallback(async () => {
+    setAbsLoading(true)
+    const { data } = await (withCenter(
+      supabase.from(DB.studentDateExceptions)
+        .select('id, exception_date, reason')
+        .eq('student_id', student.id)
+    ) as any).order('exception_date')
+    setAbsExceptions((data ?? []) as ExcEntry[])
+    setAbsLoading(false)
+  }, [student.id])
+
+  useEffect(() => {
+    if (tab === 'absences') loadAbsences()
+  }, [tab, loadAbsences])
+
+  const handleAddAbsence = async () => {
+    if (absEndDate < absStartDate) { setAbsError('End date must be on or after start date.'); return }
+    setAbsSaving(true); setAbsError(null)
+    try {
+      // Find all active series for this student
+      const { data: seriesRows, error: serErr } = await (withCenter(
+        supabase.from(DB.recurringSeries).select('id').eq('student_id', student.id).eq('status', 'active')
+      ) as any)
+      if (serErr) throw serErr
+      const seriesIds: string[] = (seriesRows ?? []).map((r: any) => r.id)
+      let totalMarked = 0
+      for (const seriesId of seriesIds) {
+        const { data: rows, error: fe } = await (withCenter(
+          supabase.from(DB.sessionStudents)
+            .select(`id, ${DB.sessions}!inner(session_date)`)
+            .eq('series_id', seriesId)
+            .neq('status', 'cancelled')
+        ) as any)
+        if (fe) throw fe
+        const inRange = (rows ?? []).filter((r: any) => {
+          const sess = Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions]
+          const d = sess?.session_date ?? ''
+          return d >= absStartDate && d <= absEndDate
+        })
+        for (const row of inRange) {
+          const sess = Array.isArray(row[DB.sessions]) ? row[DB.sessions][0] : row[DB.sessions]
+          const exDate = sess?.session_date ?? ''
+          const { error: exErr } = await supabase.from(DB.studentDateExceptions).insert(
+            withCenterPayload({ student_id: student.id, series_id: seriesId, exception_date: exDate, reason: absReason.trim() || null })
+          )
+          if (exErr && exErr.code !== '23505') throw exErr
+          const { error: delErr } = await supabase.from(DB.sessionStudents).delete().eq('id', row.id)
+          if (delErr) throw delErr
+          totalMarked++
+        }
+      }
+      if (totalMarked === 0) { setAbsError('No scheduled sessions found in that date range.'); setAbsSaving(false); return }
+      setAbsReason('')
+      setAbsStartDate(toISODate(getCentralTimeNow()))
+      setAbsEndDate(toISODate(getCentralTimeNow()))
+      await loadAbsences()
+      onRefetch()
+    } catch (e: any) { setAbsError(e.message) }
+    setAbsSaving(false)
+  }
+
+  const handleDeleteAbsence = async (id: string) => {
+    const { error } = await supabase.from(DB.studentDateExceptions).delete().eq('id', id)
+    if (error) { setAbsError(error.message); return }
+    setAbsExceptions(prev => prev.filter(e => e.id !== id))
+  }
 
   const today = toISODate(getCentralTimeNow())
 
@@ -254,10 +331,10 @@ function StudentSlideOver({
 
         {/* Tabs */}
         <div className="flex border-b border-slate-100">
-          {(['info', 'sessions'] as const).map(t => (
+          {(['info', 'sessions', 'absences'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-5 py-2.5 text-xs font-semibold capitalize transition-colors ${tab === t ? 'border-b-2 border-slate-900 text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>
-              {t === 'sessions' ? `Sessions (${sessions.length})` : 'Info'}
+              {t === 'sessions' ? `Sessions (${sessions.length})` : t === 'absences' ? `Absences (${absExceptions.length})` : 'Info'}
             </button>
           ))}
         </div>
@@ -394,6 +471,70 @@ function StudentSlideOver({
             </div>
           )}
 
+          {tab === 'absences' && (
+            <div className="p-5 space-y-5">
+              {/* Add absence */}
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Schedule Absence</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-1">Start Date</label>
+                    <input type="date" value={absStartDate} onChange={e => setAbsStartDate(e.target.value)}
+                      className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-slate-400" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-1">End Date</label>
+                    <input type="date" value={absEndDate} onChange={e => setAbsEndDate(e.target.value)}
+                      className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-slate-400" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-500 mb-1">Reason (optional)</label>
+                  <input type="text" value={absReason} onChange={e => setAbsReason(e.target.value)}
+                    placeholder="e.g. vacation, sick day, school event…"
+                    className="w-full rounded border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-slate-400" />
+                </div>
+                {absError && (
+                  <div className="flex items-center gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    <AlertTriangle size={11} /> {absError}
+                  </div>
+                )}
+                <button onClick={handleAddAbsence} disabled={absSaving}
+                  className="w-full rounded bg-orange-600 py-2 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-50">
+                  {absSaving ? 'Saving…' : 'Mark Off & Cancel Sessions'}
+                </button>
+              </div>
+
+              {/* Existing exceptions */}
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Scheduled Absences</p>
+                {absLoading ? (
+                  <div className="flex items-center gap-2 py-6 justify-center text-slate-400">
+                    <Loader2 size={13} className="animate-spin" />
+                    <span className="text-xs">Loading…</span>
+                  </div>
+                ) : absExceptions.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-400">No absences on record</p>
+                ) : (
+                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+                    {absExceptions.map(ex => (
+                      <div key={ex.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-800">{ex.exception_date}</p>
+                          {ex.reason && <p className="text-[10px] text-slate-400">{ex.reason}</p>}
+                        </div>
+                        <button onClick={() => handleDeleteAbsence(ex.id)}
+                          className="rounded border border-slate-200 p-1 text-slate-400 hover:border-red-200 hover:text-red-500">
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {tab === 'sessions' && (
             <div className="divide-y divide-slate-50">
               {sessions.length === 0 && (
@@ -448,6 +589,171 @@ function StudentSlideOver({
   )
 }
 
+// ── Absence Modal ────────────────────────────────────────────────────────────
+type ExcEntry = { id: string; exception_date: string; reason: string | null }
+
+function AbsenceModal({ student, onClose, onDone }: { student: any; onClose: () => void; onDone: () => void }) {
+  const today = toISODate(getCentralTimeNow())
+  const [exceptions, setExceptions] = useState<ExcEntry[]>([])
+  const [loadingEx, setLoadingEx] = useState(true)
+  const [startDate, setStartDate] = useState(today)
+  const [endDate, setEndDate] = useState(today)
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    ;(async () => {
+      setLoadingEx(true)
+      const { data } = await (withCenter(
+        supabase.from(DB.studentDateExceptions)
+          .select('id, exception_date, reason')
+          .eq('student_id', student.id)
+      ) as any).order('exception_date')
+      setExceptions((data ?? []) as ExcEntry[])
+      setLoadingEx(false)
+    })()
+  }, [student.id])
+
+  const handleAdd = async () => {
+    if (endDate < startDate) { setError('End date must be on or after start date.'); return }
+    setSaving(true); setError(null)
+    try {
+      const { data: seriesRows, error: serErr } = await (withCenter(
+        supabase.from(DB.recurringSeries).select('id').eq('student_id', student.id).eq('status', 'active')
+      ) as any)
+      if (serErr) throw serErr
+      const seriesIds: string[] = (seriesRows ?? []).map((r: any) => r.id)
+      let totalMarked = 0
+      for (const seriesId of seriesIds) {
+        const { data: rows, error: fe } = await (withCenter(
+          supabase.from(DB.sessionStudents)
+            .select(`id, ${DB.sessions}!inner(session_date)`)
+            .eq('series_id', seriesId)
+            .neq('status', 'cancelled')
+        ) as any)
+        if (fe) throw fe
+        const inRange = (rows ?? []).filter((r: any) => {
+          const sess = Array.isArray(r[DB.sessions]) ? r[DB.sessions][0] : r[DB.sessions]
+          const d = sess?.session_date ?? ''
+          return d >= startDate && d <= endDate
+        })
+        for (const row of inRange) {
+          const sess = Array.isArray(row[DB.sessions]) ? row[DB.sessions][0] : row[DB.sessions]
+          const exDate = sess?.session_date ?? ''
+          const { error: exErr } = await supabase.from(DB.studentDateExceptions).insert(
+            withCenterPayload({ student_id: student.id, series_id: seriesId, exception_date: exDate, reason: reason.trim() || null })
+          )
+          if (exErr && exErr.code !== '23505') throw exErr
+          const { error: delErr } = await supabase.from(DB.sessionStudents).delete().eq('id', row.id)
+          if (delErr) throw delErr
+          totalMarked++
+        }
+      }
+      if (totalMarked === 0) { setError('No scheduled sessions found in that date range.'); setSaving(false); return }
+      setReason(''); setStartDate(today); setEndDate(today)
+      const { data: refreshed } = await (withCenter(
+        supabase.from(DB.studentDateExceptions).select('id, exception_date, reason').eq('student_id', student.id)
+      ) as any).order('exception_date')
+      setExceptions((refreshed ?? []) as ExcEntry[])
+      onDone()
+    } catch (e: any) { setError(e.message) }
+    setSaving(false)
+  }
+
+  const handleDelete = async (id: string) => {
+    const { error: err } = await supabase.from(DB.studentDateExceptions).delete().eq('id', id)
+    if (err) { setError(err.message); return }
+    setExceptions(prev => prev.filter(e => e.id !== id))
+    onDone()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-sm bg-white rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+        style={{ border: '1px solid #fed7aa', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ background: '#7c2d12' }}>
+          <div>
+            <p className="text-sm font-black text-white">Manage Absences</p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.6)' }}>{student.name}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full"
+            style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}>
+            <X size={15}/>
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-5 space-y-4">
+          {/* Add range */}
+          <div className="rounded-xl p-4 space-y-3" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#92400e' }}>Schedule Absence</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 mb-1">Start Date</label>
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-orange-400" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 mb-1">End Date</label>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-orange-400" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 mb-1">Reason (optional)</label>
+              <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+                placeholder="e.g. vacation, sick day, school event…"
+                className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-orange-400" />
+            </div>
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                <AlertTriangle size={11}/> {error}
+              </div>
+            )}
+            <button onClick={handleAdd} disabled={saving}
+              className="w-full rounded-xl py-2.5 text-xs font-bold text-white active:scale-95"
+              style={{ background: saving ? '#94a3b8' : '#c2410c' }}>
+              {saving ? 'Saving…' : 'Mark Off & Cancel Sessions'}
+            </button>
+          </div>
+
+          {/* Existing absences */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Scheduled Absences</p>
+            {loadingEx ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-slate-400">
+                <Loader2 size={13} className="animate-spin"/>
+                <span className="text-xs">Loading…</span>
+              </div>
+            ) : exceptions.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">No absences on record</p>
+            ) : (
+              <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 overflow-hidden">
+                {exceptions.map(ex => (
+                  <div key={ex.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800">{ex.exception_date}</p>
+                      {ex.reason && <p className="text-[10px] text-slate-400">{ex.reason}</p>}
+                    </div>
+                    <button onClick={() => handleDelete(ex.id)}
+                      className="rounded border border-slate-200 p-1 text-slate-400 hover:border-red-200 hover:text-red-500">
+                      <X size={11}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function StudentAdminPage() {
   const [students, setStudents] = useState<any[]>([])
@@ -469,6 +775,7 @@ export default function StudentAdminPage() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bookingToast, setBookingToast] = useState<any>(null)
+  const [absenceStudentId, setAbsenceStudentId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -859,6 +1166,10 @@ export default function StudentAdminPage() {
                           className="rounded border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50">
                           History
                         </Link>
+                        <button onClick={() => setAbsenceStudentId(student.id)}
+                          className="rounded border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-semibold text-orange-700 hover:bg-orange-100">
+                          Absence
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -911,6 +1222,16 @@ export default function StudentAdminPage() {
         />
       )}
 
+      {absenceStudentId && (() => {
+        const s = students.find(st => st.id === absenceStudentId)
+        return s ? (
+          <AbsenceModal
+            student={s}
+            onClose={() => setAbsenceStudentId(null)}
+            onDone={fetchData}
+          />
+        ) : null
+      })()}
       {showImport && <CSVImportModal onClose={() => setShowImport(false)} onImported={fetchData} />}
       {bookingToast && <BookingToast data={bookingToast} onClose={() => setBookingToast(null)} />}
       </div>

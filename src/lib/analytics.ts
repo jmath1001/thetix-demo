@@ -45,7 +45,9 @@ export type EventName =
   | 'student_schedules_sent'
   | 'first_visit'
   | 'auto_reminder_toggled'
-  | 'auto_reminder_time_saved';
+  | 'auto_reminder_time_saved'
+  | 'tutor_schedule_cron_time_saved'
+  | 'tutor_schedule_cron_toggled';
 
 export async function logEvent(
   event_name: EventName,

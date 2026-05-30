@@ -423,6 +423,26 @@ export default function ContactCenter() {
   const [cronConfigured, setCronConfigured] = useState<boolean | null>(null);
   const [reminderTime, setReminderTime]   = useState('07:00');
   const cronFetchedRef = useRef(false);
+
+  // ── Tutor schedule cron (weekly & daily) ───────────────────────────────────
+  const [tutorWeeklyCronJob, setTutorWeeklyCronJob]               = useState<CronJob | null>(null);
+  const [tutorWeeklyCronHistory, setTutorWeeklyCronHistory]       = useState<CronHistoryItem[]>([]);
+  const [tutorWeeklyCronLoading, setTutorWeeklyCronLoading]       = useState(false);
+  const [tutorWeeklyCronSaving, setTutorWeeklyCronSaving]         = useState(false);
+  const [tutorWeeklyCronConfigured, setTutorWeeklyCronConfigured] = useState<boolean | null>(null);
+  const [tutorWeeklyTime, setTutorWeeklyTime]                     = useState('07:00');
+  const [tutorWeeklyCronHistExpanded, setTutorWeeklyCronHistExpanded] = useState(false);
+
+  const [tutorDailyCronJob, setTutorDailyCronJob]               = useState<CronJob | null>(null);
+  const [tutorDailyCronHistory, setTutorDailyCronHistory]       = useState<CronHistoryItem[]>([]);
+  const [tutorDailyCronLoading, setTutorDailyCronLoading]       = useState(false);
+  const [tutorDailyCronSaving, setTutorDailyCronSaving]         = useState(false);
+  const [tutorDailyCronConfigured, setTutorDailyCronConfigured] = useState<boolean | null>(null);
+  const [tutorDailyTime, setTutorDailyTime]                     = useState('07:00');
+  const [tutorDailyCronHistExpanded, setTutorDailyCronHistExpanded] = useState(false);
+
+  const tutorCronFetchedRef = useRef(false);
+
   const [blastTermId, setBlastTermId]                       = useState('');
   const [blastSubject, setBlastSubject]                     = useState('');
   const [blastBody, setBlastBody]                           = useState('');
@@ -804,6 +824,91 @@ export default function ContactCenter() {
       console.error('toggleCronEnabled', err)
     } finally {
       setCronSaving(false)
+    }
+  }
+
+  // ── Tutor schedule cron fetch ───────────────────────────────────────────────
+  const fetchTutorCron = useCallback(() => {
+    if (tutorCronFetchedRef.current) return
+    tutorCronFetchedRef.current = true
+    const load = async (type: 'tutor-weekly' | 'tutor-daily') => {
+      const setLoading  = type === 'tutor-weekly' ? setTutorWeeklyCronLoading  : setTutorDailyCronLoading
+      const setConfigured = type === 'tutor-weekly' ? setTutorWeeklyCronConfigured : setTutorDailyCronConfigured
+      const setJob      = type === 'tutor-weekly' ? setTutorWeeklyCronJob      : setTutorDailyCronJob
+      const setHistory  = type === 'tutor-weekly' ? setTutorWeeklyCronHistory  : setTutorDailyCronHistory
+      const setTime     = type === 'tutor-weekly' ? setTutorWeeklyTime          : setTutorDailyTime
+      setLoading(true)
+      try {
+        const [jobRes, histRes] = await Promise.all([
+          fetch(`/api/cron-config?type=${type}`).then(r => r.json()),
+          fetch(`/api/cron-config?type=${type}&history`).then(r => r.json()),
+        ])
+        if (jobRes?.error?.includes('is not configured')) { setConfigured(false); return }
+        setConfigured(true)
+        const details: CronJob = jobRes?.jobDetails ?? null
+        if (details) {
+          setJob(details)
+          const h = Array.isArray(details.schedule?.hours) && details.schedule.hours[0] !== -1 ? details.schedule.hours[0] : 7
+          const m = Array.isArray(details.schedule?.minutes) && details.schedule.minutes[0] !== -1 ? details.schedule.minutes[0] : 0
+          setTime(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+        }
+        setHistory(Array.isArray(histRes?.history) ? histRes.history.slice(0, 8) : [])
+      } catch { setConfigured(false) }
+      finally { setLoading(false) }
+    }
+    load('tutor-weekly')
+    load('tutor-daily')
+  }, [])
+
+  const saveTutorCronTime = async (type: 'tutor-weekly' | 'tutor-daily') => {
+    const time     = type === 'tutor-weekly' ? tutorWeeklyTime : tutorDailyTime
+    const cronJob  = type === 'tutor-weekly' ? tutorWeeklyCronJob : tutorDailyCronJob
+    const setSaving = type === 'tutor-weekly' ? setTutorWeeklyCronSaving : setTutorDailyCronSaving
+    const setJob   = type === 'tutor-weekly' ? setTutorWeeklyCronJob : setTutorDailyCronJob
+    const [hStr, mStr] = time.split(':')
+    const h = parseInt(hStr, 10)
+    const m = parseInt(mStr, 10)
+    const timezone = cronJob?.schedule?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_REMINDER_TIMEZONE
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/cron-config?type=${type}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule: { hours: [h], minutes: [m], wdays: [-1], timezone } }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to save')
+      const updated = await fetch(`/api/cron-config?type=${type}`).then(r => r.json())
+      if (updated?.jobDetails) setJob(updated.jobDetails)
+      logEvent('tutor_schedule_cron_time_saved', { type, time })
+    } catch (err) {
+      console.error('saveTutorCronTime', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleTutorCronEnabled = async (type: 'tutor-weekly' | 'tutor-daily') => {
+    const cronJob   = type === 'tutor-weekly' ? tutorWeeklyCronJob : tutorDailyCronJob
+    const setSaving = type === 'tutor-weekly' ? setTutorWeeklyCronSaving : setTutorDailyCronSaving
+    const setJob    = type === 'tutor-weekly' ? setTutorWeeklyCronJob : setTutorDailyCronJob
+    if (!cronJob) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/cron-config?type=${type}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !cronJob.enabled }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error ?? 'Failed')
+      const updated = await fetch(`/api/cron-config?type=${type}`).then(r => r.json())
+      if (updated?.jobDetails) setJob(updated.jobDetails)
+      logEvent('tutor_schedule_cron_toggled', { type, enabled: !cronJob.enabled })
+    } catch (err) {
+      console.error('toggleTutorCronEnabled', err)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -1327,6 +1432,10 @@ export default function ContactCenter() {
   }
 
   const [activeTab, setActiveTab] = useState<'reminders' | 'availability' | 'general' | 'tutor' | 'student' | 'history'>('reminders');
+
+  useEffect(() => {
+    if (activeTab === 'tutor') fetchTutorCron()
+  }, [activeTab, fetchTutorCron])
 
   const openReminderPreview = () => {
     setPreviewLoading(false);
@@ -2121,6 +2230,113 @@ export default function ContactCenter() {
                 </button>
               </div>
             </div>
+
+            {/* ── Auto Schedule Cron ───────────────────────────────────────────── */}
+            {(() => {
+              const isWeekly      = tutorSchedMode === 'weekly'
+              const cronJob       = isWeekly ? tutorWeeklyCronJob       : tutorDailyCronJob
+              const cronHistory   = isWeekly ? tutorWeeklyCronHistory   : tutorDailyCronHistory
+              const cronLoading   = isWeekly ? tutorWeeklyCronLoading   : tutorDailyCronLoading
+              const cronSaving    = isWeekly ? tutorWeeklyCronSaving    : tutorDailyCronSaving
+              const cronConfigured = isWeekly ? tutorWeeklyCronConfigured : tutorDailyCronConfigured
+              const cronTime      = isWeekly ? tutorWeeklyTime          : tutorDailyTime
+              const setCronTime   = isWeekly ? setTutorWeeklyTime       : setTutorDailyTime
+              const histExpanded  = isWeekly ? tutorWeeklyCronHistExpanded : tutorDailyCronHistExpanded
+              const setHistExpanded = isWeekly ? setTutorWeeklyCronHistExpanded : setTutorDailyCronHistExpanded
+              const cronType      = isWeekly ? 'tutor-weekly' : 'tutor-daily'
+              const envVar        = isWeekly ? 'CRONJOB_ORG_TUTOR_WEEKLY_JOB_ID' : 'CRONJOB_ORG_TUTOR_DAILY_JOB_ID'
+              const label         = isWeekly ? 'Weekly Auto-Schedule' : 'Daily Auto-Schedule'
+              const description   = isWeekly
+                ? 'Automatically sends each tutor their weekly schedule on a set schedule.'
+                : 'Automatically sends each tutor their daily schedule on a set schedule.'
+
+              return (
+                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="border-b border-indigo-100 bg-linear-to-r from-indigo-50 to-white px-4 py-3">
+                    <p className="text-xs font-bold text-indigo-900 uppercase tracking-wide">{label}</p>
+                    <p className="mt-0.5 text-[11px] text-indigo-400">{description}</p>
+                  </div>
+                  {cronLoading && cronConfigured === null ? (
+                    <div className="flex items-center gap-2 px-4 py-3 text-xs text-slate-400">
+                      <Loader2 size={12} className="animate-spin" /> Checking schedule status…
+                    </div>
+                  ) : cronConfigured === false ? (
+                    <div className="px-4 py-3 text-xs text-slate-500">
+                      Automatic scheduling isn&apos;t connected. Configure{' '}
+                      <code className="rounded bg-slate-100 px-1">CRONJOB_ORG_API_KEY</code> and{' '}
+                      <code className="rounded bg-slate-100 px-1">{envVar}</code> to enable.
+                    </div>
+                  ) : cronConfigured ? (
+                    <div className="space-y-4 p-4">
+                      {cronJob && (
+                        <div className="flex items-center gap-3">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${cronJob.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${cronJob.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                            {cronJob.enabled ? 'Auto-schedule on' : 'Auto-schedule off'}
+                          </span>
+                          <button
+                            onClick={() => void toggleTutorCronEnabled(cronType)}
+                            disabled={cronSaving}
+                            className="rounded border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            {cronSaving ? 'Saving…' : cronJob.enabled ? 'Turn off' : 'Turn on'}
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex items-end gap-3 flex-wrap">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-600">Send at</label>
+                          <input
+                            type="time"
+                            value={cronTime}
+                            onChange={e => setCronTime(e.target.value)}
+                            className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-slate-400 outline-none"
+                          />
+                          <p className="mt-1 text-[11px] text-slate-400">Timezone: {cronJob?.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE}</p>
+                        </div>
+                        <button
+                          onClick={() => void saveTutorCronTime(cronType)}
+                          disabled={cronSaving}
+                          className="mb-5 flex items-center gap-1.5 rounded bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        >
+                          <Save size={11} />
+                          {cronSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                      {cronJob && cronJob.nextExecution > 0 && (
+                        <p className="text-[11px] text-slate-400">
+                          Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE })}
+                        </p>
+                      )}
+                      {cronHistory.length > 0 && (
+                        <div>
+                          <button
+                            onClick={() => setHistExpanded(v => !v)}
+                            className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600 transition-colors"
+                          >
+                            <ChevronDown size={11} className={`transition-transform ${histExpanded ? 'rotate-180' : ''}`} />
+                            Recent sends ({cronHistory.length})
+                          </button>
+                          {histExpanded && (
+                            <div className="mt-1.5 overflow-y-auto rounded border border-slate-100 max-h-24">
+                              {cronHistory.map((h, i) => (
+                                <div key={i} className="flex items-center gap-3 border-b border-slate-50 px-3 py-1 last:border-0 text-xs">
+                                  <span className={`w-12 shrink-0 rounded-full px-2 py-0.5 text-center font-semibold ${h.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                                    {h.status === 1 ? 'OK' : 'Fail'}
+                                  </span>
+                                  <span className="text-slate-500">{new Date(h.date * 1000).toLocaleString()}</span>
+                                  <span className="ml-auto text-slate-400">{h.duration}ms</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })()}
           </div>
         )}
 

@@ -2,39 +2,56 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // Server-side proxy to cron-job.org REST API.
 // Keeps CRONJOB_ORG_API_KEY out of the browser entirely.
-// Requires CRONJOB_ORG_JOB_ID to identify which job to manage.
+//
+// Job types (via ?type= query param):
+//   reminder      → CRONJOB_ORG_JOB_ID          (default, student reminders)
+//   tutor-weekly  → CRONJOB_ORG_TUTOR_WEEKLY_JOB_ID
+//   tutor-daily   → CRONJOB_ORG_TUTOR_DAILY_JOB_ID
 
 const CRONJOB_BASE = 'https://api.cron-job.org'
 
-function headers() {
+const JOB_TYPE_ENV: Record<string, string> = {
+  'reminder':     'CRONJOB_ORG_JOB_ID',
+  'tutor-weekly': 'CRONJOB_ORG_TUTOR_WEEKLY_JOB_ID',
+  'tutor-daily':  'CRONJOB_ORG_TUTOR_DAILY_JOB_ID',
+}
+
+function apiHeaders() {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${process.env.CRONJOB_ORG_API_KEY ?? ''}`,
   }
 }
 
-function jobId(): string | null {
-  return process.env.CRONJOB_ORG_JOB_ID ?? null
+function resolveJobId(type: string): string | null {
+  const envKey = JOB_TYPE_ENV[type] ?? JOB_TYPE_ENV['reminder']
+  return process.env[envKey] ?? null
 }
 
-function missingConfig() {
+function missingConfig(type: string) {
+  const envKey = JOB_TYPE_ENV[type] ?? JOB_TYPE_ENV['reminder']
   return NextResponse.json(
-    { error: 'CRONJOB_ORG_API_KEY or CRONJOB_ORG_JOB_ID is not configured' },
+    { error: `CRONJOB_ORG_API_KEY or ${envKey} is not configured` },
     { status: 503 }
   )
 }
 
-// GET /api/cron-config          → current job details
-// GET /api/cron-config?history  → last execution history
+// GET /api/cron-config?type=reminder        → current job details
+// GET /api/cron-config?type=reminder&history → last execution history
+// type defaults to 'reminder'
 export async function GET(req: NextRequest) {
-  if (!process.env.CRONJOB_ORG_API_KEY || !jobId()) return missingConfig()
+  const params = new URL(req.url).searchParams
+  const type = params.get('type') ?? 'reminder'
+  const jobId = resolveJobId(type)
 
-  const wantHistory = new URL(req.url).searchParams.has('history')
+  if (!process.env.CRONJOB_ORG_API_KEY || !jobId) return missingConfig(type)
+
+  const wantHistory = params.has('history')
   const url = wantHistory
-    ? `${CRONJOB_BASE}/jobs/${jobId()}/history`
-    : `${CRONJOB_BASE}/jobs/${jobId()}`
+    ? `${CRONJOB_BASE}/jobs/${jobId}/history`
+    : `${CRONJOB_BASE}/jobs/${jobId}`
 
-  const res = await fetch(url, { headers: headers(), cache: 'no-store' })
+  const res = await fetch(url, { headers: apiHeaders(), cache: 'no-store' })
   const body = await res.json().catch(() => ({}))
 
   if (!res.ok) {
@@ -43,10 +60,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(body)
 }
 
-// PATCH /api/cron-config  body: { enabled?, schedule? }
-// schedule shape: { hours: number[], minutes: number[], timezone?: string }
+// PATCH /api/cron-config?type=reminder  body: { enabled?, schedule? }
+// schedule shape: { hours: number[], minutes: number[], wdays?: number[], timezone?: string }
 export async function PATCH(req: NextRequest) {
-  if (!process.env.CRONJOB_ORG_API_KEY || !jobId()) return missingConfig()
+  const params = new URL(req.url).searchParams
+  const type = params.get('type') ?? 'reminder'
+  const jobId = resolveJobId(type)
+
+  if (!process.env.CRONJOB_ORG_API_KEY || !jobId) return missingConfig(type)
 
   let body: Record<string, unknown>
   try {
@@ -72,9 +93,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
-  const res = await fetch(`${CRONJOB_BASE}/jobs/${jobId()}`, {
+  const res = await fetch(`${CRONJOB_BASE}/jobs/${jobId}`, {
     method: 'PATCH',
-    headers: headers(),
+    headers: apiHeaders(),
     body: JSON.stringify({ job }),
   })
   const resBody = await res.json().catch(() => ({}))
