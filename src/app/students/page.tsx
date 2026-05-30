@@ -107,7 +107,7 @@ function StudentSlideOver({
   const [sendingForm, setSendingForm] = useState(false)
 
   // Absences tab state
-  type ExcEntry = { id: string; exception_date: string; reason: string | null }
+  type ExcEntry = { id: string; exception_date: string; reason: string | null; series_id: string | null }
   const [absExceptions, setAbsExceptions] = useState<ExcEntry[]>([])
   const [absLoading, setAbsLoading] = useState(false)
   const [absStartDate, setAbsStartDate] = useState(toISODate(getCentralTimeNow()))
@@ -120,7 +120,7 @@ function StudentSlideOver({
     setAbsLoading(true)
     const { data } = await (withCenter(
       supabase.from(DB.studentDateExceptions)
-        .select('id, exception_date, reason')
+        .select('id, exception_date, reason, series_id')
         .eq('student_id', student.id)
     ) as any).order('exception_date')
     setAbsExceptions((data ?? []) as ExcEntry[])
@@ -177,10 +177,41 @@ function StudentSlideOver({
     setAbsSaving(false)
   }
 
-  const handleDeleteAbsence = async (id: string) => {
-    const { error } = await supabase.from(DB.studentDateExceptions).delete().eq('id', id)
+  const handleDeleteAbsence = async (ex: ExcEntry) => {
+    const { error } = await supabase.from(DB.studentDateExceptions).delete().eq('id', ex.id)
     if (error) { setAbsError(error.message); return }
-    setAbsExceptions(prev => prev.filter(e => e.id !== id))
+    setAbsExceptions(prev => prev.filter(e => e.id !== ex.id))
+    // Restore the session_student row
+    if (ex.series_id && ex.exception_date) {
+      try {
+        const { data: serRows } = await (withCenter(
+          supabase.from(DB.recurringSeries).select('tutor_id, time, topic').eq('id', ex.series_id)
+        ) as any)
+        const ser = serRows?.[0]
+        if (ser) {
+          const { data: sesRows } = await (withCenter(
+            supabase.from(DB.sessions).select('id')
+              .eq('session_date', ex.exception_date)
+              .eq('tutor_id', ser.tutor_id)
+              .eq('time', ser.time)
+          ) as any)
+          const sessionId = sesRows?.[0]?.id
+          if (sessionId) {
+            await supabase.from(DB.sessionStudents).insert(
+              withCenterPayload({
+                session_id: sessionId,
+                student_id: student.id,
+                name: student.name,
+                topic: ser.topic ?? null,
+                status: 'confirmed',
+                series_id: ex.series_id,
+              })
+            )
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+    onRefetch()
   }
 
   const today = toISODate(getCentralTimeNow())
@@ -523,7 +554,7 @@ function StudentSlideOver({
                           <p className="text-xs font-semibold text-slate-800">{ex.exception_date}</p>
                           {ex.reason && <p className="text-[10px] text-slate-400">{ex.reason}</p>}
                         </div>
-                        <button onClick={() => handleDeleteAbsence(ex.id)}
+                        <button onClick={() => handleDeleteAbsence(ex)}
                           className="rounded border border-slate-200 p-1 text-slate-400 hover:border-red-200 hover:text-red-500">
                           <X size={11} />
                         </button>
@@ -590,7 +621,7 @@ function StudentSlideOver({
 }
 
 // ── Absence Modal ────────────────────────────────────────────────────────────
-type ExcEntry = { id: string; exception_date: string; reason: string | null }
+type ExcEntry = { id: string; exception_date: string; reason: string | null; series_id: string | null }
 
 type PreviewSession = { date: string; time: string; tutorName: string }
 
@@ -611,7 +642,7 @@ function AbsenceModal({ student, onClose, onDone }: { student: any; onClose: () 
       setLoadingEx(true)
       const { data } = await (withCenter(
         supabase.from(DB.studentDateExceptions)
-          .select('id, exception_date, reason')
+          .select('id, exception_date, reason, series_id')
           .eq('student_id', student.id)
       ) as any).order('exception_date')
       setExceptions((data ?? []) as ExcEntry[])
@@ -693,7 +724,7 @@ function AbsenceModal({ student, onClose, onDone }: { student: any; onClose: () 
       if (totalMarked === 0) { setError('No scheduled sessions found in that date range.'); setSaving(false); return }
       setReason(''); setStartDate(today); setEndDate(today); setPreview([])
       const { data: refreshed } = await (withCenter(
-        supabase.from(DB.studentDateExceptions).select('id, exception_date, reason').eq('student_id', student.id)
+        supabase.from(DB.studentDateExceptions).select('id, exception_date, reason, series_id').eq('student_id', student.id)
       ) as any).order('exception_date')
       setExceptions((refreshed ?? []) as ExcEntry[])
       onDone()
@@ -701,10 +732,46 @@ function AbsenceModal({ student, onClose, onDone }: { student: any; onClose: () 
     setSaving(false)
   }
 
-  const handleDelete = async (id: string) => {
-    const { error: err } = await supabase.from(DB.studentDateExceptions).delete().eq('id', id)
+  const handleDelete = async (ex: ExcEntry) => {
+    const { error: err } = await supabase.from(DB.studentDateExceptions).delete().eq('id', ex.id)
     if (err) { setError(err.message); return }
-    setExceptions(prev => prev.filter(e => e.id !== id))
+    setExceptions(prev => prev.filter(e => e.id !== ex.id))
+
+    // Restore the cancelled session_student row if the series + session exist
+    if (ex.series_id && ex.exception_date) {
+      try {
+        // Get the series to know tutor_id, time, topic, student name
+        const { data: serRows } = await (withCenter(
+          supabase.from(DB.recurringSeries)
+            .select('tutor_id, time, topic, student_id')
+            .eq('id', ex.series_id)
+        ) as any)
+        const ser = serRows?.[0]
+        if (ser) {
+          // Find the session on that date for this tutor/time
+          const { data: sesRows } = await (withCenter(
+            supabase.from(DB.sessions)
+              .select('id')
+              .eq('session_date', ex.exception_date)
+              .eq('tutor_id', ser.tutor_id)
+              .eq('time', ser.time)
+          ) as any)
+          const sessionId = sesRows?.[0]?.id
+          if (sessionId) {
+            await supabase.from(DB.sessionStudents).insert(
+              withCenterPayload({
+                session_id: sessionId,
+                student_id: student.id,
+                name: student.name,
+                topic: ser.topic ?? null,
+                status: 'confirmed',
+                series_id: ex.series_id,
+              })
+            )
+          }
+        }
+      } catch { /* best-effort restore */ }
+    }
     onDone()
   }
 
@@ -803,7 +870,7 @@ function AbsenceModal({ student, onClose, onDone }: { student: any; onClose: () 
                       <p className="text-xs font-semibold text-slate-800">{ex.exception_date}</p>
                       {ex.reason && <p className="text-[10px] text-slate-400">{ex.reason}</p>}
                     </div>
-                    <button onClick={() => handleDelete(ex.id)}
+                    <button onClick={() => handleDelete(ex)}
                       className="rounded border border-slate-200 p-1 text-slate-400 hover:border-red-200 hover:text-red-500">
                       <X size={11}/>
                     </button>
