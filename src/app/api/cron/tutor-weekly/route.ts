@@ -172,7 +172,7 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: tutorsError.message }, { status: 500 });
   }
 
-  const tutorIds = (tutors ?? []).map((t) => t.id);
+  const tutorIds = (tutors ?? []).map((t: any) => t.id);
   if (tutorIds.length === 0) {
     return NextResponse.json({ sent: 0, failed: 0, errors: [], skipped: true, reason: "No tutors with email addresses." });
   }
