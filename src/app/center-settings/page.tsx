@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Pencil, Save, Settings, Trash2, Zap } from 'lucide-react'
+import { Loader2, Pencil, Save, Settings, Trash2 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { DB, withCenter, withCenterPayload } from '@/lib/db'
@@ -558,12 +558,6 @@ export default function CenterSettingsPage() {
                   </div>
                   {!termFormOpen && (
                     <div className="flex items-center gap-2">
-                      <a href="/?action=build"
-                        className="inline-flex items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                      >
-                        <Zap size={11} />
-                        Schedule Builder
-                      </a>
                       <button onClick={() => { resetTermDraft(); setTermFormOpen(true) }}
                         className="rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
                       >+ New Term</button>

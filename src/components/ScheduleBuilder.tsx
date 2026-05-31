@@ -248,8 +248,13 @@ if (tutorDaySlots.length > 0) {
   }
 }
 
-        if (!daysBooked.has(seat.dayNum)) score += 8
-        else score -= 15
+        // Same-day scoring: penalize spreading unless consecutive is preferred
+        if (!daysBooked.has(seat.dayNum)) {
+          if (!need.allowSameDayDouble) score += 8  // prefer different days
+        } else {
+          if (need.allowSameDayDouble) score += 15  // consecutive: reward same day
+          else score -= 15                          // strongly penalize same day
+        }
         
         const dayBalance: Record<number, number> = { 1: 0, 2: 3, 3: 4, 4: 3, 6: 1 }
         score += dayBalance[seat.dayNum] ?? 0
@@ -260,12 +265,12 @@ if (tutorDaySlots.length > 0) {
         if (!studentTimesPerDay[dayKey][seat.dayNum]) studentTimesPerDay[dayKey][seat.dayNum] = []
         const timesOnDay = studentTimesPerDay[dayKey][seat.dayNum]
         if (timesOnDay.length > 0) {
-          // Prefer tighter adjacent times without assuming fixed hardcoded session slots.
+          // Prefer tighter adjacent times; bigger bonus when consecutive mode is on
           const curr = toMinutes(seat.time)
           const last = toMinutes(timesOnDay[timesOnDay.length - 1])
           if (curr != null && last != null) {
             const diff = Math.abs(curr - last)
-            if (diff <= 70) score += 12
+            if (diff <= 70) score += need.allowSameDayDouble ? 30 : 12
             else score -= Math.max(1, Math.floor((diff - 1) / 30)) * 2
           }
         }
@@ -341,12 +346,11 @@ export function ScheduleBuilder({
   const [previewSeatPool, setPreviewSeatPool] = useState<AvailableSeat[]>(allAvailableSeats)
 
   const [makeRecurring, setMakeRecurring] = useState(true)
-  const [scheduleMode, setScheduleMode] = useState<'add' | 'redo'>('add')
   const [singleStudentId, setSingleStudentId] = useState('')
   const [singleSubject, setSingleSubject] = useState('')
   const [singleSessionBlocks, setSingleSessionBlocks] = useState<string[]>([])
   const [search, setSearch] = useState('')
-  const [hideBooked, setHideBooked] = useState(false)
+  const [hideBooked, setHideBooked] = useState(true)
   const [studentAvailability, setStudentAvailability] = useState<Record<string, string[]>>({})
   const [centerSubjects, setCenterSubjects] = useState<string[]>(ALL_SUBJECTS)
 
@@ -983,6 +987,20 @@ export function ScheduleBuilder({
     })
   }, [])
 
+  // Toggle consecutive (same-day back-to-back) for all needs of a given subject for a student
+  const toggleConsecutiveForSubject = useCallback((studentId: string, subject: string) => {
+    setStudentNeeds(prev => {
+      const needs = prev[studentId] ?? []
+      const currentVal = needs.find(n => n.subject === subject)?.allowSameDayDouble ?? false
+      return {
+        ...prev,
+        [studentId]: needs.map(n =>
+          n.subject === subject ? { ...n, allowSameDayDouble: !currentVal } : n
+        ),
+      }
+    })
+  }, [])
+
   const setSubject = useCallback((studentId: string, needId: string, subject: string) => {
     setStudentNeeds(prev => ({
       ...prev,
@@ -1040,17 +1058,16 @@ export function ScheduleBuilder({
         })()
       : allNeeds
 
-    // In 'add' mode: filter out needs where the student is already booked for that subject this week.
-    // In 'redo' mode: include all needs so the scheduler can find new optimal placements.
-    const alreadyBookedNeeds = scheduleMode === 'add' ? needsToRun.filter(n => {
+    // Filter out needs where the student is already booked for that subject this week.
+    const alreadyBookedNeeds = needsToRun.filter(n => {
       const booked = bookedSubjectsByStudent[n.student.id]
       return booked?.has(n.subject.trim().toLowerCase())
-    }) : []
-    const filteredNeeds = scheduleMode === 'add' ? needsToRun.filter(n => {
+    })
+    const filteredNeeds = needsToRun.filter(n => {
       const booked = bookedSubjectsByStudent[n.student.id]
       return !booked?.has(n.subject.trim().toLowerCase())
-    }) : needsToRun
-    if (scheduleMode === 'add' && alreadyBookedNeeds.length > 0 && filteredNeeds.length === 0) {
+    })
+    if (alreadyBookedNeeds.length > 0 && filteredNeeds.length === 0) {
       // All needs are already booked — nothing to do
       setProposals([])
       setStep('preview')
@@ -1098,9 +1115,7 @@ export function ScheduleBuilder({
             maxCapacity: 3,
             label: s.block?.label,
           })),
-          existingBookings: scheduleMode === 'redo'
-            ? [] // In redo mode, ignore existing bookings so engine can freely reassign slots
-            : Array.from(new Set(activeNeeds.map(n => n.student.id))).map(id => ({
+          existingBookings: Array.from(new Set(activeNeeds.map(n => n.student.id))).map(id => ({
                 studentId: id,
                 existingSlots: Array.from(bookedSlotsByStudent[id] ?? []),
               })),
@@ -1209,7 +1224,7 @@ export function ScheduleBuilder({
     const bookings = proposals.filter(p => p.slot).map(p => ({ student: p.student, slot: p.slot!, topic: p.subject }))
     if (!bookings.length) return
     setConfirming(true)
-    try { await onConfirm(bookings, { recurring: makeRecurring, scheduleMode }) } finally { setConfirming(false) }
+    try { await onConfirm(bookings, { recurring: makeRecurring, scheduleMode: 'add' }) } finally { setConfirming(false) }
   }
 
   const placedCount    = proposals.filter(p => p.slot).length
@@ -1642,7 +1657,11 @@ export function ScheduleBuilder({
                         )}
 
                         {needs.map((need, idx) => {
-                          const isAlreadyBooked = scheduleMode === 'add' && !!need.subject && (bookedSubjectsByStudent[student.id]?.has(need.subject.trim().toLowerCase()) ?? false)
+                          const isAlreadyBooked = !!need.subject && (bookedSubjectsByStudent[student.id]?.has(need.subject.trim().toLowerCase()) ?? false)
+                          // Detect multi-session group for same subject (consecutive toggle)
+                          const sameSubjectNeeds = need.subject ? needs.filter(n => n.subject === need.subject) : []
+                          const isMultiSession = sameSubjectNeeds.length > 1
+                          const isFirstInGroup = isMultiSession && sameSubjectNeeds[0]?.needId === need.needId
                           return (
                           <div key={need.needId} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <div style={{ width: 20, height: 20, borderRadius: 6, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#64748b', flexShrink: 0 }}>
@@ -1660,8 +1679,19 @@ export function ScheduleBuilder({
                               </select>
                               <ChevronDown size={11} style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
                             </div>
+                            {/* Consecutive toggle — only shown on first need in a multi-session group */}
+                            {isFirstInGroup && need.subject && (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); toggleConsecutiveForSubject(student.id, need.subject) }}
+                                title={need.allowSameDayDouble ? 'Back-to-back on same day — click to spread across different days' : 'Spread across different days — click for back-to-back on same day'}
+                                style={{ padding: '4px 9px', borderRadius: 8, border: `1.5px solid ${need.allowSameDayDouble ? '#7c3aed' : '#94a3b8'}`, background: need.allowSameDayDouble ? '#ede9fe' : 'white', color: need.allowSameDayDouble ? '#6d28d9' : '#64748b', fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                              >
+                                {need.allowSameDayDouble ? '⇉ Back-to-back' : '↕ Diff days'}
+                              </button>
+                            )}
                             {isAlreadyBooked && (
-                              <span title="This student is already booked for this subject this week and will be skipped. Switch to Redo mode to reassign." style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              <span title="This student already has this subject booked this week and will be skipped." style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', flexShrink: 0, whiteSpace: 'nowrap' }}>
                                 Already booked · skipped
                               </span>
                             )}
@@ -1702,7 +1732,7 @@ export function ScheduleBuilder({
                   : missingSubject
                   ? 'Some students are missing a subject'
                   : (() => {
-                      const skippedCount = scheduleMode === 'add' ? allNeeds.filter(n => bookedSubjectsByStudent[n.student.id]?.has(n.subject.trim().toLowerCase())).length : 0
+                      const skippedCount = allNeeds.filter(n => bookedSubjectsByStudent[n.student.id]?.has(n.subject.trim().toLowerCase())).length
                       const activeCount = allNeeds.length - skippedCount
                       return (
                         <span>
@@ -1718,25 +1748,7 @@ export function ScheduleBuilder({
                 }
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* Mode toggle: Add to schedule vs Redo */}
-                <div style={{ display: 'flex', alignItems: 'center', borderRadius: 10, border: '1.5px solid #e2e8f0', overflow: 'hidden', background: 'white', fontSize: 11, fontWeight: 700 }}>
-                  <button
-                    type="button"
-                    onClick={() => setScheduleMode('add')}
-                    title="Add to existing schedule — already-booked students are skipped"
-                    style={{ padding: '6px 11px', border: 'none', cursor: 'pointer', background: scheduleMode === 'add' ? '#0f172a' : 'white', color: scheduleMode === 'add' ? 'white' : '#64748b', transition: 'all 0.15s' }}
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setScheduleMode('redo')}
-                    title="Redo the whole schedule — ignores existing bookings and reschedules everyone"
-                    style={{ padding: '6px 11px', border: 'none', borderLeft: '1.5px solid #e2e8f0', cursor: 'pointer', background: scheduleMode === 'redo' ? '#dc2626' : 'white', color: scheduleMode === 'redo' ? 'white' : '#64748b', transition: 'all 0.15s' }}
-                  >
-                    Redo
-                  </button>
-                </div>
+
                 <button
                   type="button"
                   onClick={() => setMakeRecurring(r => !r)}

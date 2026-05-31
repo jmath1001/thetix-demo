@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   Calendar, Users, GraduationCap,
-  Repeat, Bell, Settings, ChevronLeft, ChevronRight, Layers,
+  Repeat, Bell, Settings, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 const ENV_CENTER_NAME  = process.env.NEXT_PUBLIC_CENTER_NAME       ?? 'Scheduler';
@@ -16,7 +16,6 @@ const navItems = [
   { name: 'Students',       icon: GraduationCap, href: '/students' },
   { name: 'Center',         icon: Settings,      href: '/center-settings' },
   { name: 'Notifications',  icon: Bell,          href: '/contact' },
-  { name: 'Builder',        icon: Layers,        href: '/schedule-builder' },
 ];
 
 /* ─── shared accent colours ──────────────────────────── */

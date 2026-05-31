@@ -126,9 +126,13 @@ function scoreSlot(
   const runAssignedHere = assignedCounts[seat.index] ?? 0
   score += runAssignedHere * 4
 
-  // Prefer different days from already-assigned sessions this run
-  if (!daysAlreadyBookedThisRun.has(seat.dayNum)) score += 8
-  else score -= 15  // strong penalty for same day (still allowed as fallback)
+  // Same-day scoring: penalize spreading unless consecutive (back-to-back) is preferred
+  if (!daysAlreadyBookedThisRun.has(seat.dayNum)) {
+    if (!need.allowSameDayDouble) score += 8  // prefer different days
+  } else {
+    if (need.allowSameDayDouble) score += 15  // consecutive: reward same day
+    else score -= 15                          // strong penalty for same day
+  }
 
   // Boost preferred tutor — still allows fallback to any qualified tutor.
   if (need.preferredTutorId && seat.tutorId === need.preferredTutorId) score += 20

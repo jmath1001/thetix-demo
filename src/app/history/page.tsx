@@ -38,9 +38,10 @@ type SessionEntry = {
   readOnly?: boolean; // true for off/absence entries — no status picker
 };
 
-type SessionGroup =
-  | { kind: 'single'; session: SessionEntry }
-  | { kind: 'series'; seriesId: string; topic: string; sessions: SessionEntry[] };
+type DateGroup = {
+  date: string;
+  sessions: SessionEntry[];
+};
 
 function StatusPicker({ ssId, current, onUpdated }: { ssId: string; current: string; onUpdated: (s: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -103,8 +104,6 @@ export default function StudentHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
-  // seriesId -> expanded state within a student panel
-  const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set());
   const [sessionFilter, setSessionFilter] = useState<'all' | 'upcoming' | 'past'>('all');
   // live status overrides keyed by ssId
   const [statusOverrides, setStatusOverrides] = useState<Record<string, string>>({});
@@ -171,32 +170,15 @@ export default function StudentHistoryPage() {
       .sort((a, b) => b.date.localeCompare(a.date));
   };
 
-  const buildGroups = (allSessions: SessionEntry[]): SessionGroup[] => {
-    const seriesMap = new Map<string, SessionEntry[]>();
-    const result: SessionGroup[] = [];
-
+  const buildDateGroups = (allSessions: SessionEntry[]): DateGroup[] => {
+    const map = new Map<string, SessionEntry[]>();
     for (const s of allSessions) {
-      if (s.seriesId) {
-        if (!seriesMap.has(s.seriesId)) seriesMap.set(s.seriesId, []);
-        seriesMap.get(s.seriesId)!.push(s);
-      } else {
-        result.push({ kind: 'single', session: s });
-      }
+      if (!map.has(s.date)) map.set(s.date, []);
+      map.get(s.date)!.push(s);
     }
-
-    // Insert series groups at the position of their most recent session
-    for (const [seriesId, sArr] of seriesMap) {
-      const topic = sArr[0].topic;
-      result.push({ kind: 'series', seriesId, topic, sessions: sArr });
-    }
-
-    result.sort((a, b) => {
-      const dateA = a.kind === 'single' ? a.session.date : a.sessions[0].date;
-      const dateB = b.kind === 'single' ? b.session.date : b.sessions[0].date;
-      return dateB.localeCompare(dateA);
-    });
-
-    return result;
+    return Array.from(map.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, sessions]) => ({ date, sessions }));
   };
 
   const filtered = students.filter(s =>
@@ -206,30 +188,52 @@ export default function StudentHistoryPage() {
   const colors = ['#ede9fe', '#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3', '#e0f2fe'];
   const textColors = ['#6d28d9', '#1d4ed8', '#15803d', '#92400e', '#be185d', '#0369a1'];
 
-  function SessionRow({ s }: { s: SessionEntry }) {
+  function SessionCard({ s, compact }: { s: SessionEntry; compact?: boolean }) {
     const displayStatus = s.isPast && s.status === 'scheduled' ? 'unknown' : s.status;
     const sc = statusStyle[displayStatus] ?? statusStyle.unknown;
     const isCancelledOrOff = s.status === 'cancelled' || s.status === 'off';
-    return (
-      <div className="px-4 py-3 flex items-start gap-3" style={isCancelledOrOff ? { opacity: 0.75 } : {}}>
-        <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center shrink-0"
-          style={{ background: s.status === 'off' ? '#fff7ed' : s.status === 'cancelled' ? '#f3f4f6' : s.isPast ? '#f0ece8' : '#ede9fe' }}>
-          <span className="text-[8px] font-black uppercase leading-none"
-            style={{ color: s.status === 'off' ? '#c2410c' : s.status === 'cancelled' ? '#9ca3af' : s.isPast ? '#a8a29e' : '#6d28d9' }}>
-            {new Date(s.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
-          </span>
-          <span className="text-sm font-black leading-none"
-            style={{ color: s.status === 'off' ? '#c2410c' : s.status === 'cancelled' ? '#9ca3af' : s.isPast ? '#1c1917' : '#6d28d9' }}>
-            {new Date(s.date + 'T00:00:00').getDate()}
-          </span>
+
+    if (compact) {
+      return (
+        <div className="flex-1 min-w-[140px] rounded-xl border p-3 flex flex-col gap-1.5"
+          style={{
+            background: isCancelledOrOff ? '#fafafa' : s.isPast ? '#faf8f6' : 'white',
+            borderColor: isCancelledOrOff ? '#e5e7eb' : s.isPast ? '#e7e3dd' : '#c4b5fd',
+            opacity: isCancelledOrOff ? 0.7 : 1,
+          }}>
+          <div className="flex items-start justify-between gap-1.5">
+            <p className="text-xs font-bold text-[#1c1917] leading-tight flex-1 min-w-0"
+              style={s.status === 'cancelled' ? { textDecoration: 'line-through', color: '#9ca3af' } : {}}>
+              {s.topic}
+              {s.seriesId && <span className="ml-1 text-[8px] align-middle text-[#6d28d9] opacity-70">↻</span>}
+            </p>
+            {s.readOnly || s.status === 'cancelled' || s.status === 'off' ? (
+              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-lg shrink-0 whitespace-nowrap" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
+            ) : (
+              <StatusPicker ssId={s.ssId} current={displayStatus}
+                onUpdated={newStatus => setStatusOverrides(prev => ({ ...prev, [s.ssId]: newStatus }))} />
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {s.tutorName && <span className="text-[9px] text-[#a8a29e] flex items-center gap-0.5"><User size={8} /> {s.tutorName}</span>}
+            {s.time && <span className="text-[9px] text-[#a8a29e] flex items-center gap-0.5"><Clock size={8} /> {formatTime(s.time)}</span>}
+          </div>
+          {s.notes && <p className="text-[9px] italic text-[#a8a29e] leading-tight">📝 {s.notes}</p>}
         </div>
+      );
+    }
+
+    return (
+      <div className="px-4 py-2.5 flex items-start gap-3" style={isCancelledOrOff ? { opacity: 0.75 } : {}}>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-[#1c1917]" style={s.status === 'cancelled' ? { textDecoration: 'line-through', color: '#9ca3af' } : {}}>{s.topic}</p>
+            <p className="text-sm font-bold text-[#1c1917]"
+              style={s.status === 'cancelled' ? { textDecoration: 'line-through', color: '#9ca3af' } : {}}>
+              {s.topic}
+              {s.seriesId && <span className="ml-1 text-xs align-middle text-[#6d28d9] opacity-60">↻</span>}
+            </p>
             {s.readOnly || s.status === 'cancelled' || s.status === 'off' ? (
-              <span className="text-[9px] font-black px-2 py-0.5 rounded-lg" style={{ background: sc.bg, color: sc.color }}>
-                {sc.label}
-              </span>
+              <span className="text-[9px] font-black px-2 py-0.5 rounded-lg" style={{ background: sc.bg, color: sc.color }}>{sc.label}</span>
             ) : (
               <StatusPicker ssId={s.ssId} current={displayStatus}
                 onUpdated={newStatus => setStatusOverrides(prev => ({ ...prev, [s.ssId]: newStatus }))} />
@@ -295,7 +299,7 @@ export default function StudentHistoryPage() {
                 : sessionFilter === 'past'
                   ? allSessions.filter(s => s.isPast)
                   : allSessions;
-              const groups = buildGroups(filteredSessions);
+              const dateGroups = buildDateGroups(filteredSessions);
               const cancelledCount = allSessions.filter(s => s.status === 'cancelled').length;
               const offCount = allSessions.filter(s => s.status === 'off').length;
               const upcomingCount = allSessions.filter(s => !s.isPast && s.status !== 'cancelled').length;
@@ -306,18 +310,8 @@ export default function StudentHistoryPage() {
 
               return (
                 <div key={student.id} className={`bg-white rounded-2xl border-2 transition-all overflow-hidden ${isOpen ? 'border-[#c4b5fd]' : 'border-[#f0ece8] hover:border-[#e7e3dd]'}`}>
-                  <button className="w-full p-4 flex items-center gap-3 text-left" onClick={() => {
-                      const opening = !isOpen;
-                      setExpanded(opening ? student.id : null);
-                      if (opening) {
-                        const seriesIds = [...new Set(allSessions.filter(s => s.seriesId).map(s => s.seriesId!))];
-                        setExpandedSeries(prev => {
-                          const next = new Set(prev);
-                          seriesIds.forEach(id => next.add(`${student.id}::${id}`));
-                          return next;
-                        });
-                      }
-                    }}>
+                  <button className="w-full p-4 flex items-center gap-3 text-left"
+                    onClick={() => setExpanded(isOpen ? null : student.id)}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black shrink-0"
                       style={{ background: colors[colorIdx], color: textColors[colorIdx] }}>
                       {student.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -340,49 +334,47 @@ export default function StudentHistoryPage() {
 
                   {isOpen && (
                     <div className="border-t border-[#f0ece8]">
-                      {groups.length === 0 ? (
+                      {dateGroups.length === 0 ? (
                         <div className="p-6 text-center">
                           <p className="text-sm text-[#a8a29e] italic">No {sessionFilter !== 'all' ? sessionFilter : ''} sessions</p>
                         </div>
                       ) : (
                         <div className="divide-y divide-[#f0ece8]">
-                          {groups.map((g, gi) => {
-                            if (g.kind === 'single') {
-                              return <SessionRow key={g.session.ssId} s={g.session} />;
-                            }
-                            // Recurring series group
-                            const seriesKey = `${student.id}::${g.seriesId}`;
-                            const seriesOpen = expandedSeries.has(seriesKey);
-                            const cancelledInSeries = g.sessions.filter(s => s.status === 'cancelled').length;
-                            const offInSeries = g.sessions.filter(s => s.status === 'off').length;
-                            const pastInSeries = g.sessions.filter(s => s.isPast && s.status !== 'cancelled' && s.status !== 'off').length;
-                            const attendedInSeries = g.sessions.filter(s => s.isPast && (s.status === 'present' || s.status === 'confirmed')).length;
+                          {dateGroups.map(group => {
+                            const d = new Date(group.date + 'T00:00:00');
+                            const isPastDate = group.date < today;
+                            const isToday = group.date === today;
+                            const multi = group.sessions.length > 1;
                             return (
-                              <div key={g.seriesId}>
-                                <button
-                                  className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-[#faf8f6] transition-colors"
-                                  onClick={() => setExpandedSeries(prev => {
-                                    const next = new Set(prev);
-                                    seriesOpen ? next.delete(seriesKey) : next.add(seriesKey);
-                                    return next;
-                                  })}>
-                                  <div className="w-6 h-6 rounded-lg bg-[#ede9fe] flex items-center justify-center shrink-0">
-                                    <RefreshCw size={10} className="text-[#6d28d9]" />
+                              <div key={group.date}>
+                                <div className="px-4 pt-3 pb-1.5 flex items-center gap-2.5">
+                                  <div className="w-9 h-9 rounded-xl flex flex-col items-center justify-center shrink-0"
+                                    style={{ background: isToday ? '#ede9fe' : isPastDate ? '#f0ece8' : '#dbeafe' }}>
+                                    <span className="text-[7px] font-black uppercase tracking-wide leading-none"
+                                      style={{ color: isToday ? '#6d28d9' : isPastDate ? '#a8a29e' : '#1d4ed8' }}>
+                                      {d.toLocaleDateString('en-US', { month: 'short' })}
+                                    </span>
+                                    <span className="text-sm font-black leading-none mt-0.5"
+                                      style={{ color: isToday ? '#6d28d9' : isPastDate ? '#1c1917' : '#1d4ed8' }}>
+                                      {d.getDate()}
+                                    </span>
                                   </div>
-                                  <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                                    <span className="text-xs font-black text-[#6d28d9]">{g.topic}</span>
-                                    <span className="text-[10px] text-[#a8a29e]">{g.sessions.length} sessions</span>
-                                    {pastInSeries > 0 && <span className="text-[10px] text-[#a8a29e]">{attendedInSeries}/{pastInSeries} attended</span>}
-                                    {cancelledInSeries > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#f3f4f6', color: '#9ca3af' }}>{cancelledInSeries} cancelled</span>}
-                                    {offInSeries > 0 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff7ed', color: '#c2410c' }}>{offInSeries} off</span>}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-black text-[#1c1917]">
+                                      {isToday ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </p>
+                                    {multi && <p className="text-[9px] text-[#a8a29e] mt-0.5">{group.sessions.length} sessions this day</p>}
                                   </div>
-                                  {seriesOpen
-                                    ? <ChevronUp size={12} className="text-[#a8a29e] shrink-0" />
-                                    : <ChevronDown size={12} className="text-[#a8a29e] shrink-0" />}
-                                </button>
-                                {seriesOpen && (
-                                  <div className="divide-y divide-[#f0ece8] bg-[#faf8f6]">
-                                    {g.sessions.map(s => <SessionRow key={s.ssId} s={s} />)}
+                                  {isToday && <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#ede9fe] text-[#6d28d9]">Today</span>}
+                                  {!isPastDate && !isToday && <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-[#dbeafe] text-[#1d4ed8]">Upcoming</span>}
+                                </div>
+                                {multi ? (
+                                  <div className="px-4 pb-3 flex gap-2 flex-wrap">
+                                    {group.sessions.map(s => <SessionCard key={s.ssId} s={s} compact />)}
+                                  </div>
+                                ) : (
+                                  <div className="pb-1">
+                                    <SessionCard s={group.sessions[0]} />
                                   </div>
                                 )}
                               </div>
