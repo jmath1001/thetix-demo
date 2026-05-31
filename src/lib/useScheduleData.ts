@@ -550,6 +550,51 @@ export async function bookStudent({
   const MAX_CAPACITY = 3
   const booked: BookStudentResult[] = []
 
+  // ── Pre-flight: validate all weeks before any DB writes (recurring only) ──
+  if (recurring && recurringWeeks > 1) {
+    const conflicts: string[] = []
+    for (let w = 0; w < weeks; w++) {
+      const d = new Date(date + 'T00:00:00')
+      d.setDate(d.getDate() + w * 7)
+      const isoDate = toISODate(d)
+
+      const { data: sessionsAtTime } = await withCenter(
+        supabase.from(SESSIONS).select('id, tutor_id').eq('session_date', isoDate).eq('time', time)
+      )
+
+      const slotSessionIds = (sessionsAtTime ?? []).map((s: any) => s.id)
+
+      if (slotSessionIds.length > 0) {
+        const { data: alreadyBooked } = await withCenter(
+          supabase.from(SS).select('id, session_id').in('session_id', slotSessionIds)
+            .eq('student_id', student.id).neq('status', 'cancelled')
+        )
+        if ((alreadyBooked ?? []).length > 0) {
+          const sameTutor = (alreadyBooked ?? []).find((row: any) =>
+            (sessionsAtTime ?? []).some((s: any) => s.id === row.session_id && s.tutor_id === tutorId)
+          )
+          if (!sameTutor) {
+            conflicts.push(`${isoDate} at ${time}: student already booked with a different tutor`)
+          }
+          continue
+        }
+      }
+
+      const existingTutorSession = (sessionsAtTime ?? []).find((s: any) => s.tutor_id === tutorId)
+      if (existingTutorSession) {
+        const { data: enrolledRows } = await withCenter(
+          supabase.from(SS).select('id').eq('session_id', existingTutorSession.id).neq('status', 'cancelled')
+        )
+        if ((enrolledRows ?? []).length >= MAX_CAPACITY) {
+          conflicts.push(`${isoDate} at ${time}: session is full (${MAX_CAPACITY}/${MAX_CAPACITY} students)`)
+        }
+      }
+    }
+    if (conflicts.length > 0) {
+      throw new Error(`Cannot create recurring series:\n${conflicts.join('\n')}`)
+    }
+  }
+
   let seriesId: string | null = null
   if (recurring && recurringWeeks > 1) {
     const endDate = new Date(date + 'T00:00:00')

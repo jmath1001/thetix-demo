@@ -17,6 +17,7 @@ export const DB = {
   reminderLogs:           `${TABLE_PREFIX}_reminder_logs`,
   studentDateExceptions:  `${TABLE_PREFIX}_student_date_exceptions`,
   studentScheduleLogs:    `${TABLE_PREFIX}_student_schedule_email_logs`,
+  tutorScheduleLogs:      `${TABLE_PREFIX}_tutor_schedule_email_logs`,
 } as const
 
 export function getCenterId(): string {

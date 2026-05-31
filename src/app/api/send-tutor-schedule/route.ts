@@ -281,6 +281,8 @@ export async function POST(req: NextRequest) {
       const text = `Hi ${tutor.name},\n\nHere's your schedule for ${periodLabel}:\n\n${textLines}\n\n— ${centerName}`;
       const to = guard.mode === "live" ? tutor.email : guard.redirectTo!;
 
+      let logStatus: 'sent' | 'failed' = 'sent';
+      let logError: string | null = null;
       try {
         await transporter.sendMail({
           from: `"${centerName}" <${process.env.GOOGLE_EMAIL}>`,
@@ -294,9 +296,21 @@ export async function POST(req: NextRequest) {
         details.push({ name: tutor.name ?? tutor.id, to });
       } catch (e: any) {
         failed++;
-        const msg: string = e?.message ?? "Unknown error";
-        if (errors.length < 5) errors.push(`${tutor.name ?? tutor.id}: ${msg}`);
+        logStatus = 'failed';
+        logError = e?.message ?? 'Unknown error';
+        if (errors.length < 5) errors.push(`${tutor.name ?? tutor.id}: ${logError}`);
       }
+      await supabase.from(DB.tutorScheduleLogs).insert({
+        center_id: process.env.NEXT_PUBLIC_CENTER_ID ?? process.env.CENTER_ID ?? '',
+        tutor_id: tutor.id,
+        tutor_name: tutor.name ?? '',
+        emailed_to: to,
+        mode,
+        period_label: periodLabel,
+        trigger: 'manual',
+        status: logStatus,
+        error: logError,
+      });
     }
 
     return NextResponse.json({

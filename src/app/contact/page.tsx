@@ -83,6 +83,19 @@ type StudentSchedLog = {
   sent_at: string;
 };
 
+type TutorSchedLog = {
+  id: string;
+  tutor_id: string;
+  tutor_name: string;
+  emailed_to: string;
+  mode: 'daily' | 'weekly';
+  period_label: string;
+  trigger: 'cron' | 'manual';
+  status: 'sent' | 'failed';
+  error: string | null;
+  sent_at: string;
+};
+
 type ScheduleEntry = {
   date: string;
   time: string;
@@ -484,6 +497,9 @@ export default function ContactCenter() {
   const [tutorsWithEmail, setTutorsWithEmail]         = useState<{ id: string; name: string; email: string }[]>([]);
   const [tutorSchedSending, setTutorSchedSending]     = useState(false);
   const [tutorSchedResult, setTutorSchedResult]       = useState<{ sent: number; failed: number; errors: string[]; mode?: string; redirectedTo?: string | null; skipped?: boolean; reason?: string; details?: { name: string; to: string }[] } | null>(null);
+  const [tutorSchedLogs, setTutorSchedLogs]           = useState<TutorSchedLog[]>([]);
+  const [loadingTutorSchedLogs, setLoadingTutorSchedLogs] = useState(false);
+  const [tutorSchedLogsExpanded, setTutorSchedLogsExpanded] = useState(false);
   const [previewModal, setPreviewModal]               = useState<EmailPreview | null>(null);
   const [previewLoading, setPreviewLoading]           = useState(false);
 
@@ -617,6 +633,21 @@ export default function ContactCenter() {
     setLoadingBlastRecipients(false);
   }, []);
 
+  const fetchTutorSchedLogs = useCallback(async () => {
+    setLoadingTutorSchedLogs(true);
+    try {
+      const { data } = await withCenter(
+        supabase
+          .from(DB.tutorScheduleLogs)
+          .select('id, tutor_id, tutor_name, emailed_to, mode, period_label, trigger, status, error, sent_at')
+      ).order('sent_at', { ascending: false }).limit(200);
+      setTutorSchedLogs((data as TutorSchedLog[]) ?? []);
+    } catch {
+      setTutorSchedLogs([]);
+    }
+    setLoadingTutorSchedLogs(false);
+  }, []);
+
   const fetchStudentSchedLogs = useCallback(async (termId: string) => {
     if (!termId) { setStudentSchedLogs([]); return; }
     setLoadingStudentSchedLogs(true);
@@ -726,6 +757,7 @@ export default function ContactCenter() {
   }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
   useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
   useEffect(() => { void fetchStudentSchedLogs(studentSchedTermId); }, [studentSchedTermId, fetchStudentSchedLogs]);
+  useEffect(() => { void fetchTutorSchedLogs(); }, [fetchTutorSchedLogs]);
 
   useEffect(() => {
     withCenter(supabase
@@ -942,7 +974,7 @@ export default function ContactCenter() {
       });
       const data = await res.json();
       if (!res.ok) setTutorSchedResult({ sent: 0, failed: tutorsWithEmail.length, errors: [data.error ?? 'Request failed'] });
-      else { setTutorSchedResult(data); logEvent('tutor_schedules_sent', { sent: data.sent ?? 0 }); }
+      else { setTutorSchedResult(data); logEvent('tutor_schedules_sent', { sent: data.sent ?? 0 }); void fetchTutorSchedLogs(); }
     } catch (e: any) {
       setTutorSchedResult({ sent: 0, failed: 0, errors: [e?.message ?? 'Unknown error'] });
     } finally {
@@ -1551,9 +1583,26 @@ export default function ContactCenter() {
               />
             )}
 
+            {/* Auto-active warning */}
+            {cronConfigured && cronJob?.enabled && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+                <AlertCircle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-amber-800">Auto reminders are active</p>
+                  <p className="mt-0.5 text-[11px] text-amber-700">
+                    Reminders go out automatically every day
+                    {cronJob.schedule?.hours?.length === 1
+                      ? ` at ${cronJob.schedule.hours[0]}:${String(cronJob.schedule?.minutes?.[0] ?? 0).padStart(2, '0')} (${cronJob.schedule.timezone ?? 'CT'})`
+                      : ''}
+                    . Use the manual send below only for one-off cases — sending now will duplicate any reminders the cron already sent today.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Candidate list */}
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="flex items-center justify-between border-b border-blue-100 bg-linear-to-r from-blue-50 to-white px-4 py-3">
+            <div className={`overflow-hidden rounded-xl border bg-white ${cronConfigured && cronJob?.enabled ? 'border-amber-200' : 'border-slate-200'}`}>
+              <div className={`flex items-center justify-between border-b px-4 py-3 ${cronConfigured && cronJob?.enabled ? 'border-amber-100 bg-amber-50/60' : 'border-blue-100 bg-linear-to-r from-blue-50 to-white'}`}>
                 <div className="flex items-center gap-2">
                   {selectableIds.length > 0 && (
                     <Checkbox checked={allChecked} indeterminate={someChecked && !allChecked} onChange={toggleAll} />
@@ -1561,6 +1610,9 @@ export default function ContactCenter() {
                   <span className="text-xs font-semibold text-slate-600">
                     {loadingCandidates ? 'Loading…' : `${candidates.length} student${candidates.length !== 1 ? 's' : ''} on ${dispatchDate}`}
                   </span>
+                  {cronConfigured && cronJob?.enabled && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-amber-600 border border-amber-300 bg-amber-50 rounded px-1.5 py-0.5">Manual override</span>
+                  )}
                 </div>
                 {selected.size > 0 && (
                   <SendButton
@@ -1618,15 +1670,20 @@ export default function ContactCenter() {
               )}
 
               {!loadingCandidates && candidates.length > 0 && (
-                <div className="border-t border-slate-100 bg-slate-50 px-4 py-3 flex justify-end">
-                  <SendButton
-                    onClick={handleSend}
-                    loading={sending}
-                    confirm={confirmSend}
-                    count={selected.size}
-                    disabled={selected.size === 0 || sending}
-                    label="Send reminders"
-                  />
+                <div className={`border-t px-4 py-3 flex items-center justify-between gap-3 ${cronConfigured && cronJob?.enabled ? 'border-amber-100 bg-amber-50/40' : 'border-slate-100 bg-slate-50'}`}>
+                  {cronConfigured && cronJob?.enabled && confirmSend && (
+                    <p className="text-[11px] font-semibold text-amber-700">⚠ Auto is on — this may duplicate today&apos;s reminders</p>
+                  )}
+                  <div className="ml-auto">
+                    <SendButton
+                      onClick={handleSend}
+                      loading={sending}
+                      confirm={confirmSend}
+                      count={selected.size}
+                      disabled={selected.size === 0 || sending}
+                      label={cronConfigured && cronJob?.enabled ? 'Send anyway' : 'Send reminders'}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -2337,6 +2394,63 @@ export default function ContactCenter() {
                 </div>
               )
             })()}
+
+            {/* Send history */}
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <button
+                className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                onClick={() => setTutorSchedLogsExpanded(p => !p)}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock size={13} className="text-slate-400" />
+                  <span className="text-xs font-bold text-slate-700">Send History</span>
+                  {loadingTutorSchedLogs ? (
+                    <Loader2 size={11} className="animate-spin text-slate-400" />
+                  ) : tutorSchedLogs.length > 0 ? (
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">{tutorSchedLogs.length}</span>
+                  ) : null}
+                </div>
+                {tutorSchedLogsExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+              </button>
+              {tutorSchedLogsExpanded && (
+                loadingTutorSchedLogs ? (
+                  <LoadingRow label="Loading history…" />
+                ) : tutorSchedLogs.length === 0 ? (
+                  <EmptyState icon={<Mail size={22} />} label="No tutor schedules sent yet" />
+                ) : (
+                  <ul className="divide-y divide-slate-100 max-h-80 overflow-y-auto border-t border-slate-100">
+                    {tutorSchedLogs.map(log => (
+                      <li key={log.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {log.status === 'sent' ? (
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+                              <Check size={10} className="text-emerald-600" />
+                            </div>
+                          ) : (
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50">
+                              <AlertCircle size={10} className="text-red-500" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{log.tutor_name}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{log.emailed_to}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${log.mode === 'weekly' ? 'bg-indigo-50 text-indigo-600' : 'bg-sky-50 text-sky-600'}`}>{log.mode}</span>
+                              {log.period_label && <span className="text-[10px] text-slate-400">{log.period_label}</span>}
+                              {log.trigger === 'cron' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">auto</span>}
+                            </div>
+                            {log.status === 'failed' && log.error && (
+                              <p className="text-[10px] text-red-500 truncate">{log.error}</p>
+                            )}
+                          </div>
+                        </div>
+                        <p className="shrink-0 text-[11px] text-slate-400">{formatSentAt(log.sent_at)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              )}
+            </div>
           </div>
         )}
 

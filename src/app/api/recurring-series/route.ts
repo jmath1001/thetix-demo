@@ -54,7 +54,75 @@ export async function POST(req: NextRequest) {
     end.setDate(end.getDate() + (totalWeeks - 1) * 7)
     const endDate = end.toISOString().split('T')[0]
 
-    // Create the recurring series row
+    // ── Phase 1: Pre-flight — validate ALL weeks before writing anything ──────
+    const conflicts: string[] = []
+    const timeOffDates = new Set<string>()
+
+    for (let w = 0; w < totalWeeks; w++) {
+      const d = new Date(startDate + 'T00:00:00')
+      d.setDate(d.getDate() + w * 7)
+      const isoDate = toISODate(d)
+
+      const { data: offDay, error: offDayErr } = await withCenter(
+        supabase.from(TIME_OFF_TABLE).select('id').eq('tutor_id', tutorId).eq('date', isoDate)
+      ).maybeSingle()
+
+      if (offDayErr) return NextResponse.json({ error: offDayErr.message }, { status: 500 })
+
+      if (offDay) {
+        timeOffDates.add(isoDate)
+        continue
+      }
+
+      const { data: sessionsAtTime, error: sessionsAtTimeErr } = await withCenter(
+        supabase.from(SESSIONS_TABLE).select('id, tutor_id').eq('session_date', isoDate).eq('time', time)
+      )
+
+      if (sessionsAtTimeErr) return NextResponse.json({ error: sessionsAtTimeErr.message }, { status: 500 })
+
+      const slotSessionIds = (sessionsAtTime ?? []).map((s: any) => s.id)
+
+      if (slotSessionIds.length > 0) {
+        const { data: existingRows, error: existingRowsErr } = await withCenter(
+          supabase.from(SS_TABLE).select('id, session_id').in('session_id', slotSessionIds)
+            .eq('student_id', studentId).neq('status', 'cancelled')
+        )
+        if (existingRowsErr) return NextResponse.json({ error: existingRowsErr.message }, { status: 500 })
+
+        if ((existingRows ?? []).length > 0) {
+          const sameTutorBooking = (existingRows ?? []).find((row: any) =>
+            (sessionsAtTime ?? []).some((s: any) => s.id === row.session_id && s.tutor_id === tutorId)
+          )
+          if (!sameTutorBooking) {
+            // Already booked with a different tutor — conflict
+            conflicts.push(`${isoDate} at ${time}: student already booked with a different tutor`)
+          }
+          // Same tutor: will be linked in Phase 2, not a conflict
+          continue
+        }
+      }
+
+      // Check capacity on the tutor's existing session for this slot
+      const existingTargetSession = (sessionsAtTime ?? []).find((s: any) => s.tutor_id === tutorId)
+      if (existingTargetSession) {
+        const { data: enrolledRows, error: enrolledErr } = await withCenter(
+          supabase.from(SS_TABLE).select('id').eq('session_id', existingTargetSession.id).neq('status', 'cancelled')
+        )
+        if (enrolledErr) return NextResponse.json({ error: enrolledErr.message }, { status: 500 })
+        if ((enrolledRows ?? []).length >= MAX_CAPACITY) {
+          conflicts.push(`${isoDate} at ${time}: session is full (${MAX_CAPACITY}/${MAX_CAPACITY} students)`)
+        }
+      }
+    }
+
+    if (conflicts.length > 0) {
+      return NextResponse.json(
+        { error: 'Cannot create recurring series due to conflicts', conflicts },
+        { status: 409 }
+      )
+    }
+
+    // ── Phase 2: All clear — create the series and enroll ────────────────────
     const { data: series, error: seriesErr } = await supabase
       .from(RECURRING_TABLE)
       .insert(withCenterPayload({
@@ -80,37 +148,16 @@ export async function POST(req: NextRequest) {
 
     let createdRows = 0
     let linkedRows = 0
-    let skippedTimeOffRows = 0
 
     for (let w = 0; w < totalWeeks; w++) {
       const d = new Date(startDate + 'T00:00:00')
       d.setDate(d.getDate() + w * 7)
       const isoDate = toISODate(d)
 
-      const { data: offDay, error: offDayErr } = await withCenter(
-        supabase
-          .from(TIME_OFF_TABLE)
-          .select('id')
-          .eq('tutor_id', tutorId)
-          .eq('date', isoDate)
-      )
-        .maybeSingle()
-
-      if (offDayErr) {
-        return NextResponse.json({ error: offDayErr.message }, { status: 500 })
-      }
-
-      if (offDay) {
-        skippedTimeOffRows += 1
-        continue
-      }
+      if (timeOffDates.has(isoDate)) continue
 
       const { data: sessionsAtTime, error: sessionsAtTimeErr } = await withCenter(
-        supabase
-          .from(SESSIONS_TABLE)
-          .select('id, tutor_id')
-          .eq('session_date', isoDate)
-          .eq('time', time)
+        supabase.from(SESSIONS_TABLE).select('id, tutor_id').eq('session_date', isoDate).eq('time', time)
       )
 
       if (sessionsAtTimeErr) {
@@ -119,45 +166,24 @@ export async function POST(req: NextRequest) {
 
       const slotSessionIds = (sessionsAtTime ?? []).map((s: any) => s.id)
 
+      // Link if student already has a booking with this tutor
       if (slotSessionIds.length > 0) {
         const { data: existingRows, error: existingRowsErr } = await withCenter(
-          supabase
-            .from(SS_TABLE)
-            .select('id, session_id')
-            .in('session_id', slotSessionIds)
-            .eq('student_id', studentId)
-            .neq('status', 'cancelled')
+          supabase.from(SS_TABLE).select('id, session_id').in('session_id', slotSessionIds)
+            .eq('student_id', studentId).neq('status', 'cancelled')
         )
+        if (existingRowsErr) return NextResponse.json({ error: existingRowsErr.message }, { status: 500 })
 
-        if (existingRowsErr) {
-          return NextResponse.json({ error: existingRowsErr.message }, { status: 500 })
-        }
-
-        if ((existingRows ?? []).length > 0) {
-          const sameTutorBooking = (existingRows ?? []).find((row: any) =>
-            (sessionsAtTime ?? []).some((s: any) => s.id === row.session_id && s.tutor_id === tutorId)
-          )
-
-          if (sameTutorBooking) {
-            const { error: updateErr } = await withCenter(
-              supabase
-                .from(SS_TABLE)
-                .update({ series_id: seriesId, topic })
-            )
-              .eq('id', sameTutorBooking.id)
-
-            if (updateErr) {
-              return NextResponse.json({ error: updateErr.message }, { status: 500 })
-            }
-
-            linkedRows += 1
-            continue
-          }
-
-          return NextResponse.json(
-            { error: `Student is already booked with another tutor at ${time} on ${isoDate}` },
-            { status: 409 }
-          )
+        const sameTutorBooking = (existingRows ?? []).find((row: any) =>
+          (sessionsAtTime ?? []).some((s: any) => s.id === row.session_id && s.tutor_id === tutorId)
+        )
+        if (sameTutorBooking) {
+          const { error: updateErr } = await withCenter(
+            supabase.from(SS_TABLE).update({ series_id: seriesId, topic })
+          ).eq('id', sameTutorBooking.id)
+          if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+          linkedRows += 1
+          continue
         }
       }
 
@@ -180,25 +206,6 @@ export async function POST(req: NextRequest) {
         targetSessionId = createdSession.id
       }
 
-      const { data: enrolledRows, error: enrolledErr } = await withCenter(
-        supabase
-          .from(SS_TABLE)
-          .select('id')
-          .eq('session_id', targetSessionId)
-          .neq('status', 'cancelled')
-      )
-
-      if (enrolledErr) {
-        return NextResponse.json({ error: enrolledErr.message }, { status: 500 })
-      }
-
-      if ((enrolledRows ?? []).length >= MAX_CAPACITY) {
-        return NextResponse.json(
-          { error: `Session is full for ${isoDate} ${time}` },
-          { status: 409 }
-        )
-      }
-
       const { error: enrollErr } = await supabase
         .from(SS_TABLE)
         .insert(withCenterPayload({
@@ -218,7 +225,7 @@ export async function POST(req: NextRequest) {
       createdRows += 1
     }
 
-    return NextResponse.json({ success: true, seriesId, createdRows, linkedRows, skippedTimeOffRows })
+    return NextResponse.json({ success: true, seriesId, createdRows, linkedRows, skippedTimeOffRows: timeOffDates.size })
   } catch (err) {
     console.error('Recurring series error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

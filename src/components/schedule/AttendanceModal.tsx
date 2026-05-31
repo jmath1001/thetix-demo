@@ -533,7 +533,10 @@ function ModalContent({
                     refetch();
                   } else {
                     const body = await res.json().catch(() => null);
-                    alert(body?.error || 'Failed to create recurring series');
+                    const msg = body?.conflicts?.length
+                      ? `Cannot create recurring series:\n\n${body.conflicts.join('\n')}`
+                      : body?.error || 'Failed to create recurring series';
+                    alert(msg);
                   }
                 } catch (err) {
                   console.error(err);

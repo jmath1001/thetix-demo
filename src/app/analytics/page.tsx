@@ -11,6 +11,7 @@ import { toISODate, getCentralTimeNow, getWeekStart } from '@/lib/useScheduleDat
 
 type Event = { id: string; event_name: string; properties: Record<string, any>; created_at: string; };
 type SessionStudent = { status: string; date: string; isVirtual: boolean; };
+type TutorEmailLog = { id: string; tutor_name: string; emailed_to: string; mode: string; period_label: string; trigger: string; status: string; error: string | null; sent_at: string; };
 type TrendDir = 'up' | 'down' | 'flat' | 'none';
 
 function getWeekKey(dateStr: string): string {
@@ -313,6 +314,7 @@ export default function AnalyticsPage() {
   const [sessionStudents, setSessionStudents] = useState<SessionStudent[]>([]);
   const [studentCount, setStudentCount] = useState<number>(0);
   const [tutorCount, setTutorCount] = useState<number>(0);
+  const [tutorEmailLogs, setTutorEmailLogs] = useState<TutorEmailLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [weekRange, setWeekRange] = useState<4 | 8 | 12>(8);
@@ -324,13 +326,15 @@ export default function AnalyticsPage() {
   const fetchData = async () => {
     setLoading(true);
     const centerId = getCenterId();
-    const [evRes, sesRes, stuRes, tutRes] = await Promise.all([
+    const [evRes, sesRes, stuRes, tutRes, tutLogRes] = await Promise.all([
       supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }).limit(2000),
       supabase.from(DB.sessions)
         .select(`id, session_date, ${DB.sessionStudents}(id, status, is_virtual)`)
         .eq('center_id', centerId).order('session_date'),
       supabase.from(DB.students).select('id', { count: 'exact', head: true }).eq('center_id', centerId),
       supabase.from(DB.tutors).select('id', { count: 'exact', head: true }).eq('center_id', centerId),
+      supabase.from(DB.tutorScheduleLogs).select('id, tutor_name, emailed_to, mode, period_label, trigger, status, error, sent_at')
+        .eq('center_id', centerId).order('sent_at', { ascending: false }).limit(200),
     ]);
     setEvents(evRes.data ?? []);
     setSessionStudents(
@@ -340,6 +344,7 @@ export default function AnalyticsPage() {
     );
     setStudentCount(stuRes.count ?? 0);
     setTutorCount(tutRes.count ?? 0);
+    setTutorEmailLogs(tutLogRes.data ?? []);
     setLastRefresh(new Date());
     setLoading(false);
   };
@@ -713,6 +718,55 @@ export default function AnalyticsPage() {
             </div>
           </Collapsible>
         )}
+
+        {/* Tutor Email Logs */}
+        <Collapsible title="Tutor Schedule Emails" badge={tutorEmailLogs.length} badgeColor="#2563eb" defaultOpen={tutorEmailLogs.length > 0}>
+          {tutorEmailLogs.length === 0
+            ? <p className="text-sm italic text-center py-4" style={{ color: '#9ca3af' }}>No emails sent yet.</p>
+            : (
+              <div className="rounded-xl overflow-hidden" style={{ border: '1.5px solid #e5e7eb' }}>
+                <table className="w-full">
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e5e7eb' }}>
+                      {['Tutor', 'Sent To', 'Type', 'Period', 'Trigger', 'Status', 'When'].map(h => (
+                        <th key={h} className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest" style={{ color: '#94a3b8' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tutorEmailLogs.map((log, i) => (
+                      <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? 'white' : '#fafafa' }}>
+                        <td className="px-4 py-3 text-xs font-bold" style={{ color: '#1e293b' }}>{log.tutor_name || '—'}</td>
+                        <td className="px-4 py-3 text-xs" style={{ color: '#6b7280' }}>{log.emailed_to}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase"
+                            style={{ background: log.mode === 'weekly' ? '#eef2ff' : '#f0fdf4', color: log.mode === 'weekly' ? '#4f46e5' : '#16a34a' }}>
+                            {log.mode}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs" style={{ color: '#374151' }}>{log.period_label}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase"
+                            style={{ background: log.trigger === 'manual' ? '#fff7ed' : '#f1f5f9', color: log.trigger === 'manual' ? '#d97706' : '#475569' }}>
+                            {log.trigger}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {log.status === 'sent'
+                            ? <span className="text-[10px] font-black" style={{ color: '#16a34a' }}>✓ Sent</span>
+                            : (
+                              <span className="text-[10px] font-black" style={{ color: '#dc2626' }}
+                                title={log.error ?? undefined}>✗ Failed</span>
+                            )}
+                        </td>
+                        <td className="px-4 py-3 text-[10px]" style={{ color: '#9ca3af' }}>{timeAgo(log.sent_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </Collapsible>
 
         {/* Event Log */}
         <Collapsible title="Event Log" badge={events.length} badgeColor="#475569" defaultOpen={false}>

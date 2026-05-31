@@ -186,6 +186,8 @@ export async function GET(_req: NextRequest) {
     const html = buildScheduleHtml(centerName, tutor.name ?? "Tutor", schedule, periodLabel, centerPhone);
     const subject = `Your schedule for today — ${periodLabel}`;
     const to = guard.mode === "live" ? tutor.email : guard.redirectTo!;
+    let logStatus: 'sent' | 'failed' = 'sent';
+    let logError: string | null = null;
     try {
       await transporter.sendMail({
         from: `"${centerName}" <${process.env.GOOGLE_EMAIL}>`,
@@ -198,8 +200,21 @@ export async function GET(_req: NextRequest) {
       sent++;
     } catch (e: any) {
       failed++;
-      if (errors.length < 5) errors.push(`${tutor.name ?? tutor.id}: ${e?.message ?? "Unknown error"}`);
+      logStatus = 'failed';
+      logError = e?.message ?? 'Unknown error';
+      if (errors.length < 5) errors.push(`${tutor.name ?? tutor.id}: ${logError}`);
     }
+    await supabase.from(DB.tutorScheduleLogs).insert({
+      center_id: process.env.NEXT_PUBLIC_CENTER_ID ?? process.env.CENTER_ID ?? '',
+      tutor_id: tutor.id,
+      tutor_name: tutor.name ?? '',
+      emailed_to: to,
+      mode: 'daily',
+      period_label: periodLabel,
+      trigger: 'cron',
+      status: logStatus,
+      error: logError,
+    });
   }
 
   return NextResponse.json({ sent, failed, errors, mode: guard.mode, periodLabel });
