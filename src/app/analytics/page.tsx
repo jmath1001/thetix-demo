@@ -98,8 +98,8 @@ function AreaChart({ data, color = '#dc2626', showLabels = true }: {
   if (!data || data.length < 2) {
     return <div className="flex items-center justify-center py-6 text-xs italic" style={{ color: '#cbd5e1' }}>Not enough data</div>;
   }
-  const W = 400, H = showLabels ? 100 : 84;
-  const padT = 8, padB = showLabels ? 24 : 6, padL = 30, padR = 6;
+  const W = 400, H = showLabels ? 116 : 84;
+  const padT = 8, padB = showLabels ? 40 : 6, padL = 30, padR = 6;
   const cW = W - padL - padR, cH = H - padT - padB;
   const max = Math.max(...data.map(d => d.value), 1);
   const step = cW / (data.length - 1);
@@ -145,11 +145,17 @@ function AreaChart({ data, color = '#dc2626', showLabels = true }: {
         <circle key={i} cx={p.x} cy={p.y} r={hovered === i ? 4.5 : i === pts.length - 1 ? 3.5 : 2.5} fill={color}
           style={{ pointerEvents: 'none', transition: 'r 0.1s' }} />
       ))}
-      {showLabels && showIdx.map(i => (
-        <text key={i} x={pts[i].x} y={H - 4} textAnchor="middle" fontSize="7.5" fill={hovered === i ? color : '#9ca3af'} fontWeight="600">
-          {pts[i].label}
-        </text>
-      ))}
+      {showLabels && showIdx.map(i => {
+        const lx = pts[i].x;
+        const ly = padT + cH + 8;
+        return (
+          <text key={i} x={lx} y={ly} textAnchor="end"
+            transform={`rotate(-38, ${lx.toFixed(1)}, ${ly.toFixed(1)})`}
+            fontSize="9" fill={hovered === i ? color : '#6b7280'} fontWeight="700">
+            {pts[i].label}
+          </text>
+        );
+      })}
       {/* Hover tooltip */}
       {hp && (
         <g style={{ pointerEvents: 'none' }}>
@@ -402,7 +408,7 @@ export default function AnalyticsPage() {
     events.forEach(e => { const day = e.created_at.slice(0, 10); if (day in days) days[day]++; });
     return Object.entries(days).map(([date, value]) => ({
       value,
-      label: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      label: new Date(date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }),
     }));
   }, [events]);
 
@@ -473,6 +479,18 @@ export default function AnalyticsPage() {
   }, [sessionStudents]);
 
   const attRateSpark = weeklyAttendance.map(w => w.value);
+
+  const { totalActions, last30Actions } = useMemo(() => ({
+    totalActions: events.length,
+    last30Actions: events.filter(e => e.created_at.slice(0, 10) >= thirtyDaysAgo).length,
+  }), [events, thirtyDaysAgo]);
+
+  const actionsSpark = useMemo(() => {
+    const days: Record<string, number> = {};
+    for (let i = 7; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days[toISODate(d)] = 0; }
+    events.forEach(e => { const day = e.created_at.slice(0, 10); if (day in days) days[day]++; });
+    return Object.values(days);
+  }, [events]);
 
   const commsBreakdown = useMemo(() => {
     const cats = [
@@ -550,7 +568,10 @@ export default function AnalyticsPage() {
       <div className="max-w-6xl mx-auto px-6 pt-6 space-y-5">
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+          <KPICard label="Total Actions" value={totalActions}
+            sub={`${last30Actions} in last 30 days`} color="#0ea5e9" icon={<Activity size={15} />}
+            sparkData={actionsSpark} />
           <KPICard label="Sessions This Week" value={thisWeekCount} sub="slot-students booked"
             color="#dc2626" icon={<Calendar size={15} />}
             trend={trendDir(thisWeekCount, lastWeekCount, true)} trendLabel={weekTrendLabel}
