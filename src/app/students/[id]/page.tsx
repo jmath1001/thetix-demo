@@ -155,6 +155,36 @@ export default function StudentHistoryPage() {
   const attendanceRate = pastActive.length > 0 ? presentCount / pastActive.length : null
   const noShowRate = pastActive.length > 0 ? noShowCount / pastActive.length : null
 
+  const weeklySchedule = useMemo(() => {
+    const DAYS = [
+      { abbr: 'Mon', dow: 1 },
+      { abbr: 'Tue', dow: 2 },
+      { abbr: 'Wed', dow: 3 },
+      { abbr: 'Thu', dow: 4 },
+      { abbr: 'Fri', dow: 5 },
+      { abbr: 'Sat', dow: 6 },
+    ]
+    const seriesSlots = new Map<string, { dow: number; tutorName: string; blockLabel: string; time: string; topic: string; isUpcoming: boolean }>()
+    for (const row of [...upcoming, ...history]) {
+      if (row.seriesId && !seriesSlots.has(row.seriesId)) {
+        seriesSlots.set(row.seriesId, {
+          dow: new Date(row.date + 'T00:00:00').getDay(),
+          tutorName: row.tutorName,
+          blockLabel: row.blockLabel,
+          time: row.time,
+          topic: row.topic,
+          isUpcoming: row.date >= today,
+        })
+      }
+    }
+    const byDow: Record<number, Array<{ seriesId: string; tutorName: string; blockLabel: string; time: string; topic: string; isUpcoming: boolean }>> = {}
+    for (const [seriesId, slot] of seriesSlots) {
+      if (!byDow[slot.dow]) byDow[slot.dow] = []
+      byDow[slot.dow].push({ seriesId, ...slot })
+    }
+    return DAYS.map(day => ({ ...day, slots: byDow[day.dow] ?? [] }))
+  }, [upcoming, history, today])
+
   const groupedTimeline = useMemo(() => {
     const source = timelineTab === 'upcoming' ? upcoming : timelineTab === 'past' ? past : history
 
@@ -293,7 +323,10 @@ export default function StudentHistoryPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
               <h1 className="text-2xl font-black text-[#0f172a]">{student.name}</h1>
-              <p className="text-[11px] text-[#63adb0] font-semibold">Student Performance Dashboard</p>
+              <p className="text-[11px] text-[#64748b] font-semibold mt-0.5">
+                {upcoming.length > 0 ? `${upcoming.length} upcoming session${upcoming.length !== 1 ? 's' : ''}` : 'No upcoming sessions'}
+                {pastActive.length > 0 && ` · ${Math.round((presentCount / pastActive.length) * 100)}% attendance`}
+              </p>
             </div>
             {past.length >= 3 && noShowRate !== null && noShowRate > 0.4 && (
               <span className="inline-flex items-center gap-1 rounded-full px-3.5 py-1.5 text-[9px] font-black uppercase tracking-[0.18em]" style={{ background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', color: '#991b1b', border: '1px solid #fca5a5' }}>
@@ -301,21 +334,48 @@ export default function StudentHistoryPage() {
               </span>
             )}
           </div>
+        </div>
 
-          <div className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-3">
-            {[
-              { label: 'Active Sessions', value: history.length - cancelledCount - offCount, sub: `${upcoming.length} upcoming`, color: '#3b82f6' },
-              { label: 'Attendance Rate', value: attendanceRate === null ? '—' : `${Math.round(attendanceRate * 100)}%`, sub: `${presentCount}/${pastActive.length} attended`, color: '#10b981' },
-              { label: 'No-show Rate', value: noShowRate === null ? '—' : `${Math.round(noShowRate * 100)}%`, sub: `${noShowCount}/${pastActive.length || 0}`, color: '#ef4444' },
-              { label: 'Cancelled', value: cancelledCount, sub: 'session records', color: '#9ca3af' },
-              { label: 'Absences / Off', value: offCount, sub: 'planned off days', color: '#f97316' },
-            ].map(card => (
-              <div key={card.label} className="rounded-xl p-3.5 border-l-4 transition-all hover:shadow-md" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', borderLeftColor: card.color, border: '1px solid #e2e8f0', borderLeftWidth: '4px' }}>
-                <p className="text-[9px] font-black uppercase tracking-[0.18em]" style={{ color: card.color }}>{card.label}</p>
-                <p className="mt-1.5 text-xl font-black text-[#0f172a]">{card.value}</p>
-                <p className="text-[10px] text-[#64748b] mt-0.5">{card.sub}</p>
-              </div>
-            ))}
+        <div className="rounded-2xl bg-white shadow-sm overflow-hidden" style={{ border: '1.5px solid #e2e8f0', boxShadow: '0 4px 16px rgba(15,23,42,0.08)' }}>
+          <div className="px-5 py-3.5" style={{ borderBottom: '1.5px solid #e2e8f0', background: 'linear-gradient(90deg, #ffffff 0%, #f8fafc 100%)' }}>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#0f172a] flex items-center gap-1.5">
+              <CalendarDays size={12} /> Weekly Schedule
+            </p>
+            {weeklySchedule.every(d => d.slots.length === 0) && (
+              <p className="text-[10px] text-[#94a3b8] mt-0.5">No recurring sessions found</p>
+            )}
+          </div>
+          <div className="p-4 grid grid-cols-3 md:grid-cols-6 gap-2">
+            {weeklySchedule.map(day => {
+              const active = day.slots.length > 0
+              const hasUpcoming = day.slots.some(s => s.isUpcoming)
+              return (
+                <div key={day.dow} className="rounded-xl p-3 flex flex-col gap-2 min-h-20"
+                  style={{
+                    background: active ? (hasUpcoming ? 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)' : '#f8fafc') : '#f8fafc',
+                    border: active ? (hasUpcoming ? '1.5px solid #c4b5fd' : '1.5px solid #d1d5db') : '1.5px solid #e2e8f0',
+                    opacity: active ? 1 : 0.4,
+                  }}>
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em]"
+                    style={{ color: active ? (hasUpcoming ? '#6d28d9' : '#374151') : '#94a3b8' }}>
+                    {day.abbr}
+                  </p>
+                  {active ? day.slots.map(s => (
+                    <div key={s.seriesId} className="rounded-md p-1.5 flex flex-col gap-0.5"
+                      style={{ background: s.isUpcoming ? '#ede9fe' : '#f3f4f6' }}>
+                      <span className="inline-flex items-center gap-1 text-[8px] font-black leading-none"
+                        style={{ color: s.isUpcoming ? '#4c1d95' : '#6b7280' }}>
+                        <Repeat2 size={8} /> {s.blockLabel || s.time}
+                      </span>
+                      <span className="text-[9px] font-semibold truncate leading-tight" style={{ color: s.isUpcoming ? '#6d28d9' : '#374151' }}>{s.topic}</span>
+                      <span className="text-[8px] truncate" style={{ color: s.isUpcoming ? '#7c3aed' : '#9ca3af' }}>{s.tutorName}</span>
+                    </div>
+                  )) : (
+                    <p className="text-[9px] text-[#cbd5e1] mt-auto">—</p>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
 
