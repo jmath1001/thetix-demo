@@ -411,7 +411,7 @@ export default function ContactCenter() {
 
   const [dispatchDate, setDispatchDate]           = useState(tomorrow());
   const [terms, setTerms]                         = useState<Term[]>([]);
-  const [selectedTermId, setSelectedTermId]       = useState('');
+  // const [selectedTermId, setSelectedTermId] = useState('') // removed — reminders are date-based
   const [candidates, setCandidates]               = useState<Candidate[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [selected, setSelected]                   = useState<Set<string>>(new Set());
@@ -584,7 +584,6 @@ export default function ContactCenter() {
       const rows: Term[] = Array.isArray(payload?.terms) ? payload.terms : [];
       setTerms(rows);
       const preferred = rows.find(t => t.status === 'active') ?? rows[0] ?? null;
-      setSelectedTermId('');
       setBlastTermId(preferred?.id ?? '');
       if (preferred?.name) {
         setBlastSubject(`Availability Is Now Open for {{term}} – Submit Your Preferences`);
@@ -593,7 +592,6 @@ export default function ContactCenter() {
     } catch (err) {
       console.error('Failed to load terms:', err);
       setTerms([]);
-      setSelectedTermId('');
       setBlastTermId('');
     }
   }, []);
@@ -665,7 +663,7 @@ export default function ContactCenter() {
     setLoadingStudentSchedLogs(false);
   }, []);
 
-  const fetchCandidates = useCallback(async (date: string, termId?: string) => {
+  const fetchCandidates = useCallback(async (date: string) => {
     setLoadingCandidates(true);
     setSendResult(null);
     setConfirmSend(false);
@@ -720,22 +718,8 @@ export default function ContactCenter() {
         };
       }).sort((a: Candidate, b: Candidate) => a.sessionTime.localeCompare(b.sessionTime) || a.studentName.localeCompare(b.studentName));
 
-      let filteredRows = rows;
-      if (termId) {
-        const { data: enrollmentRows, error: enrollmentError } = await withCenter(
-          supabase
-            .from(DB.termEnrollments)
-            .select('student_id')
-            .eq('term_id', termId)
-        );
-        if (enrollmentError) throw enrollmentError;
-
-        const enrolledStudentIds = new Set((enrollmentRows ?? []).map((row: any) => row.student_id));
-        filteredRows = rows.filter(row => enrolledStudentIds.has(row.studentId));
-      }
-
-      setCandidates(filteredRows);
-      setSelected(new Set(filteredRows.filter((r: Candidate) =>
+      setCandidates(rows);
+      setSelected(new Set(rows.filter((r: Candidate) =>
         !r.reminderSent &&
         ((r.studentEmail && r.notifyStudent) || (r.momEmail && r.notifyMom) || (r.dadEmail && r.notifyDad))
       ).map((r: Candidate) => r.rowId)));
@@ -755,7 +739,7 @@ export default function ContactCenter() {
       })
       .catch(() => {});
   }, [fetchSettings, fetchLogs, fetchTerms, fetchBlastRecipients]);
-  useEffect(() => { fetchCandidates(dispatchDate, selectedTermId || undefined); }, [dispatchDate, selectedTermId, fetchCandidates]);
+  useEffect(() => { fetchCandidates(dispatchDate); }, [dispatchDate, fetchCandidates]);
   useEffect(() => { void fetchStudentSchedLogs(studentSchedTermId); }, [studentSchedTermId, fetchStudentSchedLogs]);
   useEffect(() => { void fetchTutorSchedLogs(); }, [fetchTutorSchedLogs]);
 
@@ -1041,7 +1025,6 @@ export default function ContactCenter() {
           manual: true,
           sessionStudentIds: [...selected],
           baseUrl: window.location.origin,
-          termId: selectedTermId || null,
         }),
       });
       const data = await res.json();
@@ -1059,7 +1042,7 @@ export default function ContactCenter() {
           details: data.details ?? [],
         });
         logEvent('reminder_sent', { sent: data.sent ?? 0, failed: data.failed ?? 0, date: dispatchDate });
-        await Promise.all([fetchCandidates(dispatchDate, selectedTermId || undefined), fetchLogs()]);
+        await Promise.all([fetchCandidates(dispatchDate), fetchLogs()]);
       }
     } catch (e: any) {
       setSendResult({ sent: 0, failed: selected.size, errors: [e.message ?? 'Request failed'] });
