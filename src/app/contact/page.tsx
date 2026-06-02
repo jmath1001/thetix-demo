@@ -148,7 +148,7 @@ const baseInputCls = 'w-full rounded border border-slate-200 bg-white px-3 py-2 
 const BRAND_BLUE = '#0f172a';
 const BRAND_RED = '#991b1b';
 
-function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
+function toISODate(d: Date) { return d.toLocaleDateString('en-CA'); }
 function tomorrow() { const d = new Date(); d.setDate(d.getDate() + 1); return toISODate(d); }
 function addDaysIso(iso: string, days: number) { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + days); return toISODate(d); }
 function formatSentAt(iso: string) {
@@ -1566,7 +1566,8 @@ export default function ContactCenter() {
                     {cronJob.schedule?.hours?.length === 1
                       ? ` at ${cronJob.schedule.hours[0]}:${String(cronJob.schedule?.minutes?.[0] ?? 0).padStart(2, '0')} (${cronJob.schedule.timezone ?? 'CT'})`
                       : ''}
-                    . Use the manual send below only for one-off cases — sending now will duplicate any reminders the cron already sent today.
+                    {' — '}will send for sessions on <span className="font-bold">{tomorrow()}</span>.
+                    Use the manual send below only for one-off cases.
                   </p>
                 </div>
               </div>
@@ -1718,6 +1719,9 @@ export default function ContactCenter() {
                       Next send: {new Date(cronJob.nextExecution * 1000).toLocaleString(undefined, { timeZone: cronJob.schedule?.timezone || DEFAULT_REMINDER_TIMEZONE })}
                     </p>
                   )}
+                  <p className="text-[11px] text-slate-500">
+                    When triggered, sends reminders for sessions on <span className="font-semibold text-slate-700">{tomorrow()}</span>
+                  </p>
                   {cronHistory.length > 0 && (
                     <div>
                       <button
