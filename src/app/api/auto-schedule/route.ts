@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
     const sessionCache: Record<string, string> = {}
 
     async function findOrCreateSession(tutorId: string, date: string, time: string): Promise<string | null> {
-      const k = ${tutorId}||
+      const k = `${tutorId}||${date}||${time}`
       if (sessionCache[k]) return sessionCache[k]
       const { data: existing } = await withCenter(
         supabase.from(DB.sessions).select('id').eq('session_date', date).eq('tutor_id', tutorId).eq('time', time).maybeSingle()
