@@ -333,7 +333,7 @@ export default function AnalyticsPage() {
     setLoading(true);
     const centerId = getCenterId();
     const [evRes, sesRes, stuRes, tutRes, tutLogRes] = await Promise.all([
-      supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }).limit(2000),
+      supabase.from(DB.events).select('*').eq('center_id', centerId).order('created_at', { ascending: false }),
       supabase.from(DB.sessions)
         .select(`id, session_date, ${DB.sessionStudents}(id, status, is_virtual)`)
         .eq('center_id', centerId).order('session_date'),
