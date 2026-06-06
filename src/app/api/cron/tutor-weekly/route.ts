@@ -70,7 +70,7 @@ function getWeekRange(): { fromDate: string; toDate: string; periodLabel: string
   return { fromDate, toDate, periodLabel: `Week of ${startFmt}–${endFmt}` };
 }
 
-type SessionEntry = { date: string; time: string; students: { name: string; topic: string }[] };
+type SessionEntry = { date: string; time: string; students: { name: string; topic: string; notes: string }[] };
 
 function buildScheduleHtml(
   centerName: string,
@@ -97,7 +97,7 @@ function buildScheduleHtml(
           const studentList =
             s.students.length === 0
               ? `<span style="color:#9ca3af;font-style:italic;">No students</span>`
-              : s.students.map((st) => `${st.name}${st.topic ? ` <span style="color:#6b7280;font-size:11px;">(${st.topic})</span>` : ""}`).join(", ");
+              : s.students.map((st) => `${st.name}${st.topic ? ` <span style="color:#6b7280;font-size:11px;">(${st.topic})</span>` : ""}${st.notes ? `<br><span style="color:#6b7280;font-size:11px;font-style:italic;">${st.notes}</span>` : ""}`).join(", ");
           return `<tr>
             <td style="padding:8px 12px;font-size:13px;font-weight:600;color:#374151;white-space:nowrap;border-right:1px solid #f3f4f6;">${fmt12(s.time)}</td>
             <td style="padding:8px 12px;font-size:13px;color:#374151;">${studentList}</td>
@@ -181,7 +181,7 @@ export async function GET(_req: NextRequest) {
     withCenter(
       supabase
         .from(DB.sessions)
-        .select(`id, session_date, time, tutor_id, ${DB.sessionStudents}(id, name, topic, status)`)
+        .select(`id, session_date, time, tutor_id, ${DB.sessionStudents}(id, name, topic, notes, status)`)
         .in("tutor_id", tutorIds)
         .gte("session_date", fromDate)
         .lte("session_date", toDate)
@@ -201,7 +201,7 @@ export async function GET(_req: NextRequest) {
       time: session.time,
       students: ssRows
         .filter((ss: any) => ss.status !== "cancelled")
-        .map((ss: any) => ({ name: ss.name ?? "—", topic: ss.topic ?? "" })),
+        .map((ss: any) => ({ name: ss.name ?? "—", topic: ss.topic ?? "", notes: ss.notes ?? "" })),
     });
   }
 

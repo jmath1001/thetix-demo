@@ -1,8 +1,10 @@
 "use client"
-import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2, Check } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown, Trash2, Check, NotebookPen } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { formatWeekRange } from './scheduleConstants';
 import { toISODate } from '@/lib/useScheduleData';
+import { supabase } from '@/lib/supabaseClient';
+import { DB } from '@/lib/db';
 
 interface ScheduleNavProps {
   todayView: boolean;
@@ -58,6 +60,51 @@ export function ScheduleNav({
   onJumpToDate,
 }: ScheduleNavProps) {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
+
+  // ── Sticky notes ──
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesSaved, setNotesSaved] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    supabase
+      .from(DB.centerSettings)
+      .select('notes')
+      .eq('center_id', process.env.NEXT_PUBLIC_CENTER_ID ?? '')
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => { if (data?.notes) setNotes(data.notes); });
+  }, []);
+
+  async function handleSaveNotes() {
+    setNotesSaving(true);
+    await supabase
+      .from(DB.centerSettings)
+      .update({ notes })
+      .eq('center_id', process.env.NEXT_PUBLIC_CENTER_ID ?? '');
+    setNotesSaving(false);
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 2000);
+  }
+
+  function insertBullet() {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = notes.slice(0, start);
+    const after = notes.slice(end);
+    const prefix = start === 0 || notes[start - 1] === '\n' ? '• ' : '\n• ';
+    const next = before + prefix + after;
+    setNotes(next);
+    setNotesSaved(false);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + prefix.length;
+      el.focus();
+    });
+  }
 
   return (
     <div className="sticky top-0 z-30 border-b"
@@ -119,6 +166,19 @@ export function ScheduleNav({
                   <span className="hidden sm:inline">Now</span>
                 </button>
               )}
+              <div className="w-px h-5 shrink-0" style={{ background: '#a5b4fc' }} />
+              <button
+                onClick={() => setNotesOpen(o => !o)}
+                title="Notes"
+                className="w-6 h-6 md:w-7 md:h-7 flex items-center justify-center rounded-lg shrink-0 transition-all"
+                style={{
+                  background: notesOpen ? '#4f46e5' : 'white',
+                  border: `1px solid ${notesOpen ? '#4f46e5' : '#a5b4fc'}`,
+                  color: notesOpen ? 'white' : '#4f46e5',
+                  cursor: 'pointer',
+                }}>
+                <NotebookPen size={12} />
+              </button>
             </>
           )}
 
@@ -259,6 +319,73 @@ export function ScheduleNav({
           )}
 
       </div>
+
+      {/* ── Notes floating panel ── */}
+      {notesOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 16,
+            width: 300,
+            background: '#ffffff',
+            border: '1px solid #c7d2fe',
+            borderRadius: 10,
+            boxShadow: '0 8px 24px rgba(79,70,229,0.13)',
+            zIndex: 50,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 12,
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 12, color: '#4f46e5' }}>Notes</span>
+            <button
+              onClick={insertBullet}
+              title="Insert bullet point"
+              style={{ fontSize: 11, fontWeight: 600, color: '#6366f1', background: '#e0e7ff', border: 'none', borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}
+            >• Bullet</button>
+          </div>
+          <textarea
+            ref={textareaRef}
+            autoFocus
+            value={notes}
+            onChange={e => { setNotes(e.target.value); setNotesSaved(false); }}
+            placeholder="Jot down anything you need to remember…"
+            style={{
+              width: '100%',
+              minHeight: 140,
+              resize: 'vertical',
+              border: '1px solid #e0e7ff',
+              borderRadius: 6,
+              padding: '8px 10px',
+              fontSize: 13,
+              color: '#374151',
+              outline: 'none',
+              fontFamily: 'inherit',
+              lineHeight: 1.5,
+            }}
+          />
+          <button
+            onClick={handleSaveNotes}
+            disabled={notesSaving}
+            style={{
+              padding: '6px 0',
+              borderRadius: 7,
+              fontSize: 11,
+              fontWeight: 700,
+              border: 'none',
+              cursor: notesSaving ? 'not-allowed' : 'pointer',
+              background: notesSaved ? '#dcfce7' : notesSaving ? '#e0e7ff' : '#4f46e5',
+              color: notesSaved ? '#15803d' : notesSaving ? '#818cf8' : 'white',
+              transition: 'background 0.2s',
+            }}
+          >
+            {notesSaving ? 'Saving…' : notesSaved ? '✓ Saved' : 'Save Notes'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
