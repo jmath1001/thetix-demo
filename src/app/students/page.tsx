@@ -903,6 +903,7 @@ export default function StudentAdminPage() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [newStudent, setNewStudent] = useState(EMPTY_FORM)
   const [creating, setCreating] = useState(false)
+  const [duplicateWarning, setDuplicateWarning] = useState<{ matches: any[] } | null>(null)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bookingToast, setBookingToast] = useState<any>(null)
@@ -1085,8 +1086,29 @@ export default function StudentAdminPage() {
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.id))
   const toggleAll = () => allSelected ? setSelected(new Set()) : setSelected(new Set(filtered.map(s => s.id)))
 
-  const handleCreate = async () => {
+  const handleCreate = async (force = false) => {
     if (!newStudent.name) return
+    if (!force) {
+      const nameLower = newStudent.name.trim().toLowerCase()
+      const emailLower = newStudent.email?.trim().toLowerCase()
+      const momEmailLower = newStudent.mom_email?.trim().toLowerCase()
+      const dadEmailLower = newStudent.dad_email?.trim().toLowerCase()
+      const dupes = students.filter(s => {
+        if (s.name.trim().toLowerCase() === nameLower) return true
+        if (emailLower && [
+          s.email, s.mom_email, s.dad_email,
+        ].some(e => e?.trim().toLowerCase() === emailLower)) return true
+        if (momEmailLower && [
+          s.email, s.mom_email, s.dad_email,
+        ].some(e => e?.trim().toLowerCase() === momEmailLower)) return true
+        if (dadEmailLower && [
+          s.email, s.mom_email, s.dad_email,
+        ].some(e => e?.trim().toLowerCase() === dadEmailLower)) return true
+        return false
+      })
+      if (dupes.length > 0) { setDuplicateWarning({ matches: dupes }); return }
+    }
+    setDuplicateWarning(null)
     setCreating(true)
     await supabase.from(STUDENTS).insert([withCenterPayload({
       name: newStudent.name, grade: newStudent.grade || null, school_name: newStudent.school_name || null,
@@ -1152,7 +1174,7 @@ export default function StudentAdminPage() {
         <div className="shrink-0 border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold text-slate-700">New Student</p>
-            <button onClick={() => setShowAddForm(false)} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
+            <button onClick={() => { setShowAddForm(false); setDuplicateWarning(null) }} className="text-slate-400 hover:text-slate-600"><X size={13} /></button>
           </div>
           <div className="flex flex-wrap gap-2">
             {[['Name *', 'name', 'text'], ['Grade', 'grade', 'text'], ['School', 'school_name', 'text'], ['Email', 'email', 'email'], ['Phone', 'phone', 'tel'],
@@ -1161,16 +1183,39 @@ export default function StudentAdminPage() {
             ].map(([label, field, type]) => (
               <div key={field} className="flex flex-col gap-1">
                 <label className="text-[10px] font-semibold text-slate-400">{label}</label>
-                <input type={type} value={(newStudent as any)[field] ?? ''} onChange={e => setNewStudent(p => ({ ...p, [field]: e.target.value }))} className={inputCls} placeholder={label.replace(' *', '')} style={{ width: 140 }} />
+                <input type={type} value={(newStudent as any)[field] ?? ''} onChange={e => { setNewStudent(p => ({ ...p, [field]: e.target.value })); setDuplicateWarning(null) }} className={inputCls} placeholder={label.replace(' *', '')} style={{ width: 140 }} />
               </div>
             ))}
             <div className="flex items-end">
-              <button onClick={handleCreate} disabled={!newStudent.name || creating}
+              <button onClick={() => handleCreate()} disabled={!newStudent.name || creating}
                 className="rounded bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-40">
                 {creating ? <Loader2 size={11} className="animate-spin" /> : 'Register'}
               </button>
             </div>
           </div>
+          {duplicateWarning && (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-amber-800 mb-1">Possible duplicate{duplicateWarning.matches.length > 1 ? 's' : ''} found</p>
+                <div className="space-y-0.5 mb-2">
+                  {duplicateWarning.matches.map(m => (
+                    <p key={m.id} className="text-[11px] text-amber-700">{m.name}{m.grade ? ` · Grade ${m.grade}` : ''}{m.email ? ` · ${m.email}` : m.mom_email ? ` · ${m.mom_email}` : ''}</p>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleCreate(true)}
+                    className="rounded bg-amber-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-amber-700">
+                    Add Anyway
+                  </button>
+                  <button onClick={() => setDuplicateWarning(null)}
+                    className="rounded border border-amber-300 px-3 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
